@@ -1,0 +1,199 @@
+{% extends "base/layout.html" %}
+
+{% block title %}Instructor Management{% endblock %}
+{% block active_page %}instructor-management{% endblock %}
+
+{% block header %}
+<h1 style="color: #191970;">Instructor Management</h1>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Info Cards Row -->
+    <div class="row g-3 mb-4">
+        <!-- Total Instructors Card -->
+        <div class="col-12 col-sm-6 col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="card-subtitle text-muted mb-1">Total Instructors</h6>
+                            <h2 class="card-title mb-0 fw-bold total-instructors">{{ total_instructors }}</h2>
+                        </div>
+                        <div class="p-2 bg-primary bg-opacity-10 rounded">
+                            <i class="bi bi-person-video3 text-primary fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div> 
+        </div>
+
+        <!-- Active Instructors Card -->
+        <div class="col-12 col-sm-6 col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="card-subtitle text-muted mb-1">Active Instructors</h6>
+                            <h2 class="card-title mb-0 fw-bold active-instructors">{{ active_instructors }}</h2>
+                        </div>
+                        <div class="p-2 bg-success bg-opacity-10 rounded">
+                            <i class="bi bi-person-video3 text-success fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inactive Instructors Card -->
+        <div class="col-12 col-sm-6 col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="card-subtitle text-muted mb-1">Inactive Instructors</h6>
+                            <h2 class="card-title mb-0 fw-bold inactive-instructors">{{ inactive_instructors }}</h2>
+                        </div>
+                        <div class="p-2 bg-danger bg-opacity-10 rounded">
+                            <i class="bi bi-person-video3 text-danger fs-4"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <!-- Controls Row -->
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <!-- Left side: Status Filter and Search -->
+                <div class="d-flex gap-3 flex-grow-1">
+                    <select id="statusFilter" class="form-select" style="width: 150px;">
+                        <option value="">Select Status</option>
+                        <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                        <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
+                    </select>
+
+                    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+                        <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                        <input type="text" id="searchInput" class="form-control ps-5" placeholder="Filter by name or instructor id">
+                    </div>
+                </div>
+
+                <!-- Right side: Action Buttons -->
+                <div class="d-flex gap-2">
+                    <button type="button" 
+                            class="btn" 
+                            title="Export CSV"
+                            style="background-color: #191970; color: white;">
+                        <i class="bi bi-arrow-up-right me-2"></i>
+                        Export CSV
+                    </button>
+                    <button class="btn" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#addInstructorModal"
+                            style="background-color: #191970; color: white;">
+                        <i class="bi bi-plus-lg me-2"></i>Add New Instructor
+                    </button>
+                </div>
+            </div>
+
+            <!-- Instructor Table -->
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for instructor in instructors %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/' + instructor.profile_img) }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40">
+                                    <div>
+                                        <div class="fw-medium">{{ instructor.name }}</div>
+                                        <div class="text-muted small">{{ instructor.user_id }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">{{ instructor.role }}</td>
+                            <td class="align-middle">
+                                <span class="badge {% if instructor.status == 'Active' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">
+                                    {{ instructor.status }}
+                                </span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" onclick="handleInstructorAction('edit', '{{ instructor.user_id }}')">
+                                        <i class="bi bi-pencil" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" onclick="handleInstructorAction('view', '{{ instructor.user_id }}')">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" onclick="handleInstructorAction('archive', '{{ instructor.user_id }}')">
+                                        <i class="bi bi-archive" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="d-flex align-items-center gap-3 mt-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-body-secondary">Show rows per page:</span>
+                    <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
+                        <option value="5" {% if per_page == 5 %}selected{% endif %}>5</option>
+                        <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    </select>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button id="prevPage" 
+                            class="btn btn-sm btn-outline-secondary px-2" 
+                            {% if page == 1 %}disabled{% endif %}>
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
+                        {{ start_idx + 1 }}-{{ end_idx }} of {{ total_instructors }}
+                    </span>
+                    <button id="nextPage" 
+                            class="btn btn-sm btn-outline-secondary px-2"
+                            {% if end_idx >= total_instructors %}disabled{% endif %}>
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'components/add_instructor_modal.html' %}
+{% include 'components/page_info_modal.html' %}
+{% include 'components/view_instructor_modal.html' %}
+{% include 'components/edit_instructor_modal.html' %}
+{% include 'components/toast_notification.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Include Flatpickr for date picking -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<!-- Include instructor management JS -->
+<script src="{{ url_for('static', filename='js/pages/instructor-management.js') }}"></script>
+{% endblock %} 

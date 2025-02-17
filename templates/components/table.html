@@ -1,0 +1,51 @@
+{% macro data_table(table_id, headers, items) %}
+<div class="table-responsive">
+    <table id="{{ table_id }}" class="table">
+        <thead>
+            <tr class="bg-light">
+                {% for header in headers %}
+                <th scope="col" {% if loop.last %}class="text-end"{% endif %}>{{ header }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody id="{{ table_id }}Body">
+            {% for item in items %}
+            <tr>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                             class="rounded-circle me-3" 
+                             width="40" 
+                             height="40"
+                             alt="{{ item.name }}">
+                        <div>
+                            <div class="fw-medium">{{ item.name }}</div>
+                            <div class="text-muted small">{{ item.user_id }}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="align-middle">{{ item.role }}</td>
+                <td class="align-middle">
+                    <span class="badge {% if item.status == 'Active' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">
+                        {{ item.status }}
+                    </span>
+                </td>
+                <td class="align-middle text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button class="btn btn-link p-0" onclick="handleUserAction('edit', '{{ item.user_id }}')">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-link p-0" onclick="handleUserAction('view', '{{ item.user_id }}')">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-link p-0 text-danger" onclick="handleUserAction('delete', '{{ item.user_id }}')">
+                            <i class="bi bi-archive"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endmacro %} 

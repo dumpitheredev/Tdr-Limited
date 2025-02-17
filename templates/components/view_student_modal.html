@@ -1,0 +1,329 @@
+<!-- View Student Modal -->
+<div class="modal fade" id="viewStudentModal" tabindex="-1" aria-labelledby="viewStudentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewStudentModalLabel">Student Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Student Profile Header -->
+                    <div class="col-12 mb-4">
+                        <div class="d-flex align-items-center gap-4">
+                            <img id="studentImage" src="" alt="Student Photo" 
+                                 class="rounded-circle" style="width: 120px; height: 120px; object-fit: cover;">
+                            <div>
+                                <div class="d-flex align-items-center gap-3 mb-2">
+                                    <h2 id="studentName" class="mb-0 fw-semibold" style="color: #191970;"></h2>
+                                    <span id="studentStatus" class="badge"></span>
+                                </div>
+                                <p class="mb-1">Student ID: <span id="studentId"></span></p>
+                                <p class="mb-1">Student Company: <span id="studentCompany"></span></p>
+                                <p class="mb-0">Group: <span id="studentGroup"></span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Classes Enrolled -->
+                    <div class="col-12">
+                        <div class="card border">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Classes Enrolled</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="enrolledClasses"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance Section -->
+                    <div class="col-12 mt-4">
+                        <div class="card border">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Attendance Record</h6>
+                            </div>
+                            <div class="card-body">
+                                {% with is_student_view=True %}
+                                    {% include 'components/attendance_table.html' %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="row mt-4">
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalPresent">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalAbsence">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="attendancePercentage">0%</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .card {
+        border: 1px solid rgba(0,0,0,.125);
+        margin-bottom: 1rem;
+    }
+    
+    .card-header {
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid rgba(0,0,0,.125);
+    }
+    
+    .card-body {
+        padding: 1.25rem;
+    }
+    
+    .lecture-header {
+        color: #191970;
+        background-color: #d3d3d3;
+        min-width: 200px;
+    }
+    
+    .attendance-header {
+        min-width: 150px;
+    }
+    
+    .lecture-cell {
+        min-width: 200px;
+        background-color: #f8f9fa;
+    }
+    
+    .attendance-cell {
+        min-width: 150px;
+    }
+    
+    .attendance-badge {
+        display: block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        margin-bottom: 4px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    
+    .badge-present {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    .badge-absent {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    .badge-late {
+        background-color: #ffc107;
+        color: black;
+    }
+    
+    .attendance-time {
+        font-size: 14px;
+        color: #6c757d;
+    }
+    
+    .attendance-cell {
+        text-align: center;
+        padding: 15px !important;
+        vertical-align: middle !important;
+    }
+</style>
+
+{% macro view_student_modal() %}
+<!-- View Student Modal -->
+<div class="modal fade" id="viewStudentModal" tabindex="-1" aria-labelledby="viewStudentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewStudentModalLabel">Student Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Student Profile Header -->
+                    <div class="col-12 mb-4">
+                        <div class="d-flex align-items-center gap-4">
+                            <img id="studentImage" src="" alt="Student Photo" 
+                                 class="rounded-circle" style="width: 120px; height: 120px; object-fit: cover;">
+                            <div>
+                                <div class="d-flex align-items-center gap-3 mb-2">
+                                    <h2 id="studentName" class="mb-0 fw-semibold" style="color: #191970;"></h2>
+                                    <span id="studentStatus" class="badge"></span>
+                                </div>
+                                <p class="mb-1">Student ID: <span id="studentId"></span></p>
+                                <p class="mb-1">Student Company: <span id="studentCompany"></span></p>
+                                <p class="mb-0">Group: <span id="studentGroup"></span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Classes Enrolled -->
+                    <div class="col-12">
+                        <div class="card border">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Classes Enrolled</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="enrolledClasses"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance Section -->
+                    <div class="col-12 mt-4">
+                        <div class="card border">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Attendance Record</h6>
+                            </div>
+                            <div class="card-body">
+                                {% with is_student_view=True %}
+                                    {% include 'components/attendance_table.html' %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="row mt-4">
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalPresent">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalAbsence">0</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="attendancePercentage">0%</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .card {
+        border: 1px solid rgba(0,0,0,.125);
+        margin-bottom: 1rem;
+    }
+    
+    .card-header {
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid rgba(0,0,0,.125);
+    }
+    
+    .card-body {
+        padding: 1.25rem;
+    }
+    
+    .lecture-header {
+        color: #191970;
+        background-color: #d3d3d3;
+        min-width: 200px;
+    }
+    
+    .attendance-header {
+        min-width: 150px;
+    }
+    
+    .lecture-cell {
+        min-width: 200px;
+        background-color: #f8f9fa;
+    }
+    
+    .attendance-cell {
+        min-width: 150px;
+    }
+    
+    .attendance-badge {
+        display: block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        margin-bottom: 4px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+    
+    .badge-present {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    .badge-absent {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    .badge-late {
+        background-color: #ffc107;
+        color: black;
+    }
+    
+    .attendance-time {
+        font-size: 14px;
+        color: #6c757d;
+    }
+    
+    .attendance-cell {
+        text-align: center;
+        padding: 15px !important;
+        vertical-align: middle !important;
+    }
+</style>
+{% endmacro %} 

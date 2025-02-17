@@ -1,0 +1,46 @@
+<!-- View Instructor Modal -->
+<div class="modal fade" id="viewInstructorModal" tabindex="-1" aria-labelledby="viewInstructorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content">
+            <!-- Modal Header -->
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewInstructorModalLabel" style="color: #191970;">View Instructor Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <!-- Instructor Profile Section -->
+            <div class="modal-body">
+                <div class="row"></div>
+                <div class="col-12 mb-4">
+                    <div class="d-flex align-items-center gap-4">
+                        <img id="instructorImage" src="" alt="Instructor" 
+                        class="rounded-circle" style="width: 120px; height: 120px; object-fit: cover;"> 
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <h2 class="mb-1" id="instructorName" style="color: #191970;"></h2>
+                            <span id="instructorStatus" class="badge bg-success">Active</span>
+                        </div>
+                        <p class="mb-1">Instructor ID: <span id="instructorId"></span></p>
+                        <p class="mb-1">Department: <span id="instructorDepartment"></span></p>
+                        <p class="mb-1">Total Classes: <span id="totalClasses">0</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="col-12">
+                <!-- Classes Teaching Section -->
+                <div class="card border">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0">Classes Assigned</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="assignedClasses" class=" list-group-flush"></div>
+                    </div>
+                </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div> 

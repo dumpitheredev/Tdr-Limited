@@ -1,0 +1,226 @@
+<style>
+    .attendance-header {
+        color: #191970;
+        background-color: #d3d3d3;
+        height: 82px;
+        text-align: center;
+        vertical-align: middle;
+        padding: 15px;
+    }
+
+    .student-header {
+        color: #191970;
+        background-color: #d3d3d3;
+        height: 82px;
+        display: flex;
+        align-items: center;
+        padding-left: 15px;
+    }
+
+    .student-cell {
+        background-color: #f8f9fa;
+        height: 82px;
+        padding: 15px;
+    }
+
+    .student-name {
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+
+    .student-info {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+
+    .attendance-cell {
+        height: 82px;
+        text-align: center;
+        vertical-align: middle;
+        padding: 15px;
+    }
+
+    .attendance-badge {
+        margin-bottom: 4px;
+        display: inline-block;
+    }
+
+    .attendance-time {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+
+    .date-text {
+        font-size: 0.875rem;
+        color: #191970;
+        margin-top: 4px;
+        display: block;
+    }
+
+    .pagination-container {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 1rem 0;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .pagination-info {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+
+    .rows-per-page {
+        display: flex;
+        align-items: center;
+    }
+
+    .rows-per-page select {
+        min-width: 70px;
+    }
+
+    .pagination-arrows .btn {
+        padding: 0.25rem 0.5rem;
+    }
+
+    .pagination-arrows .btn i {
+        font-size: 0.875rem;
+    }
+</style>
+
+<div 
+    class="modal fade" 
+    id="viewClassModal" 
+    tabindex="-1" 
+    role="dialog"
+    aria-labelledby="viewClassModalLabel">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewClassModalLabel">View Class Details</h5>
+                <button type="button" 
+                        class="btn-close" 
+                        data-bs-dismiss="modal" 
+                        aria-label="Close">
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Class Details Section -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-body">
+                                <h3 id="className" class="mb-3" style="color: #191970;"></h3>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Class ID:</strong> <span id="classId"></span></p>
+                                        <p class="mb-1"><strong>Day:</strong> <span id="classDay"></span></p>
+                                        <p class="mb-1"><strong>Time:</strong> <span id="classTime"></span></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Instructor:</strong> <span id="classInstructor"></span></p>
+                                        <p class="mb-1"><strong>Instructor ID:</strong> <span id="instructorId"></span></p>
+                                        <p class="mb-1"><strong>Academic Year:</strong> <span id="academicYear"></span></p>
+                                        <p class="mb-1">
+                                            <strong>Status:</strong> 
+                                            <span id="classStatus" class="badge"></span>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Import attendance table component -->
+                {% with is_student_view=False %}
+                    {% include 'components/attendance_table.html' %}
+                {% endwith %}
+
+                <!-- Statistics Section -->
+                <div class="row mt-4">
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalPresent">7</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="totalAbsence">5</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4 col-md-6 col-sm-12">
+                        <div class="card">
+                            <div class="card-header" style="background-color: #C0C0C0;">
+                                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
+                            </div>
+                            <div class="card-body">
+                                <h2 class="mb-0" id="attendancePercentage">46.67%</h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                
+            </div>
+            <div class="modal-footer">
+                <button type="button" 
+                        class="btn btn-secondary" 
+                        data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('viewClassModal');
+    
+    // Store last focused element before modal opens
+    let lastFocusedElement;
+    
+    modal.addEventListener('show.bs.modal', function () {
+        lastFocusedElement = document.activeElement;
+    });
+    
+    // Restore focus when modal closes
+    modal.addEventListener('hidden.bs.modal', function () {
+        if (lastFocusedElement) {
+            lastFocusedElement.focus();
+        }
+    });
+    
+    // Trap focus within modal when open
+    modal.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            const focusableElements = modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            const firstFocusable = focusableElements[0];
+            const lastFocusable = focusableElements[focusableElements.length - 1];
+            
+            if (e.shiftKey) { // Shift + Tab
+                if (document.activeElement === firstFocusable) {
+                    lastFocusable.focus();
+                    e.preventDefault();
+                }
+            } else { // Tab
+                if (document.activeElement === lastFocusable) {
+                    firstFocusable.focus();
+                    e.preventDefault();
+                }
+            }
+        }
+    });
+});
+</script> 

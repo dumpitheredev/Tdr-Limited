@@ -1,0 +1,160 @@
+<!-- Add New User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 12px;">
+            <div class="modal-header border-bottom-0 px-4 pt-4 pb-0">
+                <h5 class="modal-title fw-semibold" id="addUserModalLabel" style="color: #191970;">Add New User</h5>
+                <button type="button" 
+                        class="btn-close" 
+                        data-bs-dismiss="modal" 
+                        aria-label="Close">
+                </button>
+            </div>
+            
+            <div class="modal-body px-4 pt-3">
+                <form id="addUserForm">
+                    <!-- First Name -->
+                    <div class="mb-3">
+                        <label for="firstName" class="form-label fw-medium">First Name</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="firstName" 
+                               name="firstName"
+                               required
+                               style="border-radius: 8px; border-color: #E5E7EB;">
+                    </div>
+
+                    <!-- Last Name -->
+                    <div class="mb-3">
+                        <label for="lastName" class="form-label fw-medium">Last Name</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="lastName" 
+                               name="lastName"
+                               required
+                               style="border-radius: 8px; border-color: #E5E7EB;">
+                    </div>
+
+                    <!-- Email Address -->
+                    <div class="mb-3">
+                        <label for="email" class="form-label fw-medium">Email Address</label>
+                        <input type="email" 
+                               class="form-control" 
+                               id="email" 
+                               name="email"
+                               required
+                               style="border-radius: 8px; border-color: #E5E7EB;">
+                    </div>
+
+                    <!-- Confirm Email Address -->
+                    <div class="mb-3">
+                        <label for="confirmEmail" class="form-label fw-medium">Confirm Email Address</label>
+                        <input type="email" 
+                               class="form-control" 
+                               id="confirmEmail" 
+                               name="confirmEmail"
+                               required
+                               style="border-radius: 8px; border-color: #E5E7EB;">
+                    </div>
+                    <!-- Role Selection -->
+                    <div class="mb-3">
+                        <label for="userRole" class="form-label fw-medium">Select Role</label>
+                        <select class="form-select" 
+                                id="userRole" 
+                                name="userRole" 
+                                required
+                                style="border-radius: 8px; border-color: #E5E7EB;">
+                            <option value="" selected disabled>Choose a role</option>
+                            <option value="bh">Administrator</option>
+                            <option value="ak">Instructor</option>
+                            <option value="st">Student</option>
+                        </select>
+                    </div>
+
+                    <!-- User ID -->
+                    <div class="mb-4">
+                        <label for="userId" class="form-label fw-medium">User ID</label>
+                        <input type="text" 
+                               class="form-control bg-light" 
+                               id="userId" 
+                               value="Auto-generated, please select role" 
+                               disabled
+                               style="border-radius: 8px; border-color: #E5E7EB;">
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button type="button" 
+                                class="btn btn-secondary" 
+                                data-bs-dismiss="modal"
+                                style="border-radius: 8px; padding: 8px 16px;">
+                            Cancel
+                        </button>
+                        <button type="submit" 
+                                class="btn btn-primary" 
+                                style="background-color: #191970; border-color: #191970; border-radius: 8px; padding: 8px 16px;">
+                            Create User
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add this script at the end of your user_management.html -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const roleSelect = document.getElementById('userRole');
+    const userIdField = document.getElementById('userId');
+
+    // Function to generate random numbers (2 digits)
+    function generateRandomNumbers() {
+        return Math.floor(Math.random() * 90 + 10).toString(); // generates 10-99
+    }
+
+    // Function to generate random letters (2 letters)
+    function generateRandomLetters() {
+        const letters = 'abcdefghijklmnopqrstuvwxyz';
+        return Array(2).fill(null)
+            .map(() => letters.charAt(Math.floor(Math.random() * letters.length)))
+            .join('');
+    }
+
+    // Function to generate user ID
+    function generateUserId(prefix) {
+        const numbers = generateRandomNumbers(); // 2 numbers (10-99)
+        const letters = generateRandomLetters(); // 2 random letters
+        return `${prefix}${numbers}${letters}`; // e.g., bh72zf
+    }
+
+    // Listen for role selection change
+    roleSelect.addEventListener('change', function() {
+        if (this.value) {
+            const newUserId = generateUserId(this.value);
+            userIdField.value = newUserId;
+        } else {
+            userIdField.value = 'Auto-generated';
+        }
+    });
+
+    // Form submission handler
+    const form = document.getElementById('addUserForm');
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Email validation
+        const email = document.getElementById('email').value;
+        const confirmEmail = document.getElementById('confirmEmail').value;
+        
+        if (email !== confirmEmail) {
+            alert('Email addresses do not match!');
+            return;
+        }
+
+        // Here you would typically send the data to your backend
+        console.log('Form submitted with ID:', userIdField.value);
+        // Add your API call here
+    });
+});
+</script> 

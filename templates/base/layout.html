@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TDR - {% block title %}{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body data-page="{{ active_page }}" class="bg-light">
+    <div class="wrapper">
+        {% from 'base/sidebar.html' import sidebar %}
+        {{ sidebar() }}
+    </nav>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <header class="header d-flex align-items-center sticky-top bg-white border-bottom">
+            <div class="container-fluid px-3 px-lg-4">
+                <div class="d-flex justify-content-between align-items-center py-2">
+                    <!-- Hamburger Menu for Mobile -->
+                    <button class="navbar-toggler d-lg-none me-2" 
+                            type="button" 
+                            id="sidebarToggle" 
+                            aria-label="Toggle navigation">
+                        <i class="bi bi-list fs-4"></i>
+                    </button>
+                    
+                    <!-- Left side - Title -->
+                    <div class="d-flex align-items-center">
+                        <h1 class="h4 mb-0 text-truncate fw-bold" style="color: #191970;">
+                            {% if active_page == 'dashboard' %}
+                                Dashboard
+                            {% elif active_page == 'profile' %}
+                                Profile
+                            {% elif active_page == 'user_management' %}
+                                User Management
+                            {% elif active_page == 'student_management' %}
+                                Student Management
+                            {% elif active_page == 'company_management' %}
+                                Company Management
+                            {% elif active_page == 'class_management' %}
+                                Class Management
+                            {% elif active_page == 'instructor_management' %}
+                                Instructor Management
+                            {% elif active_page == 'enrolment_management' %}
+                                Enrolment Management
+                            {% elif active_page == 'view_attendance' %}
+                                View Attendance
+                            {% elif active_page == 'mark_attendance' %}
+                                Mark Attendance
+                            {% endif %}
+                        </h1>
+                    </div>
+                    
+                    <!-- Right side - Profile and Info Icon -->
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="fw-medium" style="color: #191970;">Admin1</span>
+                        <img src="{{ url_for('static', filename='images/profile.png') }}"
+                             alt="Admin1"
+                             class="rounded-circle"
+                             width="32"
+                             height="32"
+                             style="object-fit: cover;">
+                        <button type="button" 
+                                class="info-btn btn btn-link p-1 d-flex align-items-center" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#pageInfoModal" 
+                                aria-label="Page Information">
+                            <i class="bi bi-info-circle-fill fs-5" style="color: #191970;"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <main class="p-3 p-lg-4">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Page Info Modal -->
+    <div class="modal fade" id="pageInfoModal" tabindex="-1" aria-labelledby="pageInfoModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="pageInfoModalLabel">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <span class="page-title"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="page-description mb-4"></div>
+                    <div class="features-section mb-4">
+                        <h6 class="fw-bold mb-3">Features Available</h6>
+                        <ul class="feature-list"></ul>
+                    </div>
+                    <div class="instructions-section">
+                        <h6 class="fw-bold mb-3">How to Use This Page</h6>
+                        <ul class="instruction-list"></ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap and other core scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

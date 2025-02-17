@@ -1,0 +1,121 @@
+<div class="modal fade" id="addClassModal" tabindex="-1" aria-labelledby="addClassModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addClassModalLabel">Add New Class</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addClassForm" class="needs-validation" novalidate>
+                    <!-- Class Name -->
+                    <div class="mb-3">
+                        <label for="className" class="form-label">Class Name*</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="className" 
+                               name="className" 
+                               required>
+                        <div class="invalid-feedback">
+                            Please enter class name
+                        </div>
+                    </div>
+
+                    <!-- Day of Week -->
+                    <div class="mb-3">
+                        <label for="dayOfWeek" class="form-label">Day of Week*</label>
+                        <select class="form-select" 
+                                id="dayOfWeek" 
+                                name="dayOfWeek" 
+                                required>
+                            <option value="">Select day</option>
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select a day
+                        </div>
+                    </div>
+
+                    <!-- Time -->
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label for="startTime" class="form-label">Start Time*</label>
+                            <input type="time" 
+                                   class="form-control" 
+                                   id="startTime" 
+                                   name="startTime" 
+                                   required>
+                            <div class="invalid-feedback">
+                                Please select start time
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label for="endTime" class="form-label">End Time*</label>
+                            <input type="time" 
+                                   class="form-control" 
+                                   id="endTime" 
+                                   name="endTime" 
+                                   required>
+                            <div class="invalid-feedback">
+                                Please select end time
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instructor -->
+                    <div class="mb-3">
+                        <label for="instructor" class="form-label">Instructor*</label>
+                        <select class="form-select" 
+                                id="instructor" 
+                                name="instructor" 
+                                required>
+                            <option value="">Select instructor</option>
+                            {% for instructor in instructors %}
+                            <option value="{{ instructor.user_id }}">{{ instructor.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select an instructor
+                        </div>
+                    </div>
+
+                    <!-- Academic Year -->
+                    <div class="mb-3">
+                        <label for="academicYear" class="form-label">Academic Year*</label>
+                        <select class="form-select" 
+                                id="academicYear" 
+                                name="academicYear" 
+                                required>
+                            <option value="">Select academic year</option>
+                            <option value="2023/2024">2023/2024</option>
+                            <option value="2024/2025">2024/2025</option>
+                            <option value="2025/2026">2025/2026</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select academic year
+                        </div>
+                    </div>
+
+                    <!-- Class ID (Read-only) -->
+                    <div class="mb-3">
+                        <label for="classId" class="form-label">Class ID</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="classId" 
+                               name="classId" 
+                               readonly>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="addClassForm" class="btn btn-primary" style="background-color: #191970;">Add Class</button>
+            </div>
+        </div>
+    </div>
+</div> 

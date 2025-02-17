@@ -1,0 +1,213 @@
+{% extends "base/layout.html" %}
+
+{% block title %}Student Management{% endblock %}
+
+{% block header_title %}Student Management{% endblock %}
+
+{% block content %}
+
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Total Students</h6>
+                            <h2 class="mb-0" data-count="total">0</h2>
+                        </div>
+                        <div class="p-2 bg-primary-subtle rounded">
+                            <i class="bi bi-people" style="color: #191970;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Active Students</h6>
+                            <h2 class="mb-0" data-count="active">0</h2>
+                        </div>
+                        <div class="p-2 bg-success-subtle rounded">
+                            <i class="bi bi-person-check" style="color: #198754;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Completed Students</h6>
+                            <h2 class="mb-0" data-count="completed">0</h2>
+                        </div>
+                        <div class="p-2 bg-info-subtle rounded">
+                            <i class="bi bi-mortarboard" style="color: #0dcaf0;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Inactive Students</h6>
+                            <h2 class="mb-0" data-count="inactive">0</h2>
+                        </div>
+                        <div class="p-2 bg-danger-subtle rounded">
+                            <i class="bi bi-person-x" style="color: #dc3545;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Student Table and other content -->
+        <div class="col-12">
+            <!-- Controls Row -->
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <!-- Left side: Status Filter and Search -->
+                <div class="d-flex gap-3 flex-grow-1">
+                    <select id="statusFilter" class="form-select" style="width: 150px;">
+                        <option value="">Select Status</option>
+                        <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                        <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
+                        <option value="Completed" {% if status_filter == 'Completed' %}selected{% endif %}>Completed</option>
+                    </select>
+
+
+                    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+                        <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                        <input type="text" id="searchInput" class="form-control ps-5" placeholder="Filter by name or student id">
+                    </div>
+                </div>
+
+                <!-- Right side: Action Buttons -->
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('export_students_csv') }}?status={{ status_filter }}&search={{ search_term }}" 
+                    class="btn"
+                    id="exportCSV"
+                    style="background-color: #191970; color: white;">
+                        <i class="bi bi-arrow-up-right me-2"></i>Export CSV
+                    </a>
+                    <button class="btn" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#addStudentModal"
+                            style="background-color: #191970; color: white;">
+                        <i class="bi bi-plus-lg me-2"></i>Add New Student
+                    </button>
+                </div>
+            </div>
+
+            <!-- Student Table -->
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Role</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for student in students %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/' + student.profile_img) }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="{{ student.name }}">
+                                    <div>
+                                        <div class="fw-medium">{{ student.name }}</div>
+                                        <div class="text-muted small">{{ student.user_id }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">{{ student.role }}</td>
+                            <td class="align-middle">
+                                <span class="badge {% if student.status == 'Active' %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">
+                                    {{ student.status }}
+                                </span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" onclick="handleStudentAction('edit', '{{ student.user_id }}')">
+                                        <i class="bi bi-pencil" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" onclick="handleStudentAction('view', '{{ student.user_id }}')">
+
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0 text-danger" onclick="handleStudentAction('archive', '{{ student.user_id }}')">
+                                        <i class="bi bi-archive" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="d-flex align-items-center gap-3 mt-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-body-secondary">Show rows per page:</span>
+                    <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
+                        <option value="5" {% if per_page == 5 %}selected{% endif %}>5</option>
+                        <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    </select>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button id="prevPage" 
+                            class="btn btn-sm btn-outline-secondary px-2" 
+                            {% if page == 1 %}disabled{% endif %}>
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
+                        {{ start_idx }}-{{ end_idx }} of {{ total_students }}
+                    </span>
+                    <button id="nextPage" 
+                            class="btn btn-sm btn-outline-secondary px-2"
+                            {% if end_idx >= total_students %}disabled{% endif %}>
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'components/add_student_modal.html' %}
+{% include 'components/view_student_modal.html' %}
+{% include 'components/edit_student_modal.html' %}
+{% include 'components/toast_notification.html' %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    var currentPage = "{{ page }}";
+    var currentStatus = "{{ status_filter }}";
+    var currentPerPage = "{{ per_page }}";
+</script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/student-management.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Title -->
+    <div class="mb-4">
+        <h2 class="h5 mb-1">Profile Settings</h2>
+    </div>
+
+    <div class="row g-4">
+        <!-- Profile Information Card -->
+        <div class="col-md-6">
+            <div class="card management-card h-100 border-0 bg-light-purple">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-4">Personal Information</h3>
+                    <form>
+                        <div class="mb-3">
+                            <label for="fullName" class="form-label">Full Name</label>
+                            <input type="text" class="form-control" id="fullName" value="Admin1">
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" value="admin1@1234.com">
+                        </div>
+                        <div class="mb-3">
+                            <label for="role" class="form-label">Role</label>
+                            <input type="text" class="form-control" id="role" value="Administrator" readonly>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Password Change Card -->
+        <div class="col-md-6">
+            <div class="card management-card h-100 border-0 bg-light-pink">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-4">Change Password</h3>
+                    <form>
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Password</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Picture Card -->
+        <div class="col-md-6">
+            <div class="card management-card h-100 border-0 bg-light-blue">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-4">Profile Picture</h3>
+                    <div class="text-center">
+                        <img src="{{ url_for('static', filename='images/profile.png') }}"
+                             alt="Profile Picture"
+                             class="rounded-circle mb-3"
+                             width="120"
+                             height="120">
+                        <div>
+                            <input type="file" class="form-control mb-3" id="profilePicture" accept="image/*">
+                            <button type="button" class="btn btn-primary">Update Picture</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+.toast-container {
+    z-index: 1056; /* Above modals */
+}
+
+.toast {
+    background-color: white;
+    border-left: 4px solid;
+}
+
+.toast.success {
+    border-left-color: #198754;
+}
+
+.toast.error {
+    border-left-color: #dc3545;
+}
+
+.toast-header {
+    background-color: transparent;
+    border-bottom: 1px solid rgba(0,0,0,.05);
+}
+
+.toast-body {
+    padding: 0.75rem 1rem;
+} 

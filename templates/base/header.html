@@ -1,0 +1,60 @@
+<header class="header d-flex align-items-center sticky-top bg-white border-bottom">
+    <div class="container-fluid px-3 px-lg-4">
+        <div class="d-flex justify-content-between align-items-center py-2">
+            <!-- Hamburger Menu for Mobile -->
+            <button class="navbar-toggler d-lg-none me-2" 
+                    type="button" 
+                    id="sidebarToggle" 
+                    aria-label="Toggle navigation">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+            
+            <!-- Left side - Title -->
+            <div class="d-flex align-items-center">
+                <h1 class="h4 mb-0 text-truncate fw-bold" style="color: #191970;">
+                    {% if active_page == 'dashboard' %}
+                        Dashboard
+                    {% elif active_page == 'profile' %}
+                        Profile
+                    {% elif active_page == 'user_management' %}
+                        User Management
+                    {% elif active_page == 'student_management' %}
+                        Student Management
+                    {% elif active_page == 'company_management' %}
+                        Company Management
+                    {% elif active_page == 'class_management' %}
+                        Class Management
+                    {% elif active_page == 'instructor_management' %}
+                        Instructor Management
+                    {% elif active_page == 'enrolment_management' %}
+                        Enrolment Management
+                    {% elif active_page == 'view_attendance' %}
+                        View Attendance
+                    {% elif active_page == 'mark_attendance' %}
+                        Mark Attendance
+                    {% else %}
+                        TDR System
+                    {% endif %}
+                </h1>
+            </div>
+            
+            <!-- Right side - Profile and Info Icon -->
+            <div class="d-flex align-items-center gap-3">
+                <span class="fw-medium" style="color: #191970;">Admin1</span>
+                <img src="{{ url_for('static', filename='images/profile.png') }}"
+                     alt="Admin1"
+                     class="rounded-circle"
+                     width="32"
+                     height="32"
+                     style="object-fit: cover;">
+                <button type="button" 
+                        class="info-btn btn btn-link p-1 d-flex align-items-center" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#pageInfoModal" 
+                        aria-label="Page Information">
+                    <i class="bi bi-info-circle-fill fs-5" style="color: #191970;"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</header>
