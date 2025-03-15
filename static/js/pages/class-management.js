@@ -10,7 +10,7 @@ let currentPageState = {
 
 let currentEditingClass = null;
 
-// Add this function at the global scope (outside DOMContentLoaded)
+// Function to export classes to CSV
 function exportClassesCSV() {
     // Create a temporary link element
     const link = document.createElement('a');
@@ -34,25 +34,14 @@ function exportClassesCSV() {
     document.body.removeChild(link);
 }
 
-// Add console logs to debug data loading
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('DOM Content Loaded');
+    console.log('DOM Content Loaded - Class Management');
     try {
-        const response = await fetch('/api/classes');
-        console.log('API Response:', response);
+        // Initialize toast notification
+        initializeToasts();
         
-        if (!response.ok) throw new Error('Failed to fetch classes');
-        const data = await response.json();
-        console.log('Fetched Data:', data);
-        
-        currentPageState.currentData = data || [];
-        currentPageState.totalItems = currentPageState.currentData.length;
-        
-        // Update status cards when data is loaded
-        updateStatusCards(currentPageState.currentData);
-        
-        // Update table
-        updateTable();
+        // Fetch class data
+        await fetchAndUpdateData();
         
         // Add event listeners for search
         const searchInput = document.getElementById('searchInput');
@@ -100,12 +89,51 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         });
 
+        // Add event listener for add class form submission
+        const addClassForm = document.getElementById('addClassForm');
+        if (addClassForm) {
+            addClassForm.addEventListener('submit', handleAddClass);
+        }
+
+        // Add event listener for edit class form submission
+        const editClassForm = document.getElementById('editClassForm');
+        if (editClassForm) {
+            editClassForm.addEventListener('submit', handleEditClass);
+        }
+
     } catch (error) {
         console.error('Error initializing class data:', error);
         showToast('Error', 'Failed to load classes', 'error');
     }
 });
 
+// Function to fetch and update data
+async function fetchAndUpdateData() {
+    try {
+        const response = await fetch('/api/classes');
+        
+        if (!response.ok) throw new Error('Failed to fetch classes');
+        const data = await response.json();
+        
+        currentPageState.currentData = data || [];
+        currentPageState.totalItems = currentPageState.currentData.length;
+        
+        // Update status cards when data is loaded
+        updateStatusCards(currentPageState.currentData);
+        
+        // Update table
+        updateTable();
+        
+        return data;
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        showToast('Error', 'Failed to load classes', 'error');
+        currentPageState.currentData = [];
+        return [];
+    }
+}
+
+// Function to update the table with current data
 function updateTable() {
     try {
         let filteredData = Array.isArray(currentPageState.currentData) ? [...currentPageState.currentData] : [];
@@ -124,6 +152,9 @@ function updateTable() {
             );
         }
 
+        // Update total items count for pagination
+        currentPageState.totalItems = filteredData.length;
+
         const startIndex = (currentPageState.page - 1) * currentPageState.perPage;
         const endIndex = Math.min(startIndex + currentPageState.perPage, filteredData.length);
         const paginatedData = filteredData.slice(startIndex, endIndex);
@@ -133,7 +164,12 @@ function updateTable() {
             if (paginatedData.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="text-center">No classes found</td>
+                        <td colspan="7" class="text-center py-4">
+                            <div class="d-flex flex-column align-items-center">
+                                <i class="bi bi-search fs-1 text-muted mb-2"></i>
+                                <p class="text-muted mb-0">No classes found</p>
+                            </div>
+                        </td>
                     </tr>`;
             } else {
                 tbody.innerHTML = paginatedData.map(classItem => `
@@ -144,26 +180,36 @@ function updateTable() {
                         </td>
                         <td>${classItem.day}</td>
                         <td>${classItem.time}</td>
-                        <td>${classItem.instructor}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="fw-medium">${classItem.instructor}</div>
+                            </div>
+                        </td>
                         <td>${classItem.year}</td>
                         <td>
-                            <span class="badge ${
-                                classItem.status === 'Active' ? 'bg-success-subtle text-success' : 
-                                classItem.status === 'Completed' ? 'bg-info-subtle text-info' :
-                                'bg-danger-subtle text-danger'
-                            }">
+                            <span class="badge ${getStatusBadgeClass(classItem.status)}">
                                 ${classItem.status}
                             </span>
                         </td>
-                        <td class="text-end">
-                            <div class="d-flex gap-2 justify-content-end">
-                                <button class="btn btn-link p-0" onclick="handleClassAction('edit', '${classItem.class_id}')">
-                                    <i class="bi bi-pencil" style="color: #191970;"></i>
-                                </button>
-                                <button class="btn btn-link p-0" data-bs-toggle="modal" data-bs-target="#viewClassModal" onclick="handleClassAction('view', '${classItem.class_id}')">
+                        <td class="text-center">
+                            <div class="d-flex gap-2 justify-content-center">
+                                <button class="btn btn-link p-0" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#viewClassModal" 
+                                        onclick="handleClassAction('view', '${classItem.class_id}')"
+                                        title="View details">
                                     <i class="bi bi-eye" style="color: #191970;"></i>
                                 </button>
-                                <button class="btn btn-link p-0" onclick="handleClassAction('delete', '${classItem.class_id}')">
+                                <button class="btn btn-link p-0" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#editClassModal" 
+                                        onclick="handleClassAction('edit', '${classItem.class_id}')"
+                                        title="Edit class">
+                                    <i class="bi bi-pencil" style="color: #191970;"></i>
+                                </button>
+                                <button class="btn btn-link p-0" 
+                                        onclick="handleClassAction('archive', '${classItem.class_id}')"
+                                        title="Archive class">
                                     <i class="bi bi-archive" style="color: #191970;"></i>
                                 </button>
                             </div>
@@ -178,7 +224,7 @@ function updateTable() {
         if (paginationInfo) {
             paginationInfo.textContent = filteredData.length > 0 ? 
                 `${startIndex + 1}-${endIndex} of ${filteredData.length}` :
-                'No classes found';
+                '0-0 of 0';
         }
 
         // Update pagination buttons
@@ -193,34 +239,55 @@ function updateTable() {
     }
 }
 
-// Function to update statistics
-function updateStats(stats) {
-    const totalElement = document.querySelector('.total-classes');
-    const activeElement = document.querySelector('.active-classes');
-    const inactiveElement = document.querySelector('.inactive-classes');
-
-    if (totalElement) totalElement.textContent = stats.total_classes;
-    if (activeElement) activeElement.textContent = stats.active_classes;
-    if (inactiveElement) inactiveElement.textContent = stats.inactive_classes;
-}
-
-// Function to fetch and update data
-async function fetchAndUpdateData() {
+// Function to update status cards
+function updateStatusCards(data) {
     try {
-        const response = await fetch('/class-management-data');
-        const data = await response.json();
-        console.log('Fetched data from server:', data);
-        currentPageState.currentData = data;
-        updateTable(data);
-        return data;
+        if (!Array.isArray(data)) {
+            console.error('Invalid data format for status cards');
+            return;
+        }
+        
+        const totalClasses = data.length;
+        const activeClasses = data.filter(c => c.status === 'Active').length;
+        const completedClasses = data.filter(c => c.status === 'Completed').length;
+        const inactiveClasses = data.filter(c => c.status === 'Inactive').length;
+        
+        // Update the count elements
+        document.querySelector('[data-count="total"]').textContent = totalClasses;
+        document.querySelector('[data-count="active"]').textContent = activeClasses;
+        document.querySelector('[data-count="completed"]').textContent = completedClasses;
+        document.querySelector('[data-count="inactive"]').textContent = inactiveClasses;
     } catch (error) {
-        console.error('Error fetching data:', error);
-        currentPageState.currentData = [];
-        return [];
+        console.error('Error updating status cards:', error);
     }
 }
 
-// Show toast function
+// Function to get badge class based on status
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'Active':
+            return 'bg-success-subtle text-success';
+        case 'Inactive':
+            return 'bg-danger-subtle text-danger';
+        case 'Completed':
+            return 'bg-info-subtle text-info';
+        default:
+            return 'bg-secondary-subtle text-secondary';
+    }
+}
+
+// Initialize toast notifications
+function initializeToasts() {
+    const toastElList = [].slice.call(document.querySelectorAll('.toast'));
+    toastElList.map(function(toastEl) {
+        return new bootstrap.Toast(toastEl, {
+            autohide: true,
+            delay: 5000
+        });
+    });
+}
+
+// Show toast notification
 function showToast(title, message, type = 'success') {
     const toast = document.getElementById('statusToast');
     const toastTitle = document.getElementById('toastTitle');
@@ -230,499 +297,244 @@ function showToast(title, message, type = 'success') {
     toastTitle.textContent = title;
     toastMessage.textContent = message;
     
+    // Update icon based on type
+    if (iconElement) {
     iconElement.className = type === 'success' 
         ? 'bi bi-check-circle-fill text-success me-2'
         : 'bi bi-exclamation-circle-fill text-danger me-2';
+    }
     
-    const bsToast = new bootstrap.Toast(toast, {
-        delay: 3000
-    });
+    const bsToast = new bootstrap.Toast(toast);
     bsToast.show();
 }
 
-// Handle class actions
+// Handle class actions (view, edit, archive)
 window.handleClassAction = async function(action, classId) {
-    switch(action) {
-        case 'edit':
             try {
+        // Fetch class details
                 const response = await fetch(`/api/classes/${classId}`);
                 if (!response.ok) throw new Error('Failed to fetch class details');
                 const classData = await response.json();
                 
+        switch(action) {
+            case 'view':
+                populateViewClassModal(classData);
+                break;
+                
+            case 'edit':
+                populateEditClassModal(classData);
                 currentEditingClass = classData;
+                break;
                 
-                const statusSelect = document.getElementById('classStatusSelect');
-                statusSelect.value = classData.status;
+            case 'archive':
+                confirmArchiveClass(classData);
+                break;
                 
-                const editModal = new bootstrap.Modal(document.getElementById('editClassModal'));
-                editModal.show();
+            default:
+                console.error('Unknown action:', action);
+        }
             } catch (error) {
-                console.error('Error editing class:', error);
-                showToast('Error', 'Failed to load class details', 'error');
-            }
-            break;
-            
-        case 'view':
-            const modalElement = document.getElementById('viewClassModal');
-            if (!modalElement) {
-                console.error('Modal element not found');
-                return;
-            }
-
-            let viewModal = bootstrap.Modal.getInstance(modalElement);
-            if (!viewModal) {
-                viewModal = new bootstrap.Modal(modalElement);
-            }
-
-            // Initialize pagination state
-            const paginationState = {
-                currentPage: 1,
-                rowsPerPage: 5,
-                totalStudents: 0
-            };
-
-            fetch(`/class-management-data`)
-                .then(response => response.json())
-                .then(classes => {
-                    const classDetails = classes.find(c => c.class_id === classId);
-                    if (!classDetails) {
-                        console.error('Class not found');
-                        return;
-                    }
-
-                    // Update modal content with class details
-                    document.getElementById('className').textContent = classDetails.name;
-                    document.getElementById('classId').textContent = classDetails.class_id;
-                    document.getElementById('classDay').textContent = classDetails.day;
-                    document.getElementById('classTime').textContent = classDetails.time;
-                    document.getElementById('classInstructor').textContent = classDetails.instructor;
-                    document.getElementById('instructorId').textContent = classDetails.instructor_id;
-                    document.getElementById('academicYear').textContent = classDetails.year;
-
-                    // Update status badge
-                    const statusBadge = document.getElementById('classStatus');
-                    if (statusBadge) {
-                        statusBadge.textContent = classDetails.status;
-                        statusBadge.className = `badge ${classDetails.status === 'Active' ? 
-                            'bg-success' : 'bg-danger'}`;
-                    }
-
-                    fetch('/api/students')
-                        .then(response => response.json())
-                        .then(data => {
-                            const students = data.filter(user => user.role === 'Student');
-                            paginationState.totalStudents = students.length;
-
-                            // Function to update table data
-                            function updateTableData() {
-                                const start = (paginationState.currentPage - 1) * paginationState.rowsPerPage;
-                                const end = start + paginationState.rowsPerPage;
-                                const paginatedStudents = students.slice(start, end);
-
-                                // Update student names column
-                                const studentNameColumn = document.getElementById('studentNameColumn');
-                                if (studentNameColumn) {
-                                    studentNameColumn.innerHTML = paginatedStudents.map(student => `
-                                        <tr>
-                                            <td class="student-cell">
-                                                <div class="student-name">${student.name}</div>
-                                                <div class="student-info">Student ID: ${student.user_id}</div>
-                                            </td>
-                                        </tr>
-                                    `).join('');
-                                }
-
-                                // Update attendance data
-                                const attendanceTableBody = document.getElementById('attendanceTableBody');
-                                if (attendanceTableBody) {
-                                    attendanceTableBody.innerHTML = paginatedStudents.map(student => `
-                                        <tr>${generateAttendanceCells()}</tr>
-                                    `).join('');
-                                }
-
-                                // Update pagination info
-                                const totalPages = Math.ceil(paginationState.totalStudents / paginationState.rowsPerPage);
-                                const startRange = start + 1;
-                                const endRange = Math.min(end, paginationState.totalStudents);
-                                document.getElementById('modalPageInfo').textContent = 
-                                    `${startRange}-${endRange} of ${paginationState.totalStudents}`;
-
-                                // Update button states
-                                document.getElementById('modalPrevPage').disabled = paginationState.currentPage === 1;
-                                document.getElementById('modalNextPage').disabled = paginationState.currentPage === totalPages;
-                            }
-
-                            // Initialize pagination controls
-                            document.getElementById('modalRowsPerPage').addEventListener('change', function(e) {
-                                paginationState.rowsPerPage = parseInt(e.target.value);
-                                paginationState.currentPage = 1;
-                                updateTableData();
-                            });
-
-                            document.getElementById('modalPrevPage').addEventListener('click', function() {
-                                if (paginationState.currentPage > 1) {
-                                    paginationState.currentPage--;
-                                    updateTableData();
-                                }
-                            });
-
-                            document.getElementById('modalNextPage').addEventListener('click', function() {
-                                const totalPages = Math.ceil(paginationState.totalStudents / paginationState.rowsPerPage);
-                                if (paginationState.currentPage < totalPages) {
-                                    paginationState.currentPage++;
-                                    updateTableData();
-                                }
-                            });
-
-                            // Initial table update
-                            updateTableData();
-                        })
-                        .catch(error => {
-                            console.error('Error fetching students:', error);
-                        });
-
-                    viewModal.show();
-                })
-                .catch(error => {
-                    console.error('Error fetching class details:', error);
-                });
-            break;
-
-        case 'delete':
-            console.log('Archive class:', classId);
-            break;
+        console.error(`Error handling ${action} action:`, error);
+        showToast('Error', `Failed to ${action} class`, 'error');
     }
 };
 
-// Save class status
-window.saveClassStatus = async function() {
-    if (!currentEditingClass) return;
+// Populate view class modal
+function populateViewClassModal(classData) {
+    const modal = document.getElementById('viewClassModal');
+    if (!modal) return;
     
-    try {
-        const newStatus = document.getElementById('classStatusSelect').value;
+    // Set class details
+    modal.querySelector('#viewClassName').textContent = classData.name;
+    modal.querySelector('#viewClassId').textContent = classData.class_id;
+    modal.querySelector('#viewClassDay').textContent = classData.day;
+    modal.querySelector('#viewClassTime').textContent = classData.time;
+    modal.querySelector('#viewClassInstructor').textContent = classData.instructor;
+    modal.querySelector('#viewClassYear').textContent = classData.year;
+    
+    // Set status badge
+    const statusBadge = modal.querySelector('#viewClassStatus');
+    statusBadge.className = `badge ${getStatusBadgeClass(classData.status)}`;
+    statusBadge.textContent = classData.status;
+}
+
+// Populate edit class modal
+function populateEditClassModal(classData) {
+    const modal = document.getElementById('editClassModal');
+    if (!modal) return;
+    
+    // Set form values
+    modal.querySelector('#editClassId').value = classData.class_id;
+    modal.querySelector('#editClassName').value = classData.name;
+    modal.querySelector('#editClassDay').value = classData.day;
+    
+    // Parse time for start and end time fields
+    const timeRange = classData.time.split(' - ');
+    if (timeRange.length === 2) {
+        modal.querySelector('#editClassStartTime').value = timeRange[0];
+        modal.querySelector('#editClassEndTime').value = timeRange[1];
+    }
+    
+    // Set instructor and year
+    modal.querySelector('#editClassInstructor').value = classData.instructor_id;
+    modal.querySelector('#editClassYear').value = classData.year;
+    modal.querySelector('#editClassStatus').value = classData.status;
+}
+
+// Confirm archive class
+function confirmArchiveClass(classData) {
+    // Get the modal elements
+    const modal = document.getElementById('archiveClassModal');
+    const archiveClassName = document.getElementById('archiveClassName');
+    const archiveClassId = document.getElementById('archiveClassId');
+    const archiveClassIdInput = document.getElementById('archiveClassIdInput');
+    
+    // Set the class details in the modal
+    archiveClassName.textContent = classData.name;
+    archiveClassId.textContent = classData.class_id;
+    archiveClassIdInput.value = classData.class_id;
+    
+    // Clear previous values
+    document.getElementById('archiveReason').value = '';
+    document.getElementById('archiveComment').value = '';
+    
+    // Initialize the modal
+    const archiveModal = new bootstrap.Modal(modal);
+    archiveModal.show();
+    
+    // Set up the confirm button event handler
+    document.getElementById('confirmArchiveClassBtn').onclick = function() {
+        const reason = document.getElementById('archiveReason').value;
+        const comment = document.getElementById('archiveComment').value;
         
-        const response = await fetch(`/api/classes/${currentEditingClass.class_id}/status`, {
+        // Validate that a reason is selected
+        if (!reason) {
+            showToast('Error', 'Please select a reason for archiving', 'error');
+            return;
+        }
+        
+        // Combine reason and comment
+        const archiveNote = comment ? `${reason}: ${comment}` : reason;
+        
+        // Update class status with the archive note
+        updateClassStatus(classData.class_id, 'Inactive', archiveNote);
+        
+        // Hide the modal
+        archiveModal.hide();
+    };
+}
+
+// Update class status
+async function updateClassStatus(classId, newStatus, archiveNote = '') {
+    try {
+        const response = await fetch(`/api/classes/${classId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ status: newStatus })
+            body: JSON.stringify({ 
+                status: newStatus,
+                archiveNote: archiveNote
+            }),
         });
 
         if (!response.ok) throw new Error('Failed to update class status');
 
-        // Update local data safely
-        if (Array.isArray(currentPageState.currentData)) {
-            currentPageState.currentData = currentPageState.currentData.map(classItem => {
-                if (classItem.class_id === currentEditingClass.class_id) {
-                    return { ...classItem, status: newStatus };
-                }
-                return classItem;
-            });
-        }
-
-        // Close modal
-        const editModal = bootstrap.Modal.getInstance(document.getElementById('editClassModal'));
-        if (editModal) {
-            editModal.hide();
-        }
-
-        // Update both table and status cards
-        updateTable();
-        updateStatusCards(currentPageState.currentData);
-
-        // Show success toast
-        showToast('Success', 'Class status updated successfully', 'success');
-
+        // Refresh data
+        await fetchAndUpdateData();
+        
+        showToast('Success', `Class status updated to ${newStatus}`, 'success');
     } catch (error) {
-        console.error('Error saving class status:', error);
+        console.error('Error updating class status:', error);
         showToast('Error', 'Failed to update class status', 'error');
     }
-};
-
-// Helper function to generate attendance cells
-function generateAttendanceCells() {
-    // Include 'Late' status in the possible statuses
-    const statuses = ['Present', 'Late', 'Absent', 'Present', 'Present'];
-    return statuses.map(status => {
-        let badgeClass;
-        switch(status) {
-            case 'Present':
-                badgeClass = 'bg-success-subtle text-success';
-                break;
-            case 'Late':
-                badgeClass = 'bg-warning-subtle text-warning';
-                break;
-            case 'Absent':
-                badgeClass = 'bg-danger-subtle text-danger';
-                break;
-        }
-        
-        // Show time for both Present and Late statuses
-        const timeDisplay = (status === 'Present' || status === 'Late') ? 
-            `<div class="attendance-time">${status === 'Late' ? '09:15 AM' : '09:00 AM'}</div>` : 
-            '';
-        
-        return `
-            <td class="attendance-cell">
-                <div class="attendance-content">
-                    <span class="badge ${badgeClass} attendance-badge">${status}</span>
-                    ${timeDisplay}
-                </div>
-            </td>
-        `;
-    }).join('');
 }
 
-// Function to generate class ID
-function generateClassId() {
-    const prefix = 'kl';
-    const numbers = '0123456789';
-    const letters = 'abcdefghijklmnopqrstuvwxyz';
-    let id = prefix;
+// Handle add class form submission
+async function handleAddClass(event) {
+    event.preventDefault();
     
-    // Add 2 random numbers
-    for (let i = 0; i < 2; i++) {
-        id += numbers.charAt(Math.floor(Math.random() * numbers.length));
-    }
-    
-    // Add 2 random letters
-    for (let i = 0; i < 2; i++) {
-        id += letters.charAt(Math.floor(Math.random() * letters.length));
-    }
-    
-    return id;
-}
-
-// Initialize add class modal functionality
-const addClassModal = document.getElementById('addClassModal');
-const addClassForm = document.getElementById('addClassForm');
-const classIdInput = document.getElementById('classId');
-
-if (addClassModal) {
-    addClassModal.addEventListener('show.bs.modal', function() {
-        classIdInput.value = generateClassId();
-    });
-}
-
-if (addClassForm) {
-    addClassForm.addEventListener('submit', function(event) {
-        event.preventDefault();
-        
-        // Check form validity
-        if (!this.checkValidity()) {
-            event.stopPropagation();
-            this.classList.add('was-validated');
-            return;
-        }
-
-        // Validate time range
-        const startTime = document.getElementById('startTime').value;
-        const endTime = document.getElementById('endTime').value;
-        if (startTime >= endTime) {
-            alert('End time must be after start time');
-            return;
-        }
-
-        // Collect form data
-        const formData = {
-            class_id: classIdInput.value,
-            name: document.getElementById('className').value,
-            day: document.getElementById('dayOfWeek').value,
-            time: `${startTime} - ${endTime}`,
-            instructor: document.getElementById('instructor').value,
-            year: document.getElementById('academicYear').value,
-            status: 'Active' // Default status for new classes
-        };
-
-        // TODO: Send data to server
-        console.log('Form submitted:', formData);
-        
-        // Close modal and reset form
-        const modal = bootstrap.Modal.getInstance(addClassModal);
-        modal.hide();
-        this.reset();
-        this.classList.remove('was-validated');
-        
-        // Refresh table data
-        fetchAndUpdateData();
-    });
-}
-
-// Update the showClassDetails function to handle split view
-window.showClassDetails = async function(classId) {
     try {
-        // Find the class details from the current data
-        const classItem = currentPageState.currentData.find(item => item.class_id === classId);
+        const form = event.target;
+        const formData = new FormData(form);
         
-        if (!classItem) {
-            console.error('Class not found:', classId);
-            return;
-        }
-
-        // Update class details section
-        document.getElementById('className').textContent = classItem.name;
-        document.getElementById('classId').textContent = classItem.class_id;
-        document.getElementById('classDay').textContent = classItem.day;
-        document.getElementById('classTime').textContent = classItem.time;
-        document.getElementById('classInstructor').textContent = classItem.instructor;
-        document.getElementById('instructorId').textContent = classItem.instructor_id;
-        document.getElementById('academicYear').textContent = classItem.year;
+        // Create class object from form data
+        const classData = {
+            name: formData.get('className'),
+            day: formData.get('classDay'),
+            time: `${formData.get('classStartTime')} - ${formData.get('classEndTime')}`,
+            instructor_id: formData.get('classInstructor'),
+            year: formData.get('classYear'),
+            status: 'Active'
+        };
         
-        // Update status badge
-        const statusBadge = document.getElementById('classStatus');
-        statusBadge.textContent = classItem.status;
-        statusBadge.className = `badge ${classItem.status === 'Active' ? 
-            'bg-success-subtle text-success' : 
-            'bg-danger-subtle text-danger'}`;
-
-        // Mock attendance data for this class
-        const attendanceData = [
-            {
-                name: 'Miracle Apalowo',
-                studentId: 'bh72zf',
-                attendance: [
-                    { status: 'Late', time: '8:15 AM' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Late', time: '8:20 AM' }
-                ],
-                hoursPercentage: '6.0/100%'
-            },
-            {
-                name: 'Harry Maguire',
-                studentId: 'bh75tj',
-                attendance: [
-                    { status: 'Absent', time: '-' },
-                    { status: 'Absent', time: '-' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Late', time: '8:30 AM' }
-                ],
-                hoursPercentage: '4.5/100%'
-            },
-            {
-                name: 'Mark Benson',
-                studentId: 'bh92ks',
-                attendance: [
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Present', time: '8:00 AM' },
-                    { status: 'Absent', time: '-' },
-                    { status: 'Absent', time: '-' },
-                    { status: 'Absent', time: '-' }
-                ],
-                hoursPercentage: '3.0/100%'
-            }
-        ];
-
-        // Update student names column
-        const studentNameColumn = document.getElementById('studentNameColumn');
-        studentNameColumn.innerHTML = attendanceData.map(student => `
-            <tr>
-                <td class="student-cell">
-                    <div class="student-name">${student.name}</div>
-                    <div class="student-info">${student.studentId}</div>
-                    <div class="student-info">${student.hoursPercentage}</div>
-                </td>
-            </tr>
-        `).join('');
-
-        // Update attendance table body
-        const tbody = document.getElementById('attendanceTableBody');
-        tbody.innerHTML = attendanceData.map(student => `
-            <tr>
-                ${student.attendance.map(day => `
-                    <td class="attendance-cell">
-                        <div class="attendance-badge">
-                            <span class="badge ${getStatusBadgeClass(day.status)}">
-                                ${day.status}
-                            </span>
-                        </div>
-                        <div class="attendance-time">
-                            ${day.time}
-                        </div>
-                    </td>
-                `).join('')}
-            </tr>
-        `).join('');
-
-        // Calculate and update statistics
-        const totalPresent = attendanceData.reduce((sum, student) => 
-            sum + student.attendance.filter(day => day.status === 'Present').length, 0);
+        // In a real application, you would send this to the server
+        console.log('Adding new class:', classData);
         
-        const totalAbsent = attendanceData.reduce((sum, student) => 
-            sum + student.attendance.filter(day => day.status === 'Absent').length, 0);
+        // Simulate API call
+        setTimeout(async () => {
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addClassModal'));
+        modal.hide();
+            
+            // Reset form
+            form.reset();
+            
+            // Refresh data
+            await fetchAndUpdateData();
+            
+            showToast('Success', 'Class added successfully', 'success');
+        }, 1000);
         
-        const totalAttendances = attendanceData.length * 5; // 5 days
-        const attendancePercentage = ((totalPresent / totalAttendances) * 100).toFixed(2);
+    } catch (error) {
+        console.error('Error adding class:', error);
+        showToast('Error', 'Failed to add class', 'error');
+    }
+}
 
-        document.getElementById('totalPresent').textContent = totalPresent;
-        document.getElementById('totalAbsence').textContent = totalAbsent;
-        document.getElementById('attendancePercentage').textContent = `${attendancePercentage}%`;
-
-        // Show modal
-        const modal = new bootstrap.Modal(document.getElementById('viewClassModal'));
-        modal.show();
+// Handle edit class form submission
+async function handleEditClass(event) {
+    event.preventDefault();
+    
+    try {
+        const form = event.target;
+        const formData = new FormData(form);
+        
+        // Create updated class object
+        const updatedClass = {
+            class_id: formData.get('editClassId'),
+            name: formData.get('editClassName'),
+            day: formData.get('editClassDay'),
+            time: `${formData.get('editClassStartTime')} - ${formData.get('editClassEndTime')}`,
+            instructor_id: formData.get('editClassInstructor'),
+            year: formData.get('editClassYear'),
+            status: formData.get('editClassStatus')
+        };
+        
+        // In a real application, you would send this to the server
+        console.log('Updating class:', updatedClass);
+        
+        // Simulate API call
+        setTimeout(async () => {
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editClassModal'));
+            modal.hide();
+            
+            // Refresh data
+            await fetchAndUpdateData();
+            
+            showToast('Success', 'Class updated successfully', 'success');
+        }, 1000);
 
     } catch (error) {
-        console.error('Error showing class details:', error);
-    }
-};
-
-// Update the badge classes to match the image
-function getStatusBadgeClass(status) {
-    switch(status) {
-        case 'Present':
-            return 'bg-success text-white';
-        case 'Absent':
-            return 'bg-danger text-white';
-        case 'Late':
-            return 'bg-warning text-dark';
-        default:
-            return 'bg-secondary';
+        console.error('Error updating class:', error);
+        showToast('Error', 'Failed to update class', 'error');
     }
 }
 
-// Handle modal focus management
-const viewClassModal = document.getElementById('viewClassModal');
-if (viewClassModal) {
-    viewClassModal.addEventListener('shown.bs.modal', function () {
-        // Set focus to first focusable element
-        const firstFocusable = this.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-        if (firstFocusable) {
-            firstFocusable.focus();
-        }
-    });
-
-    viewClassModal.addEventListener('hidden.bs.modal', function () {
-        // Return focus to trigger element
-        const triggerElement = document.querySelector('[data-bs-target="#viewClassModal"]');
-        if (triggerElement) {
-            triggerElement.focus();
-        }
-    });
-}
-// Initialize tooltips
-document.addEventListener('DOMContentLoaded', function() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function(tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-});
-
-// Add this function to update the status cards
-function updateStatusCards(data) {
-    if (!Array.isArray(data)) return;
-
-    const totalClasses = data.length;
-    const activeClasses = data.filter(item => item.status === 'Active').length;
-    const completedClasses = data.filter(item => item.status === 'Completed').length;
-    const inactiveClasses = data.filter(item => item.status === 'Inactive').length;
-
-    // Update the numbers in the cards
-    document.querySelector('[data-count="total"]').textContent = totalClasses;
-    document.querySelector('[data-count="active"]').textContent = activeClasses;
-    document.querySelector('[data-count="completed"]').textContent = completedClasses;
-    document.querySelector('[data-count="inactive"]').textContent = inactiveClasses;
+// Generate a random class ID (for demo purposes)
+function generateClassId() {
+    const prefix = 'CL';
+    const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `${prefix}${randomPart}`;
 } 

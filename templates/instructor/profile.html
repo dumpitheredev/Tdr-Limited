@@ -1,0 +1,157 @@
+{% extends "base/layout.html" %}
+{% block title %}Instructor Profile{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Profile Information Card -->
+        <div class="col-lg-8 mb-4">
+            <div class="card border-0 shadow-sm">
+
+                <div class="card-body">
+                    <form id="profileForm" method="post" action="{{ url_for('instructor_profile') }}">
+                        <div class="row mb-4">
+                            <div class="col-md-4 text-center mb-4 mb-md-0">
+                                <div class="position-relative mx-auto" style="width: 150px; height: 150px;">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         alt="Profile Photo" 
+                                         class="rounded-circle img-thumbnail w-100 h-100"
+                                         style="object-fit: cover;">
+                                    <button type="button" class="btn btn-sm position-absolute bottom-0 end-0 bg-white rounded-circle p-1" style="color: #191970;">
+                                        <i class="bi bi-camera-fill"></i>
+                                    </button>
+                                </div>
+                                <p class="text-muted mt-2 small">Click the camera icon to update your photo</p>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="firstName" class="form-label">First Name</label>
+                                        <input type="text" class="form-control" id="firstName" name="firstName" value="{{ instructor.first_name }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="lastName" class="form-label">Last Name</label>
+                                        <input type="text" class="form-control" id="lastName" name="lastName" value="{{ instructor.last_name }}">
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">Email Address</label>
+                                    <input type="email" class="form-control" id="email" name="email" value="{{ instructor.email }}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="phone" class="form-label">Phone Number</label>
+                                    <input type="tel" class="form-control" id="phone" name="phone" value="{{ instructor.phone }}">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h4 class="h6 mb-3" style="color: #191970;">Professional Information</h4>
+                        <div class="mb-3">
+                            <label for="qualification" class="form-label">Qualifications</label>
+                            <input type="text" class="form-control" id="qualification" name="qualification" value="{{ instructor.qualification }}">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="specialization" class="form-label">Specialization</label>
+                            <input type="text" class="form-control" id="specialization" name="specialization" value="{{ instructor.specialization }}">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="bio" class="form-label">Professional Bio</label>
+                            <textarea class="form-control" id="bio" name="bio" rows="4">{{ instructor.bio }}</textarea>
+                        </div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
+                                <i class="bi bi-save me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Account Settings Card -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white py-3">
+                    <h3 class="h5 mb-0" style="color: #191970;">
+                        <i class="bi bi-shield-lock me-2"></i>Account Settings
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form id="passwordForm" method="post" action="{{ url_for('instructor_profile') }}">
+                        <input type="hidden" name="form_type" value="password">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword" name="currentPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword" name="newPassword">
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword">
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
+                                <i class="bi bi-key me-1"></i> Update Password
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Notification Settings Card -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h3 class="h5 mb-0" style="color: #191970;">
+                        <i class="bi bi-bell me-2"></i>Notification Settings
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form id="notificationForm" method="post" action="{{ url_for('instructor_profile') }}">
+                        <input type="hidden" name="form_type" value="notifications">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" checked>
+                            <label class="form-check-label" for="emailNotifications">Email Notifications</label>
+                            <div class="text-muted small">Receive emails about announcements and attendance reminders</div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="smsNotifications" name="smsNotifications">
+                            <label class="form-check-label" for="smsNotifications">SMS Notifications</label>
+                            <div class="text-muted small">Receive text messages for urgent updates</div>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
+                                <i class="bi bi-save me-1"></i> Save Preferences
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation for password update
+    const passwordForm = document.getElementById('passwordForm');
+    if (passwordForm) {
+        passwordForm.addEventListener('submit', function(e) {
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+            
+            if (newPass !== confirmPass) {
+                e.preventDefault();
+                alert('New password and confirmation do not match');
+            }
+        });
+    }
+});
+</script>
+{% endblock %} 

@@ -1,0 +1,295 @@
+{% extends "base/layout.html" %}
+{% block title %}View Attendance{% endblock %}
+
+{% block content %}
+<style>
+    /* Badge container to align badges horizontally */
+    .badge-container {
+        display: flex;
+        align-items: center;
+        gap: 10px; /* Space between badges */
+    }
+
+    /* Optional: Enhance badge styles if needed */
+    .badge {
+        border-radius: 5px; /* Slight rounding for consistency */
+        font-weight: 500; /* Medium weight */
+        text-align: center;
+        display: inline-block;
+    }
+</style>
+
+<div class="container-fluid">
+
+    <!-- Filters -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h3 class="h5 mb-0" style="color: #191970;">
+                <i class="bi bi-funnel me-2"></i>Filters
+            </h3>
+        </div>
+        <div class="card-body">
+            <form id="filterForm">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="classSelect" class="form-label">Class</label>
+                        <select class="form-select" id="classSelect">
+                            <option value="">All Classes</option>
+                            {% for class in classes %}
+                            <option value="{{ class.class_id }}">{{ class.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="studentSearch" class="form-label">Student Name</label>
+                        <input type="text" class="form-control" id="studentSearch" placeholder="Search by name">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dateRangeStart" class="form-label">Date Range</label>
+                        <input type="date" class="form-control" id="dateRangeStart">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dateRangeEnd" class="form-label">To</label>
+                        <input type="date" class="form-control" id="dateRangeEnd">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="reset" class="btn btn-outline-secondary" style="background-color: #EF984C; border-color: #EF984C; color: #191970;">
+                        <i class="bi bi-x-circle me-1"></i> Clear
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Attendance Records Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h3 class="h5 mb-0" style="color: #191970;">
+                <i class="bi bi-table me-2"></i>Attendance Records
+            </h3>
+            <button class="btn btn-sm btn-outline-secondary" style="background-color: #191970; border-color: #191970; color: white;">
+                <i class="bi bi-arrow-up-right me-1"></i> Export CSV
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Name</th>
+                            <th>Class ID</th>
+                            <th>Attendance</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in attendance_records %}
+                        <tr>
+                            <td>{{ record.date }}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         alt="Profile" class="rounded-circle me-2" width="35" height="35">
+                                    <div>
+                                        <h6 class="mb-0">{{ record.student_name }}</h6>
+                                        <small class="text-muted">{{ record.student_id }}</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ record.class_id }}</td>
+                            <td>
+                                {% if record.status == 'present' %}
+                                <span class="badge bg-success-subtle text-success" style="padding: 8px 16px; font-size: 14px;">Present</span>
+                                {% elif record.status == 'absent' %}
+                                <span class="badge bg-danger-subtle text-danger" style="padding: 8px 16px; font-size: 14px;">Absent</span>
+                                {% elif record.status == 'late' %}
+                                <span class="badge bg-warning-subtle text-warning" style="padding: 8px 16px; font-size: 14px;">Late</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-icons">
+                                    <button class="btn view-btn" 
+                                            data-id="{{ record.id }}"
+                                            data-student="{{ record.student_name }}"
+                                            data-class="{{ record.class_name }}"
+                                            data-class-id="{{ record.class_id }}"
+                                            data-date="{{ record.date }}"
+                                            data-status="{{ record.status }}"
+                                            data-comment="{{ record.comment }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn edit-btn"
+                                            data-id="{{ record.id }}"
+                                            data-student="{{ record.student_name }}"
+                                            data-class="{{ record.class_name }}"
+                                            data-class-id="{{ record.class_id }}"
+                                            data-date="{{ record.date }}"
+                                            data-status="{{ record.status }}"
+                                            data-comment="{{ record.comment }}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn archive-btn"
+                                            data-id="{{ record.id }}"
+                                            data-student="{{ record.student_name }}"
+                                            data-class="{{ record.class_name }}">
+                                        <i class="bi bi-archive"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="d-flex align-items-center">
+                    <span class="me-2">Show rows per page:</span>
+                    <select class="form-select form-select-sm" id="rowsPerPageSelect" style="width: 70px;">
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                    </select>
+                </div>
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-sm btn-outline-secondary me-2" id="prevPageBtn">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="mx-2" id="paginationInfo">1-5 of 10</span>
+                    <button class="btn btn-sm btn-outline-secondary ms-2" id="nextPageBtn">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Attendance Detail Modal -->
+    <div class="modal fade" id="attendanceDetailModal" tabindex="-1" aria-labelledby="attendanceDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="attendanceDetailModalLabel">Attendance Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3 row">
+                        <label class="col-sm-4 col-form-label">Student:</label>
+                        <div class="col-sm-8">
+                            <p class="form-control-plaintext" id="detailStudent">Michael Chen</p>
+                        </div>
+                    </div>
+                    <div class="mb-3 row">
+                        <label class="col-sm-4 col-form-label">Class:</label>
+                        <div class="col-sm-8">
+                            <p class="form-control-plaintext" id="detailClass">Mathematics 101 (kl45xy)</p>
+                        </div>
+                    </div>
+                    <div class="mb-3 row">
+                        <label class="col-sm-4 col-form-label">Date:</label>
+                        <div class="col-sm-8">
+                            <p class="form-control-plaintext" id="detailDate">2023-10-16</p>
+                        </div>
+                    </div>
+                    <div class="mb-3 row">
+                        <label class="col-sm-4 col-form-label">Status:</label>
+                        <div class="col-sm-8">
+                            <p class="form-control-plaintext" id="detailStatus">
+                                <span class="badge bg-success-subtle text-success" style="padding: 8px 16px; font-size: 14px;">Present</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mb-3 row">
+                        <label class="col-sm-4 col-form-label">Comments:</label>
+                        <div class="col-sm-8">
+                            <p class="form-control-plaintext" id="detailComment">Participated actively in class discussion.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Attendance Modal -->
+    <div class="modal fade" id="editAttendanceModal" tabindex="-1" aria-labelledby="editAttendanceModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editAttendanceModalLabel">Edit Attendance</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form>
+                        <input type="hidden" id="editAttendanceId">
+                        <div class="mb-3">
+                            <label for="editStudent" class="form-label">Student</label>
+                            <input type="text" class="form-control" id="editStudent" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editClass" class="form-label">Class</label>
+                            <input type="text" class="form-control" id="editClass" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDate" class="form-label">Date</label>
+                            <input type="date" class="form-control" id="editDate" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editStatus" class="form-label">Status</label>
+                            <select class="form-select" id="editStatus">
+                                <option value="present">Present</option>
+                                <option value="absent">Absent</option>
+                                <option value="late">Late</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editComment" class="form-label">Comment</label>
+                            <textarea class="form-control" id="editComment" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Toast -->
+    {% include 'components/toast_notification.html' %}
+
+    <!-- Archive Confirmation Modal -->
+    <div class="modal fade" id="archiveConfirmModal" tabindex="-1" aria-labelledby="archiveConfirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="archiveConfirmModalLabel">Confirm Archive</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to archive this attendance record?</p>
+                    <p class="mb-0"><strong>Student:</strong> <span id="archiveStudentName"></span></p>
+                    <p class="mb-0"><strong>Class:</strong> <span id="archiveClassName"></span></p>
+                    <input type="hidden" id="archiveRecordId">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="confirmArchiveBtn">Archive</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pages/instructor_view_attendance.js') }}"></script>
+{% endblock %}

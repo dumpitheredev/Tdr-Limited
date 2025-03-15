@@ -1,0 +1,279 @@
+{% extends "base/layout.html" %}
+
+{% block title %}Class Management{% endblock %}
+{% block active_page %}class_management{% endblock %}
+
+{% block header %}
+<h1 style="color: #191970;">Class Management</h1>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Stats Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Total Classes</h6>
+                            <h2 class="mb-0" data-count="total">{{ total_classes }}</h2>
+                        </div>
+                        <div class="p-2 bg-primary-subtle rounded">
+                            <i class="bi bi-grid-3x3-gap" style="color: #191970;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Active Classes</h6>
+                            <h2 class="mb-0" data-count="active">{{ active_classes }}</h2>
+                        </div>
+                        <div class="p-2 bg-success-subtle rounded">
+                            <i class="bi bi-check-circle" style="color: #198754;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Completed Classes</h6>
+                            <h2 class="mb-0" data-count="completed">{{ completed_classes }}</h2>
+                        </div>
+                        <div class="p-2 bg-info-subtle rounded">
+                            <i class="bi bi-trophy" style="color: #0dcaf0;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Inactive Classes</h6>
+                            <h2 class="mb-0" data-count="inactive">{{ inactive_classes }}</h2>
+                        </div>
+                        <div class="p-2 bg-danger-subtle rounded">
+                            <i class="bi bi-x-circle" style="color: #dc3545;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <!-- Controls Row -->
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <!-- Left side: Status Filter and Search -->
+                <div class="d-flex gap-3 flex-grow-1">
+                    <select id="statusFilter" class="form-select" style="max-width: 150px;">
+                        <option value="">All Statuses</option>
+                        <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
+                        <option value="Inactive" {% if status_filter == 'Inactive' %}selected{% endif %}>Inactive</option>
+                        <option value="Completed" {% if status_filter == 'Completed' %}selected{% endif %}>Completed</option>
+                    </select>
+                    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+                        <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3"></i>
+                        <input type="search" 
+                               id="searchInput" 
+                               class="form-control ps-5" 
+                               placeholder="Search classes by name or ID"
+                               value="{{ search_term }}">
+                    </div>
+                </div>
+                <!-- Right side: Add & Export Buttons -->
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary d-flex align-items-center gap-1"
+                            onclick="exportClassesCSV()"
+                            style="background-color: #191970; color: white;">
+                        <i class="bi bi-arrow-up-right"></i>
+                        Export CSV
+                    </button>
+
+
+                    <button class="btn btn-primary d-flex align-items-center gap-1" 
+
+                            data-bs-toggle="modal" 
+                            data-bs-target="#addClassModal"
+                            style="background-color: #191970;">
+                        <i class="bi bi-plus-lg"></i>
+                        Add New Class
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h3 class="h5 mb-0" style="color: #191970;">
+                        <i class="bi bi-easel2"></i>Class Records
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                        <tr>
+                            <th>Class Name</th>
+                            <th>Day of Week</th>
+                            <th>Time</th>
+                            <th>Instructor</th>
+                            <th>Start/End Year</th>
+                            <th>Status</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if classes %}
+                            {% for class in classes %}
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold">{{ class.name }}</div>
+                                    <div class="small text-muted">{{ class.class_id }}</div>
+                                </td>
+                                <td>{{ class.day }}</td>
+                                <td>{{ class.time }}</td>
+                                <td>{{ class.instructor }}</td>
+                                <td>{{ class.year }}</td>
+                                <td>
+                                    <span class="badge {% if class.status == 'Active' %}bg-success-subtle text-success{% elif class.status == 'Completed' %}bg-info-subtle text-info{% else %}bg-danger-subtle text-danger{% endif %}">
+                                        {{ class.status }}
+                                    </span>
+                                </td>
+                                <td class="align-middle text-center">
+                                    <div class="d-flex gap-2 justify-content-center">
+                                        <button class="btn btn-link p-0" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#viewClassModal" 
+                                                onclick="handleClassAction('view', '{{ class.class_id }}')"
+                                                title="View details">
+                                            <i class="bi bi-eye" style="color: #191970;"></i>
+                                        </button>
+                                        <button class="btn btn-link p-0" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#editClassModal" 
+                                                onclick="handleClassAction('edit', '{{ class.class_id }}')"
+                                                title="Edit class">
+                                            <i class="bi bi-pencil" style="color: #191970;"></i>
+                                        </button>
+                                        <button class="btn btn-link p-0" 
+                                                onclick="handleClassAction('archive', '{{ class.class_id }}')"
+                                                title="Archive class">
+                                            <i class="bi bi-archive" style="color: #191970;"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center py-4">
+                                    <div class="d-flex flex-column align-items-center">
+                                        <i class="bi bi-search fs-1 text-muted mb-2"></i>
+                                        <p class="text-muted mb-0">No classes found</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="d-flex align-items-center gap-3 mt-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-body-secondary">Show rows per page:</span>
+                    <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
+                        <option value="5" {% if per_page == 5 %}selected{% endif %}>5</option>
+                        <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    </select>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button id="prevPage" 
+                            class="btn btn-sm btn-outline-secondary px-2" 
+                            {% if page == 1 %}disabled{% endif %}>
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
+                        {{ start_idx + 1 }}-{{ end_idx }} of {{ total_classes }}
+                    </span>
+                    <button id="nextPage" 
+                            class="btn btn-sm btn-outline-secondary px-2"
+                            {% if end_idx >= total_classes %}disabled{% endif %}>
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'components/add_class_modal.html' %}
+{% include 'components/page_info_modal.html' %}
+{% include 'components/view_class_modal.html' %}
+{% include 'components/edit_class_modal.html' %}
+{% include 'components/toast_notification.html' %}
+
+<!-- Archive Confirmation Modal -->
+<div class="modal fade" id="archiveClassModal" tabindex="-1" aria-labelledby="archiveClassModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="archiveClassModalLabel">Confirm Archive</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to archive this class?</p>
+                <p class="mb-3"><strong>Class:</strong> <span id="archiveClassName"></span></p>
+                <p class="mb-3"><strong>Class ID:</strong> <span id="archiveClassId"></span></p>
+                
+                <div class="mb-3">
+                    <label for="archiveReason" class="form-label">Reason for archiving</label>
+                    <select class="form-select" id="archiveReason">
+                        <option value="">Select a reason</option>
+                        <option value="Course completed">Course completed</option>
+                        <option value="Low enrollment">Low enrollment</option>
+                        <option value="Instructor unavailable">Instructor unavailable</option>
+                        <option value="Curriculum change">Curriculum change</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="archiveComment" class="form-label">Additional comments</label>
+                    <textarea class="form-control" id="archiveComment" rows="3" placeholder="Add any additional information about why this class is being archived..."></textarea>
+                </div>
+                
+                <input type="hidden" id="archiveClassIdInput">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmArchiveClassBtn">Archive</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pages/class-management.js') }}"></script>
+{% endblock %} 

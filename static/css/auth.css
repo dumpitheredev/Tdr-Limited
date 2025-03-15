@@ -1,0 +1,29 @@
+/* Auth pages styling */
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+    background-color: #191970;
+    border-color: #191970;
+}
+
+.btn-primary:hover, .btn-primary:focus {
+    background-color: #13134d;
+    border-color: #13134d;
+}
+
+.form-control:focus {
+    border-color: #191970;
+    box-shadow: 0 0 0 0.25rem rgba(25, 25, 112, 0.25);
+} 

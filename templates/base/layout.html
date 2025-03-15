@@ -22,6 +22,7 @@
 
     <!-- Main Content Area -->
     <div class="main-content">
+        {% if request.endpoint != 'password_reset' %}
         <header class="header d-flex align-items-center sticky-top bg-white border-bottom">
             <div class="container-fluid px-3 px-lg-4">
                 <div class="d-flex justify-content-between align-items-center py-2">
@@ -38,7 +39,7 @@
                         <h1 class="h4 mb-0 text-truncate fw-bold" style="color: #191970;">
                             {% if active_page == 'dashboard' %}
                                 Dashboard
-                            {% elif active_page == 'profile' %}
+                            {% elif active_page == 'admin_profile' %}
                                 Profile
                             {% elif active_page == 'user_management' %}
                                 User Management
@@ -56,15 +57,31 @@
                                 View Attendance
                             {% elif active_page == 'mark_attendance' %}
                                 Mark Attendance
+                            {% elif active_page == 'view_archive' %}
+                                View Archive
+                            {% elif active_page == 'instructor_profile' %}
+                                Profile
+                            {% elif active_page == 'instructor_mark_attendance' %}
+                                Mark Attendance
+                            {% elif active_page == 'instructor_view_attendance' %}
+                                View Attendance 
+                            {% elif active_page == 'instructor_archived_reports' %}
+                                Archived Reports
+                            {% elif active_page == 'instructor_absence_report' %}
+                                Absence Reports
+                            {% else %}
+                                {{ page_title|default('') }}
                             {% endif %}
                         </h1>
                     </div>
                     
                     <!-- Right side - Profile and Info Icon -->
                     <div class="d-flex align-items-center gap-3">
-                        <span class="fw-medium" style="color: #191970;">Admin1</span>
+                        <span class="fw-medium" style="color: #191970;">
+                            {{ session.get('name', 'User') }}
+                        </span>
                         <img src="{{ url_for('static', filename='images/profile.png') }}"
-                             alt="Admin1"
+                             alt="{{ session.get('name', 'User') }}"
                              class="rounded-circle"
                              width="32"
                              height="32"
@@ -80,6 +97,7 @@
                 </div>
             </div>
         </header>
+        {% endif %}
         <main class="p-3 p-lg-4">
             {% block content %}{% endblock %}
         </main>

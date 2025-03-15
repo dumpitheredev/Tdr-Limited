@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         // Add rows per page handler
-        const rowsPerPage = document.getElementById('rowsPerPage');
+    const rowsPerPage = document.getElementById('rowsPerPage');
         if (rowsPerPage) {
             rowsPerPage.addEventListener('change', function() {
                 currentPageState.page = 1;
@@ -59,8 +59,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         // Add pagination handlers
-        const prevPage = document.getElementById('prevPage');
-        const nextPage = document.getElementById('nextPage');
+    const prevPage = document.getElementById('prevPage');
+    const nextPage = document.getElementById('nextPage');
         
         if (prevPage) {
             prevPage.addEventListener('click', function() {
@@ -575,13 +575,13 @@ const attendanceTable = {
                     switch(day.status) {
                         case 'present':
                             badgeClasses = 'bg-success-subtle text-success';
-                            break;
+                break;
                         case 'absent':
                             badgeClasses = 'bg-danger-subtle text-danger';
-                            break;
+                break;
                         case 'late':
                             badgeClasses = 'bg-warning-subtle text-warning';
-                            break;
+                break;
                     }
                     
                     row.innerHTML += `

@@ -1,0 +1,177 @@
+{% extends "base/layout.html" %}
+{% block title %}Instructor Dashboard{% endblock %}
+{% block active_page %}dashboard{% endblock %}
+
+{% block sidebar %}
+  {% include 'partials/_instructor_sidebar.html' %}
+{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+    .class-block {
+        background-color: #E6E6FA;
+        min-width: 200px;
+        border-radius: 0.25rem;
+        padding: 0.75rem;
+        cursor: pointer;
+    }
+    
+    .today-highlight {
+        border-left: 3px solid #191970;
+        padding-left: 0.5rem;
+        background-color: rgba(25, 25, 112, 0.05);
+    }
+    
+    .event-dot {
+        height: 5px;
+        width: 5px;
+        background-color: #191970;
+        border-radius: 50%;
+        display: inline-block;
+        position: absolute;
+        bottom: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+    
+    .announcement-content {
+        max-height: 3rem;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+    
+    .announcement-expanded {
+        max-height: 20rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <h2 class="h4 mb-3" style="color: #191970;">Hello {{ session.get('name', 'Instructor') }}</h2>
+    </div>
+    
+    <!-- Announcements Section -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <h3 class="h5 mb-0" style="color: #191970;">
+                <i class="bi bi-megaphone me-2"></i>Announcements
+            </h3>
+        </div>
+        <div class="card-body">
+            {% if announcements %}
+                <div class="list-group list-group-flush">
+                    {% for announcement in announcements %}
+                        <div class="list-group-item px-0">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <h4 class="h6 mb-0" style="color: #191970;">{{ announcement.title }}</h4>
+                                <small class="text-muted">{{ announcement.date }}</small>
+                            </div>
+                            <p class="mb-0">{{ announcement.content }}</p>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">No announcements at this time.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Weekly Schedule -->
+    <div class="row">
+        <div class="col-12">
+            <!-- Monday -->
+            <div class="mb-3">
+                <h3 class="h5" style="color: #191970;">Monday</h3>
+            </div>
+            <div class="row g-3 mb-4">
+                {% for class in instructor_classes %}
+                    {% if class.day == 'Monday' %}
+                    <div class="col">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                            <div style="color: #191970;">{{ class.name }}</div>
+                            <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+            <!-- Tuesday -->
+            <div class="mb-3">
+                <h3 class="h5" style="color: #191970;">Tuesday</h3>
+            </div>
+            <div class="row g-3 mb-4">
+                {% for class in instructor_classes %}
+                    {% if class.day == 'Tuesday' %}
+                    <div class="col">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                            <div style="color: #191970;">{{ class.name }}</div>
+                            <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+            <!-- Wednesday -->
+            <div class="mb-3">
+                <h3 class="h5" style="color: #191970;">Wednesday</h3>
+            </div>
+            <div class="row g-3 mb-4">
+                {% for class in instructor_classes %}
+                    {% if class.day == 'Wednesday' %}
+                    <div class="col">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                            <div style="color: #191970;">{{ class.name }}</div>
+                            <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+            <!-- Thursday -->
+            <div class="mb-3">
+                <h3 class="h5" style="color: #191970;">Thursday</h3>
+            </div>
+            <div class="row g-3 mb-4">
+                {% for class in instructor_classes %}
+                    {% if class.day == 'Thursday' %}
+                    <div class="col">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                            <div style="color: #191970;">{{ class.name }}</div>
+                            <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+            <!-- Friday -->
+            <div class="mb-3">
+                <h3 class="h5" style="color: #191970;">Friday</h3>
+            </div>
+            <div class="row g-3 mb-4">
+                {% for class in instructor_classes %}
+                    {% if class.day == 'Friday' %}
+                    <div class="col">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                            <div style="color: #191970;">{{ class.name }}</div>
+                            <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="{{ url_for('static', filename='js/pages/instructor-dashboard.js') }}"></script>
+{% endblock %} 

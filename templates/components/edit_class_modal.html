@@ -1,24 +1,130 @@
-<!-- Edit Class Status Modal -->
+<!-- Edit Class Modal -->
 <div class="modal fade" id="editClassModal" tabindex="-1" aria-labelledby="editClassModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="editClassModalLabel">Edit Class Status</h5>
+                <h5 class="modal-title" id="editClassModalLabel">Edit Class</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label for="classStatusSelect" class="form-label">Status</label>
-                    <select class="form-select" id="classStatusSelect">
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                        <option value="Completed">Completed</option>
-                    </select>
-                </div>
+                <form id="editClassForm" class="needs-validation" novalidate>
+                    <!-- Hidden Class ID -->
+                    <input type="hidden" id="editClassId" name="editClassId">
+                    
+                    <!-- Class Name -->
+                    <div class="mb-3">
+                        <label for="editClassName" class="form-label">Class Name*</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="editClassName" 
+                               name="editClassName" 
+                               required>
+                        <div class="invalid-feedback">
+                            Please enter class name
+                        </div>
+                    </div>
+
+                    <!-- Day of Week -->
+                    <div class="mb-3">
+                        <label for="editClassDay" class="form-label">Day of Week*</label>
+                        <select class="form-select" 
+                                id="editClassDay" 
+                                name="editClassDay" 
+                                required>
+                            <option value="">Select day</option>
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select a day
+                        </div>
+                    </div>
+
+                    <!-- Time -->
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label for="editClassStartTime" class="form-label">Start Time*</label>
+                            <input type="time" 
+                                   class="form-control" 
+                                   id="editClassStartTime" 
+                                   name="editClassStartTime" 
+                                   required>
+                            <div class="invalid-feedback">
+                                Please select start time
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label for="editClassEndTime" class="form-label">End Time*</label>
+                            <input type="time" 
+                                   class="form-control" 
+                                   id="editClassEndTime" 
+                                   name="editClassEndTime" 
+                                   required>
+                            <div class="invalid-feedback">
+                                Please select end time
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instructor -->
+                    <div class="mb-3">
+                        <label for="editClassInstructor" class="form-label">Instructor*</label>
+                        <select class="form-select" 
+                                id="editClassInstructor" 
+                                name="editClassInstructor" 
+                                required>
+                            <option value="">Select instructor</option>
+                            {% for instructor in instructors %}
+                            <option value="{{ instructor.user_id }}">{{ instructor.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select an instructor
+                        </div>
+                    </div>
+
+                    <!-- Academic Year -->
+                    <div class="mb-3">
+                        <label for="editClassYear" class="form-label">Academic Year*</label>
+                        <select class="form-select" 
+                                id="editClassYear" 
+                                name="editClassYear" 
+                                required>
+                            <option value="">Select academic year</option>
+                            <option value="2023/2024">2023/2024</option>
+                            <option value="2024/2025">2024/2025</option>
+                            <option value="2025/2026">2025/2026</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select academic year
+                        </div>
+                    </div>
+                    
+                    <!-- Status -->
+                    <div class="mb-3">
+                        <label for="editClassStatus" class="form-label">Status*</label>
+                        <select class="form-select" 
+                                id="editClassStatus" 
+                                name="editClassStatus" 
+                                required>
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select a status
+                        </div>
+                    </div>
+                </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveClassStatus()" style="background-color: #191970; border-color: #191970;">Save Changes</button>
+                <button type="submit" form="editClassForm" class="btn btn-primary" style="background-color: #191970;">Save Changes</button>
             </div>
         </div>
     </div>

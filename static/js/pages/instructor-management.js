@@ -214,7 +214,22 @@ document.addEventListener('DOMContentLoaded', function() {
             const tableRows = document.querySelectorAll('table tbody tr');
 
             tableRows.forEach(row => {
-                const status = row.querySelector('td:nth-child(5) span').textContent.toLowerCase();
+                // Check if this is a "No instructors found" row
+                if (row.cells.length === 1 && row.cells[0].getAttribute('colspan')) {
+                    // This is a "No data" row, always show it when no filter is selected
+                    row.style.display = selectedStatus ? 'none' : '';
+                    return;
+                }
+                
+                // Add a null check before accessing textContent
+                const statusElement = row.querySelector('td:nth-child(5) span');
+                if (!statusElement) {
+                    console.warn('Status element not found in row:', row);
+                    row.style.display = ''; // Show the row by default
+                    return;
+                }
+                
+                const status = statusElement.textContent.toLowerCase();
                 if (!selectedStatus || status === selectedStatus) {
                     row.style.display = '';
                 } else {

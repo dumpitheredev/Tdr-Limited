@@ -230,7 +230,7 @@ if (typeof window.pageInformation === 'undefined') {
                 'Use the navigation menu to access other pages'
             ]
         },
-        'profile': {
+        'admin-profile': {
             title: 'Profile Management',
             description: 'View and manage your profile information and account settings.',
             features: [
@@ -395,6 +395,77 @@ if (typeof window.pageInformation === 'undefined') {
                 'Mark students as present, absent, or late',
                 'Add any relevant notes',
                 'Save attendance records'
+            ]
+        },  
+        'view-archive': {
+            title: 'View Archive',
+            description: 'View and manage archived classes and students.',
+            features: [
+                'View archived classes and students',
+                'Filter by date range',
+                'Export archive data',
+                'Search for specific records'
+            ],
+            instructions: [
+                'Use filters to find specific records', 
+                'Click on the view icon to see detailed class information',
+                'Click on the edit icon to modify existing class details'
+            ]
+        },
+        
+
+        'instructor-dashboard': {
+            title: 'Instructor Dashboard',
+            description: 'Overview of your teaching schedule and important announcements from administration.',
+            features: [
+                'View your weekly teaching schedule organized by day',
+                'See room assignments and class times at a glance',
+                'Read important announcements from administration',
+                'Quick access to all instructor functions',
+                'Monitor upcoming classes and schedule changes'
+            ],
+            instructions: [
+                'Review announcements at the top of the dashboard for important updates',
+                'Navigate through your weekly schedule organized by day',
+                'Click on class cards for more detailed information',
+                'Use the sidebar to access other instructor functions',
+                'Check room assignments and class times for each scheduled session'
+            ]
+        },
+        'instructor-mark-attendance': {
+            title: 'Mark Attendance',
+            description: 'Record daily attendance for your assigned classes and students.',
+            features: [
+                'Mark attendance for your assigned classes',
+                'Update student attendance status (present, absent, late)',
+                'Record time stamps automatically',
+                'Add notes regarding special circumstances',
+                'View previous attendance records'
+            ],
+            instructions: [
+                'Select the class from your assigned classes',
+                'Choose the date for attendance recording',
+                'Mark each student as present, absent, or late',
+                'Add any relevant notes about exceptions or issues',
+                'Save the attendance record when complete'
+            ]
+        },
+        'instructor-view-attendance': {
+            title: 'View Attendance',
+            description: 'Review and analyze attendance records for your classes and students.',
+            features: [
+                'View attendance history for your classes',
+                'Filter by date range or specific class',
+                'See attendance statistics and patterns',
+                'Export attendance data for reporting',
+                'Identify students with attendance issues'
+            ],
+            instructions: [
+                'Select a date range to view attendance records',
+                'Use filters to narrow down to specific classes or students',
+                'Review statistical data about attendance trends',
+                'Export data for your records or reporting',
+                'Identify students who may need intervention'
             ]
         }
     };

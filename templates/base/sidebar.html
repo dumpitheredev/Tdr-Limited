@@ -1,4 +1,5 @@
 {% macro sidebar() %}
+{% if request.endpoint != 'password_reset' %}
 <nav class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation" style="font-size: 0.9rem;">
     <button class="close-sidebar d-lg-none" aria-label="Close menu">
         <i class="fas fa-times"></i>
@@ -10,64 +11,105 @@
              height="70">
     </div>
     <div class="nav-items flex-grow-1">
-        <a class="nav-link dashboard {{ 'active' if request.endpoint == 'dashboard' }}" 
-           href="{{ url_for('dashboard') }}"
-           {{ 'aria-current="page"' if request.endpoint == 'dashboard' }}
-           role="menuitem">
-            <i class="bi bi-grid"></i>
-            Dashboard
-        </a>
-        <a href="{{ url_for('profile') }}" 
-           class="nav-link {{ 'active' if request.endpoint == 'profile' }}">
-            <i class="fas fa-user"></i>
-            Profile
-        </a>
-        {% if request.endpoint != 'dashboard' %}
-        <a class="nav-link {{ 'active' if request.endpoint == 'user_management' }}" 
-           href="{{ url_for('user_management') }}">
-            <i class="bi bi-people-fill"></i>
-            User Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'student_management' }}" 
-           href="{{ url_for('student_management') }}">
-            <i class="bi bi-mortarboard"></i>
-            Student Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'company_management' }}" 
-           href="{{ url_for('company_management') }}">
-            <i class="bi bi-building-fill"></i>
-            Company Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'class_management' }}" 
-           href="{{ url_for('class_management') }}">
-            <i class="bi bi-easel2"></i>
-            Class Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'instructor_management' }}" 
-           href="{{ url_for('instructor_management') }}">
-            <i class="bi bi-person-video3"></i>
-            Instructor Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'enrolment_management' }}" 
-           href="{{ url_for('enrolment_management') }}">
-            <i class="bi bi-person-plus-fill"></i>
-            Enrolment Management
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'view_attendance' }}" 
-           href="{{ url_for('view_attendance') }}">
-            <i class="bi bi-eye"></i>
-            View Attendance
-        </a>
-        <a class="nav-link {{ 'active' if request.endpoint == 'mark_attendance' }}" 
-           href="{{ url_for('mark_attendance') }}">
-            <i class="bi bi-calendar-check"></i>
-            Mark Attendance
-        </a>
+        {% if session.get('role') == 'admin' %}
+            <!-- Admin Navigation -->
+            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'dashboard' }}" 
+               href="{{ url_for('dashboard') }}"
+               {{ 'aria-current="page"' if request.endpoint == 'dashboard' }}
+               role="menuitem">
+                <i class="bi bi-grid"></i>
+                Dashboard
+            </a>
+            <a href="{{ url_for('admin_profile') }}" 
+               class="nav-link {{ 'active' if request.endpoint == 'admin_profile' }}">
+                <i class="fas fa-user"></i>
+                Profile
+            </a>
+            {% if request.endpoint != 'dashboard' %}
+            <a class="nav-link {{ 'active' if request.endpoint == 'user_management' }}" 
+               href="{{ url_for('user_management') }}">
+                <i class="bi bi-people-fill"></i>
+                User Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'student_management' }}" 
+               href="{{ url_for('student_management') }}">
+                <i class="bi bi-mortarboard"></i>
+                Student Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'company_management' }}" 
+               href="{{ url_for('company_management') }}">
+                <i class="bi bi-building-fill"></i>
+                Company Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'class_management' }}" 
+               href="{{ url_for('class_management') }}">
+                <i class="bi bi-easel2"></i>
+                Class Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_management' }}" 
+               href="{{ url_for('instructor_management') }}">
+                <i class="bi bi-person-video3"></i>
+                Instructor Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'enrolment_management' }}" 
+               href="{{ url_for('enrolment_management') }}">
+                <i class="bi bi-person-plus-fill"></i>
+                Enrolment Management
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'view_attendance' }}" 
+               href="{{ url_for('view_attendance') }}">
+                <i class="bi bi-eye"></i>
+                View Attendance
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'mark_attendance' }}" 
+               href="{{ url_for('mark_attendance') }}">
+                <i class="bi bi-calendar-check"></i>
+                Mark Attendance
+            </a>
+            {% endif %}
+        {% elif session.get('role') == 'instructor' %}
+            <!-- Instructor Navigation -->
+            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'instructor_dashboard' }}" 
+               href="{{ url_for('instructor_dashboard') }}"
+               {{ 'aria-current="page"' if request.endpoint == 'instructor_dashboard' }}
+               role="menuitem">
+                <i class="bi bi-grid"></i>
+                Dashboard
+            </a>
+            <a href="{{ url_for('instructor_profile') }}" 
+               class="nav-link {{ 'active' if request.endpoint == 'instructor_profile' }}">
+                <i class="fas fa-user"></i>
+                Profile
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_mark_attendance' }}" 
+               href="{{ url_for('instructor_mark_attendance') }}">
+                <i class="bi bi-calendar-check"></i>
+                Mark Attendance
+            </a>
+            <!-- <a class="nav-link {{ 'active' if request.endpoint == 'instructor_absence_report' }}" 
+               href="{{ url_for('instructor_absence_report') }}">
+                <i class="bi bi-file-text"></i>
+                Absence Report
+            </a> -->
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_view_attendance' }}" 
+               href="{{ url_for('instructor_view_attendance') }}">
+                <i class="bi bi-eye"></i>
+                View Attendance
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_archived_reports' }}" 
+               href="{{ url_for('instructor_archived_reports') }}">
+                <i class="bi bi-archive"></i>
+                Archived Reports
+            </a>
         {% endif %}
     </div>
+    {% if request.endpoint != 'password_reset' %}
     <a href="{{ url_for('logout') }}" class="nav-link logout-link">
         <i class="bi bi-box-arrow-right"></i>
         Logout
     </a>
+    {% endif %}
 </nav>
+{% endif %}
 {% endmacro %}
+

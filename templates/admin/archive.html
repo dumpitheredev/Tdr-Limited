@@ -1,0 +1,495 @@
+{% extends "base/layout.html" %}
+{% block title %}View Archive{% endblock %}
+{% block active_page %}view_archive{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Reports Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <h3 class="h5 mb-0" style="color: #191970;">
+                <i class="bi bi-archive me-2"></i>System Archives
+            </h3>
+        </div>
+        <div class="card-body">
+            <!-- Controls Row -->
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <!-- Left side: Archive Type Filter and Search -->
+                <div class="d-flex gap-3 flex-grow-1">
+                    <select id="archiveTypeFilter" class="form-select" style="width: 180px;">
+                        <option value="">Select Archive Type</option>
+                        <option value="student">Student Archives</option>
+                        <option value="class">Class Archives</option>
+                        <option value="company">Company Archives</option>
+                        <option value="instructor">Instructor Archives</option>
+                    </select>
+
+                    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+                        <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                        <input type="text" 
+                               id="searchInput" 
+                               class="form-control ps-5" 
+                               placeholder="Search by name, ID or date">
+                    </div>
+    </div>
+
+                <!-- Right side: Export button -->
+                <div>
+                    <button class="btn btn-sm" style="background-color: #191970; color: white;">
+                        <i class="bi bi-download me-1"></i> Export
+                    </button>
+                </div>
+            </div>
+
+            <!-- Info Alert -->
+            <div class="alert alert-info mb-4">
+                <i class="bi bi-info-circle me-2"></i> Archive Actions:
+                <ul class="mb-0 mt-1">
+                    <li><i class="bi bi-eye"></i> View: See complete details of the archived record</li>
+                    <li><i class="bi bi-arrow-counterclockwise"></i> Restore: Return the record to active status</li>
+                </ul>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="p-2 bg-primary bg-opacity-10 rounded">
+                                    <i class="bi bi-person fs-4 text-primary"></i>
+                                </div>
+                                <div class="ms-3">
+                                    <h6 class="mb-0">Student Archives</h6>
+                                    <h4 class="mb-0">24</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="p-2 bg-primary bg-opacity-10 rounded">
+                                    <i class="bi bi-book fs-4 text-success"></i>
+                                </div>
+                                <div class="ms-3">
+                                    <h6 class="mb-0">Class Archives</h6>
+                                    <h4 class="mb-0">18</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="p-2 bg-primary bg-opacity-10 rounded">
+                                    <i class="bi bi-building fs-4 text-warning"></i>
+                                </div>
+                                <div class="ms-3">
+                                    <h6 class="mb-0">Company Archives</h6>
+                                    <h4 class="mb-0">9</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="p-2 bg-primary bg-opacity-10 rounded">
+                                    <i class="bi bi-person-video3 text-primary fs-4"></i>
+                                </div>
+                                <div class="ms-3">
+                                    <h6 class="mb-0">Instructor Archives</h6>
+                                    <h4 class="mb-0">12</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Default message when no selection -->
+            <div id="defaultMessage" class="text-center py-5">
+                <i class="bi bi-archive fs-1 text-muted"></i>
+                <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
+            </div>
+
+            <!-- Student Archive Table -->
+            <div id="studentArchiveTable" class="archive-table table-responsive" style="display: none;">
+        <table class="table">
+            <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Email</th>
+                            <th scope="col">Company</th>
+                            <th scope="col">Archived Date</th>
+                            <th scope="col">Reason</th>
+                            <th scope="col" class="text-end">Action</th>
+                </tr>
+            </thead>
+                    <tbody id="studentArchiveBody">
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="Alex Johnson">
+                                    <div>
+                                        <div class="fw-medium">Alex Johnson</div>
+                                        <div class="text-muted small">ST45AB</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">alex@example.com</td>
+                            <td class="align-middle">ABC Limited</td>
+                            <td class="align-middle">Oct 15, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-secondary-subtle text-secondary">Graduated</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="Maria Garcia">
+                                    <div>
+                                        <div class="fw-medium">Maria Garcia</div>
+                                        <div class="text-muted small">ST67CD</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">maria@example.com</td>
+                            <td class="align-middle">Microsoft.all</td>
+                            <td class="align-middle">Sep 30, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-danger-subtle text-danger">Left program</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="John Smith">
+                                    <div>
+                                        <div class="fw-medium">John Smith</div>
+                                        <div class="text-muted small">ST89EF</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">john@example.com</td>
+                            <td class="align-middle">Dominos Bread and Co</td>
+                            <td class="align-middle">Nov 5, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-primary-subtle text-primary">Transferred</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+        </table>
+    </div>
+
+            <!-- Class Archive Table -->
+            <div id="classArchiveTable" class="archive-table table-responsive" style="display: none;">
+    <table class="table">
+        <thead>
+                        <tr>
+                            <th scope="col">Class</th>
+                            <th scope="col">Instructor</th>
+                            <th scope="col">Schedule</th>
+                            <th scope="col">Archived Date</th>
+                            <th scope="col">Reason</th>
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="classArchiveBody">
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle bg-primary-subtle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-book" style="color: #191970;"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-medium">Mathematics 101</div>
+                                        <div class="text-muted small">KL45XY</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">Sarah Johnson</td>
+                            <td class="align-middle">Monday, 09:00 - 10:30</td>
+                            <td class="align-middle">Dec 15, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-secondary-subtle text-secondary">Course completed</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle bg-primary-subtle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-book" style="color: #191970;"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-medium">Physics Basic</div>
+                                        <div class="text-muted small">KL72AB</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">James Rodriguez</td>
+                            <td class="align-middle">Tuesday, 11:00 - 12:30</td>
+                            <td class="align-middle">Dec 20, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-secondary-subtle text-secondary">Course completed</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
+
+<!-- Company Archive Table -->
+            <div id="companyArchiveTable" class="archive-table table-responsive" style="display: none;">
+    <table class="table">
+        <thead>
+                        <tr>
+                            <th scope="col">Company</th>
+                            <th scope="col">Contact Person</th>
+                            <th scope="col">Email</th>
+                            <th scope="col">Archived Date</th>
+                            <th scope="col">Reason</th>
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="companyArchiveBody">
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle bg-warning-subtle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-building" style="color: #fd7e14;"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-medium">Facebook</div>
+                                        <div class="text-muted small">MA45PN</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">Robert King</td>
+                            <td class="align-middle">robert.king@example.com</td>
+                            <td class="align-middle">Nov 10, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-danger-subtle text-danger">Contract ended</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle bg-warning-subtle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-building" style="color: #fd7e14;"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-medium">PHCN</div>
+                                        <div class="text-muted small">MA67MK</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">John Doe</td>
+                            <td class="align-middle">john.doe@example.com</td>
+                            <td class="align-middle">Dec 5, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-danger-subtle text-danger">Partnership ended</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
+
+<!-- Instructor Archive Table -->
+            <div id="instructorArchiveTable" class="archive-table table-responsive" style="display: none;">
+    <table class="table">
+        <thead>
+                        <tr>
+                            <th scope="col">Instructor</th>
+                            <th scope="col">Email</th>
+                            <th scope="col">Department</th>
+                            <th scope="col">Archived Date</th>
+                            <th scope="col">Reason</th>
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="instructorArchiveBody">
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile5.png') }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="James Rodriguez">
+                                    <div>
+                                        <div class="fw-medium">James Rodriguez</div>
+                                        <div class="text-muted small">AK67LP</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">james@example.com</td>
+                            <td class="align-middle">Physics</td>
+                            <td class="align-middle">Nov 30, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-secondary-subtle text-secondary">Retired</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                         class="rounded-circle me-3" 
+                                         width="40" 
+                                         height="40"
+                                         alt="Carlos Mendoza">
+                                    <div>
+                                        <div class="fw-medium">Carlos Mendoza</div>
+                                        <div class="text-muted small">AK56JK</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="align-middle">carlos@example.com</td>
+                            <td class="align-middle">Mathematics</td>
+                            <td class="align-middle">Dec 15, 2023</td>
+                            <td class="align-middle">
+                                <span class="badge bg-danger-subtle text-danger">Left institution</span>
+                            </td>
+                            <td class="align-middle text-end">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button class="btn btn-link p-0" title="View Details">
+                                        <i class="bi bi-eye" style="color: #191970;"></i>
+                                    </button>
+                                    <button class="btn btn-link p-0" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise" style="color: #191970;"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
+
+    <!-- Pagination -->
+    <div class="d-flex align-items-center mt-3">
+        <div class="d-flex align-items-center">
+            <select class="form-select form-select-sm" id="rowsPerPage" style="width: 75px;">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+            </select>
+            <span class="ms-2">records per page</span>
+        </div>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="prevPage">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <span id="pageInfo">1-1 of 1</span>
+            <button class="btn btn-sm btn-outline-secondary" id="nextPage">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pages/archive.js') }}"></script>
+{% endblock %} 
