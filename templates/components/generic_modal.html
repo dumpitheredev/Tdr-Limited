@@ -1,0 +1,43 @@
+<!-- Generic Modal Component -->
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-labelledby="{{ modal_id }}Label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered {% if modal_size %}modal-{{ modal_size }}{% endif %}">
+        <div class="modal-content" style="border-radius: 12px;">
+            <div class="modal-header border-bottom-0 px-4 pt-4 pb-0">
+                <h5 class="modal-title fw-semibold" id="{{ modal_id }}Label" style="color: #191970;">{{ modal_title }}</h5>
+                <button type="button" 
+                        class="btn-close" 
+                        data-bs-dismiss="modal" 
+                        aria-label="Close">
+                </button>
+            </div>
+            
+            <div class="modal-body px-4 pt-3">
+                <form id="{{ form_id }}">
+                    {% block modal_content %}
+                    <!-- Content will be provided by the template that includes this component -->
+                    {% endblock %}
+
+                    <!-- Action Buttons -->
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button type="button" 
+                                class="btn btn-secondary" 
+                                data-bs-dismiss="modal"
+                                style="border-radius: 8px; padding: 8px 16px;">
+                            {{ cancel_button_text|default('Cancel') }}
+                        </button>
+                        <button type="submit" 
+                                id="{{ submit_button_id }}"
+                                class="btn btn-primary" 
+                                style="background-color: #191970; border-color: #191970; border-radius: 8px; padding: 8px 16px;">
+                            {{ submit_button_text }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block modal_scripts %}
+<!-- Scripts specific to this modal will be provided by the template that includes this component -->
+{% endblock %} 

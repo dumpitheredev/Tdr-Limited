@@ -1,0 +1,141 @@
+{% extends 'components/generic_modal.html' %}
+
+{% set modal_id = "addStudentModal" %}
+{% set modal_title = "Add New Student" %}
+{% set form_id = "addStudentForm" %}
+{% set submit_button_id = "createStudentBtn" %}
+{% set submit_button_text = "Create Student" %}
+
+{% block modal_content %}
+<!-- First Name -->
+<div class="mb-3">
+    <label for="firstName" class="form-label fw-medium">First Name</label>
+    <input type="text" 
+           class="form-control" 
+           id="firstName" 
+           name="firstName"
+           required
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Last Name -->
+<div class="mb-3">
+    <label for="lastName" class="form-label fw-medium">Last Name</label>
+    <input type="text" 
+           class="form-control" 
+           id="lastName" 
+           name="lastName"
+           required
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Email Address -->
+<div class="mb-3">
+    <label for="email" class="form-label fw-medium">Email Address</label>
+    <input type="email" 
+           class="form-control" 
+           id="email" 
+           name="email"
+           required
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Confirm Email Address -->
+<div class="mb-3">
+    <label for="confirmEmail" class="form-label fw-medium">Confirm Email Address</label>
+    <input type="email" 
+           class="form-control" 
+           id="confirmEmail" 
+           name="confirmEmail"
+           required
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Hidden Role Field -->
+<input type="hidden" id="userRole" name="userRole" value="st">
+
+<!-- Student ID -->
+<div class="mb-4">
+    <label for="studentId" class="form-label fw-medium">Student ID</label>
+    <input type="text" 
+           class="form-control bg-light" 
+           id="studentId" 
+           value="Auto-generated" 
+           disabled
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+{% endblock %}
+
+{% block modal_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const studentIdField = document.getElementById('studentId');
+    const prefix = 'st'; // Fixed prefix for students
+    const createButton = document.getElementById('createStudentBtn');
+
+    // Function to generate random numbers (2 digits)
+    function generateRandomNumbers() {
+        return Math.floor(Math.random() * 90 + 10).toString(); // generates 10-99
+    }
+
+    // Function to generate random letters (2 letters)
+    function generateRandomLetters() {
+        const letters = 'abcdefghijklmnopqrstuvwxyz';
+        return Array(2).fill(null)
+            .map(() => letters.charAt(Math.floor(Math.random() * letters.length)))
+            .join('');
+    }
+
+    // Function to generate student ID
+    function generateStudentId() {
+        const numbers = generateRandomNumbers(); // 2 numbers (10-99)
+        const letters = generateRandomLetters(); // 2 random letters
+        return `${prefix}${numbers}${letters}`; // e.g., st72zf
+    }
+
+    // Generate ID when modal opens
+    studentIdField.value = generateStudentId();
+
+    // Form submission handler
+    const form = document.getElementById('addStudentForm');
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Email validation
+        const email = document.getElementById('email').value.trim();
+        const confirmEmail = document.getElementById('confirmEmail').value.trim();
+        
+        // Skip email validation for development/testing
+        // if (email !== confirmEmail) {
+        //     alert('Email addresses do not match!');
+        //     return;
+        // }
+
+        // Disable button to indicate processing
+        createButton.disabled = true;
+        createButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Creating...';
+
+        // Simulate API call with setTimeout (replace with actual API call)
+        setTimeout(function() {
+            // Here you would typically send the data to your backend
+            console.log('Form submitted with ID:', studentIdField.value);
+            
+            // Re-enable button
+            createButton.disabled = false;
+            createButton.innerHTML = 'Create Student';
+            
+            // Close the modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addStudentModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show success message (if you have a toast component)
+            if (typeof showToast === 'function') {
+                showToast('Success', 'Student created successfully', 'success');
+            }
+        }, 1000); // Simulating a 1-second API call
+    });
+});
+</script>
+{% endblock %} 

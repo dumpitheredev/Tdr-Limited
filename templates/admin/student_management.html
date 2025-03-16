@@ -201,7 +201,7 @@
     </div>
 </div>
 
-{% include 'components/add_student_modal.html' %}
+{% include 'components/add_student_generic.html' %}
 {% include 'components/view_student_modal.html' %}
 {% include 'components/edit_student_modal.html' %}
 {% include 'components/toast_notification.html' %}
@@ -214,6 +214,5 @@
     var currentStatus = "{{ status_filter }}";
     var currentPerPage = "{{ per_page }}";
 </script>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/student-management.js') }}"></script>
 {% endblock %}
