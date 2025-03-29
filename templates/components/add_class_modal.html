@@ -1,8 +1,8 @@
 <div class="modal fade" id="addClassModal" tabindex="-1" aria-labelledby="addClassModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="addClassModalLabel">Add New Class</h5>
+            <div class="modal-header" style="background-color: #f8f9fa;">
+                <h5 class="modal-title" id="addClassModalLabel" style="color: #191970;">Add New Class</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -14,10 +14,21 @@
                                class="form-control" 
                                id="className" 
                                name="className" 
+                               placeholder="Enter class name"
                                required>
                         <div class="invalid-feedback">
                             Please enter class name
                         </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" 
+                                  id="description" 
+                                  name="description" 
+                                  rows="3"
+                                  placeholder="Enter class description"></textarea>
                     </div>
 
                     <!-- Day of Week -->
@@ -69,19 +80,16 @@
 
                     <!-- Instructor -->
                     <div class="mb-3">
-                        <label for="instructor" class="form-label">Instructor*</label>
+                        <label for="instructor" class="form-label">Instructor (Optional)</label>
                         <select class="form-select" 
                                 id="instructor" 
-                                name="instructor" 
-                                required>
+                                name="instructor">
                             <option value="">Select instructor</option>
                             {% for instructor in instructors %}
-                            <option value="{{ instructor.user_id }}">{{ instructor.name }}</option>
+                            <option value="{{ instructor.id }}">{{ instructor.first_name }} {{ instructor.last_name }}</option>
                             {% endfor %}
                         </select>
-                        <div class="invalid-feedback">
-                            Please select an instructor
-                        </div>
+                        <small class="text-muted">Leave empty to create a class without an assigned instructor</small>
                     </div>
 
                     <!-- Academic Year -->
@@ -104,17 +112,20 @@
                     <!-- Class ID (Read-only) -->
                     <div class="mb-3">
                         <label for="classId" class="form-label">Class ID</label>
-                        <input type="text" 
-                               class="form-control" 
-                               id="classId" 
-                               name="classId" 
-                               readonly>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light text-muted">Auto-generated</span>
+                            <input type="text" 
+                                   class="form-control bg-light" 
+                                   value="Will be generated automatically"
+                                   disabled>
+                        </div>
+                        <small class="text-muted">Class ID will be generated automatically when saved</small>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" form="addClassForm" class="btn btn-primary" style="background-color: #191970;">Add Class</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="addClassForm" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">Add Class</button>
             </div>
         </div>
     </div>

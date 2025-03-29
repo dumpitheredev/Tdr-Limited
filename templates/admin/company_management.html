@@ -7,7 +7,7 @@
 
 {% block title %}Company Management{% endblock %}
 
-{% block active_page %}company-management{% endblock %}
+{% block active_page %}company_management{% endblock %}
 
 {% block header_title %}Company Management{% endblock %}
 
@@ -68,6 +68,7 @@
     </div>
 
     <div class="row">
+        <!-- Company Table and other content -->
         <div class="col-12">
             <!-- Controls Row -->
             <div class="d-flex align-items-center justify-content-between mb-4">
@@ -86,9 +87,11 @@
                 </div>
 
                 <!-- Right side: Action Buttons -->
-              <div class="d-flex gap-2">
-                    <button id="exportCsv" class="btn btn-primary" style="background-color: #191970; color: white;">
-                        <i class="bi bi-arrow-up-right me-2"></i>Export CSV  
+                <div class="d-flex gap-2">
+                    <button class="btn" 
+                            id="exportCSV"
+                            style="background-color: #191970; color: white;">
+                        <i class="bi bi-arrow-up-right me-2"></i>Export CSV
                     </button>
                     <button class="btn" 
                             data-bs-toggle="modal" 
@@ -125,30 +128,33 @@
                 </div>
             </div>
 
-            <!-- Pagination Controls -->
-            <div class="d-flex align-items-center gap-3 mt-3">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="text-body-secondary">Show rows per page:</span>
-                    <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
-                        <option value="5">5 </option>
-                        <option value="10">10 </option>
-                        <option value="25">25 </option>
-                    </select>
-                </div>
-                <div class="ms-auto d-flex align-items-center gap-2">
-                    <button id="prevPage" 
-                            class="btn btn-sm btn-outline-secondary px-2" 
-                            {% if page == 1 %}disabled{% endif %}>
-                        <i class="bi bi-chevron-left"></i>
-                    </button>
-                    <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
-                        {{ start_idx + 1 }}-{{ end_idx }} of {{ total_companies }}
-                    </span>
-                    <button id="nextPage" 
-                            class="btn btn-sm btn-outline-secondary px-2"
-                            {% if end_idx >= total_companies %}disabled{% endif %}>
-                        <i class="bi bi-chevron-right"></i>
-                    </button>
+                    <!-- Pagination Controls -->
+                    <div class="d-flex align-items-center gap-3 mt-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-body-secondary">Show rows per page:</span>
+                            <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
+                                <option value="5">5</option>
+                                <option value="10" selected>10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                        </div>
+                        <div class="ms-auto d-flex align-items-center gap-2">
+                            <button id="prevPage" 
+                                    class="btn btn-sm btn-outline-secondary px-2" 
+                                    disabled>
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
+                                1-{{ companies|length }} of {{ companies|length }}
+                            </span>
+                            <button id="nextPage" 
+                                    class="btn btn-sm btn-outline-secondary px-2"
+                                    disabled>
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -287,9 +293,76 @@
 
 {% block scripts %}
 <script>
-    var currentPage = "{{ page }}";
-    var currentPerPage = "{{ per_page }}";
+    var currentPage = 1;
+    var currentStatus = "";
+    var currentPerPage = 10;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Basic filter functionality
+        const searchInput = document.getElementById('searchInput');
+        const statusFilter = document.getElementById('statusFilter');
+        const exportBtn = document.getElementById('exportCSV');
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', filterCompanies);
+        }
+        
+        if (statusFilter) {
+            statusFilter.addEventListener('change', filterCompanies);
+        }
+        
+        if (exportBtn) {
+            exportBtn.addEventListener('click', function() {
+                alert('Export functionality will be implemented in future updates');
+            });
+        }
+        
+        // Basic form handling
+        const addCompanyForm = document.getElementById('addCompanyForm');
+        if (addCompanyForm) {
+            addCompanyForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                alert('Company creation will be implemented in future updates');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addCompanyModal'));
+                modal.hide();
+            });
+        }
+    });
+    
+    function filterCompanies() {
+        // Basic client-side filtering
+        const searchValue = document.getElementById('searchInput').value.toLowerCase();
+        const statusValue = document.getElementById('statusFilter').value;
+        
+        const rows = document.querySelectorAll('#companyTable tbody tr');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            const companyName = row.querySelector('td:first-child .fw-medium').textContent.toLowerCase();
+            const contactName = row.querySelector('td:nth-child(2) div:first-child').textContent.toLowerCase();
+            const status = row.querySelector('td:nth-child(3) .badge').textContent;
+            
+            const matchesSearch = searchValue === '' || 
+                                  companyName.includes(searchValue) || 
+                                  contactName.includes(searchValue);
+                                  
+            const matchesStatus = statusValue === '' || status === statusValue;
+            
+            if (matchesSearch && matchesStatus) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        // Update pagination info
+        document.getElementById('paginationInfo').textContent = visibleCount > 0 ? 
+            `1-${visibleCount} of ${visibleCount}` : '0-0 of 0';
+    }
+    
+    function handleCompanyAction(action, id) {
+        alert(`${action} action for company ${id} will be implemented in future updates`);
+    }
 </script>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script src="{{ url_for('static', filename='js/pages/company-management.js') }}"></script>
 {% endblock %} 

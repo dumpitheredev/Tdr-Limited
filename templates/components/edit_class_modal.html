@@ -23,6 +23,16 @@
                             Please enter class name
                         </div>
                     </div>
+                    
+                    <!-- Description -->
+                    <div class="mb-3">
+                        <label for="editClassDescription" class="form-label">Description</label>
+                        <textarea class="form-control" 
+                                 id="editClassDescription" 
+                                 name="editClassDescription" 
+                                 rows="3" 
+                                 placeholder="Enter class description"></textarea>
+                    </div>
 
                     <!-- Day of Week -->
                     <div class="mb-3">
@@ -80,7 +90,7 @@
                                 required>
                             <option value="">Select instructor</option>
                             {% for instructor in instructors %}
-                            <option value="{{ instructor.user_id }}">{{ instructor.name }}</option>
+                            <option value="{{ instructor.id }}">{{ instructor.first_name }} {{ instructor.last_name }}</option>
                             {% endfor %}
                         </select>
                         <div class="invalid-feedback">
@@ -90,18 +100,18 @@
 
                     <!-- Academic Year -->
                     <div class="mb-3">
-                        <label for="editClassYear" class="form-label">Academic Year*</label>
+                        <label for="editClassYear" class="form-label">Term/Year*</label>
                         <select class="form-select" 
                                 id="editClassYear" 
                                 name="editClassYear" 
                                 required>
-                            <option value="">Select academic year</option>
+                            <option value="">Select term</option>
                             <option value="2023/2024">2023/2024</option>
                             <option value="2024/2025">2024/2025</option>
                             <option value="2025/2026">2025/2026</option>
                         </select>
                         <div class="invalid-feedback">
-                            Please select academic year
+                            Please select term/year
                         </div>
                     </div>
                     
@@ -114,7 +124,6 @@
                                 required>
                             <option value="Active">Active</option>
                             <option value="Inactive">Inactive</option>
-                            <option value="Completed">Completed</option>
                         </select>
                         <div class="invalid-feedback">
                             Please select a status

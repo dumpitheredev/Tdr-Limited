@@ -171,15 +171,15 @@
                 <div class="ms-auto d-flex align-items-center gap-2">
                     <button id="prevPage" 
                             class="btn btn-sm btn-outline-secondary px-2" 
-                            {% if page == 1 %}disabled{% endif %}>
+                            disabled>
                         <i class="bi bi-chevron-left"></i>
                     </button>
                     <span class="text-body-secondary" id="paginationInfo" style="min-width: 100px; text-align: center;">
-                        {{ start_idx + 1 }}-{{ end_idx }} of {{ total_instructors }}
+                        1-{{ instructors|length }} of {{ total_instructors }}
                     </span>
                     <button id="nextPage" 
                             class="btn btn-sm btn-outline-secondary px-2"
-                            {% if end_idx >= total_instructors %}disabled{% endif %}>
+                            disabled>
                         <i class="bi bi-chevron-right"></i>
                     </button>
                 </div>

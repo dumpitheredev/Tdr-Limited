@@ -1,29 +1,64 @@
 <style>
+    /* Student column (fixed) */
+    .student-column {
+        min-width: 200px;
+        flex-shrink: 0;
+        position: sticky;
+        left: 0;
+        z-index: 10;
+        background-color: #fff0f0; /* Light red background */
+    }
+
+    /* Calendar column (scrollable) */
+    .calendar-column {
+        flex-grow: 1;
+        overflow-x: auto;
+        background-color: #f0fff0; /* Light green background */
+    }
+
+    /* Attendance wrapper styles */
+    .attendance-wrapper {
+        display: flex;
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    /* Header styles */
+    .student-header {
+        color: #191970;
+        background-color: #d3d3d3;
+        height: 82px;
+        text-align: center;
+        position: sticky;
+        left: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 15px;
+        font-weight: 500;
+    }
+
     .attendance-header {
         color: #191970;
         background-color: #d3d3d3;
         height: 82px;
         text-align: center;
         vertical-align: middle;
+        min-width: 100px;
         padding: 15px;
+        font-weight: 500;
     }
 
-    .student-header {
-        color: #191970;
-        background-color: #d3d3d3;
-        height: 82px;
-        display: flex;
-        align-items: center;
-        padding-left: 15px;
-    }
-
+    /* Cell styles */
     .student-cell {
         background-color: #f8f9fa;
         height: 82px;
         padding: 15px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        position: sticky;
+        left: 0;
+        z-index: 10;
     }
 
     .student-name {
@@ -32,182 +67,52 @@
     }
 
     .student-info {
-        color: #6c757d;
         font-size: 0.875rem;
+        color: #6c757d;
     }
 
     .attendance-cell {
-        height: 82px;
         text-align: center;
-        vertical-align: middle !important;
-        padding: 15px !important;
+        vertical-align: middle;
+        height: 82px;
+        min-width: 100px;
+        padding: 15px;
     }
 
     .attendance-content {
         display: flex;
         flex-direction: column;
+        align-items: center;
         justify-content: center;
-        align-items: center;
-        height: 100%;
     }
 
-    .attendance-badge {
-        margin-bottom: 4px;
-    }
-
-    .attendance-time {
-        color: #6c757d;
-        font-size: 0.875rem;
-    }
-
-    /* Ensure tables have consistent widths */
-    .student-table, .attendance-table {
-        table-layout: fixed;
-    }
-
-    /* Ensure cells maintain height */
-    .student-table td, .attendance-table td {
-        height: 82px;
-    }
-
-    /* Responsive styles */
-    .attendance-wrapper {
-        display: flex;
-        width: 100%;
-        overflow-x: auto;
-    }
-
-    .student-column {
-        min-width: 200px;
-        flex-shrink: 0;
-        background-color: #f8f9fa;
-        border-right: 2px solid #dee2e6;
-        position: sticky;
-        left: 0;
-        z-index: 10;
-    }
-
-    .calendar-column {
-        flex-grow: 1;
-        min-width: min-content;
-    }
-
-    .attendance-header {
-        min-width: 100px; /* Minimum width for date columns */
-        white-space: nowrap;
-    }
-
-    .attendance-cell {
-        min-width: 100px;
-        white-space: nowrap;
-    }
-
-    /* Custom scrollbar for better UX */
-    .attendance-wrapper::-webkit-scrollbar {
-        height: 8px;
-    }
-
-    .attendance-wrapper::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 4px;
-    }
-
-    .attendance-wrapper::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 4px;
-    }
-
-    .attendance-wrapper::-webkit-scrollbar-thumb:hover {
-        background: #555;
-    }
-
-    /* Shadow indicator for scroll */
-    .has-more-content::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        width: 30px;
-        background: linear-gradient(to right, transparent, rgba(0,0,0,0.1));
-        pointer-events: none;
-    }
-
-    .date-range-filter {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1rem;
-        margin-bottom: 1rem;
-        padding: 1rem;
-        align-items: center;
-    }
-
-    .date-input-group {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex: 1;
-        min-width: 200px;
-    }
-
-    .date-input-wrapper {
-        position: relative;
-        flex: 1;
-    }
-
+    /* Date input styles */
     .date-input {
-        width: 100%;
-        padding: 0.375rem 2.25rem 0.375rem 0.75rem;
-        border: 1px solid #dee2e6;
-        border-radius: 0.25rem;
+        max-width: 130px;
     }
 
-    .calendar-icon {
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-        pointer-events: none;
-        color: #6c757d;
+    /* Badge styles to match screenshot */
+    .badge {
+        font-size: 0.9rem;
+        font-weight: 500;
+        border-radius: 4px;
+        display: inline-block;
+        padding: 6px 12px;
     }
 
-    .filter-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
+    .badge.bg-success {
+        background-color: #d1e7dd !important;
+        color: #146c43 !important;
     }
 
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .date-range-filter {
-            flex-direction: column;
-            align-items: stretch;
-        }
-
-        .date-input-group {
-            width: 100%;
-        }
-
-        .filter-buttons {
-            width: 100%;
-            justify-content: flex-end;
-        }
-
-        .filter-buttons button {
-            flex: 1;
-        }
+    .badge.bg-warning {
+        background-color: #fff3cd !important;
+        color: #997404 !important;
     }
 
-    @media (max-width: 576px) {
-        .date-input-group {
-            flex-direction: column;
-            align-items: stretch;
-        }
-
-        .date-input-group label {
-            margin-bottom: 0.25rem;
-        }
+    .badge.bg-danger {
+        background-color: #f8d7da !important;
+        color: #b02a37 !important;
     }
 </style>
 
@@ -215,59 +120,69 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
-<div class="date-range-filter">
-    <div class="date-input-group">
-        <label for="startDate">From:</label>
-        <div class="date-input-wrapper">
-            <input 
-                type="text" 
-                id="startDate" 
-                class="date-input flatpickr-input"
-                placeholder="Select start date"
-                aria-label="Start date"
-                readonly="readonly"
-            >
-            <i class="bi bi-calendar3 calendar-icon"></i>
+{% if not is_included_in_view_modal %}
+<!-- Statistics Section -->
+<div class="row mt-4">
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalPresent">0</h2>
+            </div>
         </div>
     </div>
-    <div class="date-input-group">
-        <label for="endDate">To:</label>
-        <div class="date-input-wrapper">
-            <input 
-                type="text" 
-                id="endDate" 
-                class="date-input flatpickr-input"
-                placeholder="Select end date"
-                aria-label="End date"
-                readonly="readonly"
-            >
-            <i class="bi bi-calendar3 calendar-icon"></i>
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Late</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalLate">0</h2>
+            </div>
         </div>
     </div>
-    <div class="filter-buttons">
-        <button 
-            type="button" 
-            class="btn btn-primary apply-filter"
-            style="background-color: #191970; border-color: #191970;"
-            onclick="attendanceTable.filterAttendance()"
-        >
-            Apply Filter
-        </button>
-        <button 
-            type="button" 
-            class="btn btn-outline-secondary"
-            onclick="attendanceTable.resetFilter()"
-        >
-            Reset
-        </button>
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalAbsence">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 col-sm-12">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="attendancePercentage">0.0%</h2>
+            </div>
+        </div>
     </div>
 </div>
+{% endif %}
 
-<!-- Include Bootstrap Icons if not already included -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+<!-- Date filter form -->
+<div class="date-filter-form my-3 d-flex flex-wrap">
+    <div class="d-flex align-items-center me-2 mb-2">
+        <label for="startDate" class="form-label me-2 mb-0">From:</label>
+        <input type="text" id="startDate" class="form-control form-control-sm date-input" placeholder="Select date">
+    </div>
+    <div class="d-flex align-items-center me-2 mb-2">
+        <label for="endDate" class="form-label me-2 mb-0">To:</label>
+        <input type="text" id="endDate" class="form-control form-control-sm date-input" placeholder="Select date">
+    </div>
+    <button type="button" class="btn btn-sm me-2 mb-2" onclick="applyDateFilter()" style="background-color: #191970; color: white;">Apply Filter</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" onclick="resetDateFilter()">Reset</button>
+</div>
 
+<!-- Single Attendance Table -->
 <div class="attendance-wrapper">
-    <!-- Student Column (Fixed) -->
+    <!-- Student Column (RED) -->
     <div class="student-column">
         <table class="table table-bordered mb-0">
             <thead>
@@ -276,109 +191,200 @@
                 </tr>
             </thead>
             <tbody id="studentNameColumn">
-                <!-- Will be populated dynamically -->
+                <!-- Loading placeholder -->
+                <tr>
+                    <td class="student-cell text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2 mb-0">Loading data...</p>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
-
-    <!-- Calendar View (Scrollable) -->
+    
+    <!-- Calendar Column (GREEN) -->
     <div class="calendar-column">
         <table class="table table-bordered mb-0">
             <thead>
-                <tr>
-                    {% if dates %}
-                        {% for date in dates %}
-                        <th class="attendance-header">
-                            {{ date.day }}<br>
-                            <small>{{ date.date }}</small>
-                        </th>
-                        {% endfor %}
-                    {% else %}
-                        <th class="attendance-header">Mon<br><small>21</small></th>
-                        <th class="attendance-header">Tue<br><small>22</small></th>
-                        <th class="attendance-header">Wed<br><small>23</small></th>
-                        <th class="attendance-header">Thu<br><small>24</small></th>
-                        <th class="attendance-header">Fri<br><small>25</small></th>
-                        <th class="attendance-header">Mon<br><small>28</small></th>
-                        <th class="attendance-header">Tue<br><small>29</small></th>
-                        <th class="attendance-header">Wed<br><small>30</small></th>
-                        <th class="attendance-header">Thu<br><small>31</small></th>
-                        <th class="attendance-header">Fri<br><small>01</small></th>
-                    {% endif %}
+                <tr id="calendarHeaderRow">
+                    <!-- Dynamic headers will be added here, showing 7 days by default -->
+                    <!-- The code below is just placeholder that will be replaced by JavaScript -->
+                    <th class="attendance-header">Mon<br>21</th>
+                    <th class="attendance-header">Tue<br>22</th>
+                    <th class="attendance-header">Wed<br>23</th>
+                    <th class="attendance-header">Thu<br>24</th>
+                    <th class="attendance-header">Fri<br>25</th>
+                    <th class="attendance-header">Sat<br>26</th>
+                    <th class="attendance-header">Sun<br>27</th>
                 </tr>
-
             </thead>
-            <tbody id="attendanceTableBody">
-                <!-- Will be populated dynamically -->
+            <tbody id="recordsTableBody">
+                <!-- Loading placeholder -->
+                <tr>
+                    <td colspan="5" class="text-center py-4">
+                        <div class="d-flex flex-column align-items-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="text-muted mt-2 mb-0">Loading attendance data...</p>
+                        </div>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- Add this after the attendance-wrapper div -->
-{% if not is_student_view %}
-<div class="d-flex justify-content-between align-items-center mt-3">
-    <div class="d-flex align-items-center">
-        <span class="me-2">Show rows per page:</span>
-        <select class="form-select form-select-sm" style="width: 60px;" id="modalRowsPerPage">
-            <option value="5"selected>5</option>
+<!-- Pagination Controls -->
+<div id="attendancePaginationContainer" class="d-flex align-items-center gap-3 mt-3" style="display: none;">
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-body-secondary">Rows per page:</span>
+        <select id="attendanceRowsPerPage" class="form-select form-select-sm" style="width: 80px;" onchange="changeAttendanceRowsPerPage()">
+            <option value="5" selected>5</option>
             <option value="10">10</option>
-            <option value="20">20</option>
+            <option value="25">25</option>
             <option value="50">50</option>
         </select>
     </div>
-    <div class="d-flex align-items-center">
-        <button class="btn btn-sm btn-outline-secondary me-2" id="modalPrevPage">
+    <div class="ms-auto d-flex align-items-center gap-2">
+        <button id="attendancePrevPage" 
+                class="btn btn-sm btn-outline-secondary px-2" 
+                onclick="goToAttendancePrevPage()"
+                disabled>
             <i class="bi bi-chevron-left"></i>
         </button>
-        <span id="modalPageInfo">1-10 of 20</span>
-        <button class="btn btn-sm btn-outline-secondary ms-2" id="modalNextPage">
+        <span class="text-body-secondary" id="attendancePaginationInfo" style="min-width: 100px; text-align: center;">
+            0-0 of 0
+        </span>
+        <button id="attendanceNextPage" 
+                class="btn btn-sm btn-outline-secondary px-2"
+                onclick="goToAttendanceNextPage()"
+                disabled>
             <i class="bi bi-chevron-right"></i>
         </button>
     </div>
 </div>
-{% endif %}
+
+<!-- Statistics Row -->
+<div class="row mt-4">
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalPresent">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Late</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalLate">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 col-sm-12 mb-3">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="totalAbsence">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 col-sm-12">
+        <div class="card">
+            <div class="card-header" style="background-color: #C0C0C0;">
+                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
+            </div>
+            <div class="card-body">
+                <h2 class="mb-0" id="attendancePercentage">0.0%</h2>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
+// Initialize date pickers when document is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize start date picker
-    const startDatePicker = flatpickr("#startDate", {
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        maxDate: 'today',
-        onChange: function(selectedDates, dateStr) {
-            // Update end date minimum when start date changes
-            endDatePicker.set('minDate', dateStr);
-        }
-    });
-
-    // Initialize end date picker
-    const endDatePicker = flatpickr("#endDate", {
-        dateFormat: "d/m/Y",
-        allowInput: true,
-        maxDate: 'today',
-        onChange: function(selectedDates, dateStr) {
-            // Update start date maximum when end date changes
-            startDatePicker.set('maxDate', dateStr);
-        }
-    });
-
-    // Set initial dates (last 7 days)
-    const today = new Date();
-    const lastWeek = new Date(today);
-    lastWeek.setDate(today.getDate() - 6); // Show last 7 days including today
-
-    startDatePicker.setDate(lastWeek);
-    endDatePicker.setDate(today);
-
-    // Make calendar icons clickable
-    document.querySelectorAll('.calendar-icon').forEach(icon => {
-        icon.style.pointerEvents = 'auto';
-        icon.style.cursor = 'pointer';
-        icon.addEventListener('click', (e) => {
-            const input = e.target.closest('.date-input-wrapper').querySelector('input');
-            input.click();
+    if (typeof flatpickr === 'function') {
+        flatpickr("#startDate", {
+            dateFormat: "d/m/Y",
+            maxDate: 'today'
         });
-    });
+        
+        flatpickr("#endDate", {
+            dateFormat: "d/m/Y",
+            maxDate: 'today'
+        });
+    }
 });
+
+// Apply date filter
+window.applyDateFilter = function() {
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const classId = document.getElementById('classId')?.textContent;
+    
+    if (startDate && endDate && classId) {
+        // Convert dates to the proper format if needed
+        let formattedStartDate = startDate;
+        let formattedEndDate = endDate;
+        
+        // Convert from dd/mm/yyyy to yyyy-mm-dd format if needed
+        if (startDate.includes('/')) {
+            const [day, month, year] = startDate.split('/');
+            formattedStartDate = `${year}-${month}-${day}`;
+        }
+        
+        if (endDate.includes('/')) {
+            const [day, month, year] = endDate.split('/');
+            formattedEndDate = `${year}-${month}-${day}`;
+        }
+        
+        // Use the correct parameter names for the API
+        loadClassAttendance(classId, formattedStartDate, formattedEndDate);
+    } else {
+        alert('Please select both start and end dates');
+    }
+};
+
+// Reset date filter
+window.resetDateFilter = function() {
+    const classId = document.getElementById('classId')?.textContent;
+    if (classId) {
+        // Reset date pickers to last 7 days
+        if (typeof flatpickr !== 'undefined') {
+            const startDatePicker = document.getElementById('startDate')._flatpickr;
+            const endDatePicker = document.getElementById('endDate')._flatpickr;
+            
+            if (startDatePicker && endDatePicker) {
+                const today = new Date();
+                const lastWeek = new Date(today);
+                lastWeek.setDate(today.getDate() - 6); // 7 days including today
+                
+                startDatePicker.setDate(lastWeek);
+                endDatePicker.setDate(today);
+                
+                // Format dates for API in yyyy-mm-dd format
+                const formattedStartDate = lastWeek.toISOString().split('T')[0];
+                const formattedEndDate = today.toISOString().split('T')[0];
+                
+                // Call loadClassAttendance with formatted dates
+                loadClassAttendance(classId, formattedStartDate, formattedEndDate);
+                return;
+            }
+        }
+        
+        // Fallback if flatpickr isn't available
+        loadClassAttendance(classId);
+    }
+};
 </script> 

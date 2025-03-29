@@ -111,6 +111,15 @@
                         <div class="card border-0 shadow-sm">
                             <div class="card-body">
                                 <h3 id="className" class="mb-3" style="color: #191970;"></h3>
+                                
+                                <!-- Description -->
+                                <div class="mb-3">
+                                    <p class="text-muted mb-2">Description:</p>
+                                    <div id="classDescription" class="p-3 bg-light rounded">
+                                        No description available
+                                    </div>
+                                </div>
+                                
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <p class="mb-1"><strong>Class ID:</strong> <span id="classId"></span></p>
@@ -133,45 +142,9 @@
                 </div>
 
                 <!-- Import attendance table component -->
-                {% with is_student_view=False %}
+                {% with is_student_view=False, is_included_in_view_modal=True %}
                     {% include 'components/attendance_table.html' %}
                 {% endwith %}
-
-                <!-- Statistics Section -->
-                <div class="row mt-4">
-                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
-                        <div class="card">
-                            <div class="card-header" style="background-color: #C0C0C0;">
-                                <h6 class="mb-0" style="color: #191970;">Total Present</h6>
-                            </div>
-                            <div class="card-body">
-                                <h2 class="mb-0" id="totalPresent">7</h2>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-4 col-md-6 col-sm-12 mb-3">
-                        <div class="card">
-                            <div class="card-header" style="background-color: #C0C0C0;">
-                                <h6 class="mb-0" style="color: #191970;">Total Absence</h6>
-                            </div>
-                            <div class="card-body">
-                                <h2 class="mb-0" id="totalAbsence">5</h2>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-4 col-md-6 col-sm-12">
-                        <div class="card">
-                            <div class="card-header" style="background-color: #C0C0C0;">
-                                <h6 class="mb-0" style="color: #191970;">Attendance %</h6>
-                            </div>
-                            <div class="card-body">
-                                <h2 class="mb-0" id="attendancePercentage">46.67%</h2>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                
             </div>
             <div class="modal-footer">
                 <button type="button" 

@@ -204,9 +204,9 @@
                                 aria-label="Attendance status"
                                 onchange="updateStatusStyle(this)">
                             <option value="" selected disabled>Select status</option>
-                            <option value="present" class="text-success">Present</option>
-                            <option value="absent" class="text-danger">Absent</option>
-                            <option value="late" class="text-warning">Late</option>
+                            <option value="Present" class="text-success">Present</option>
+                            <option value="Absent" class="text-danger">Absent</option>
+                            <option value="Late" class="text-warning">Late</option>
                         </select>
                     </td>
                     <td>
@@ -464,13 +464,13 @@
         
         // Add appropriate styling based on selected value
         switch(select.value) {
-            case 'present':
+            case 'Present':
                 select.classList.add('text-success', 'border-success');
                 break;
-            case 'absent':
+            case 'Absent':
                 select.classList.add('text-danger', 'border-danger');
                 break;
-            case 'late':
+            case 'Late':
                 select.classList.add('text-warning', 'border-warning');
                 break;
         }

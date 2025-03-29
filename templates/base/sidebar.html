@@ -1,5 +1,5 @@
 {% macro sidebar() %}
-{% if request.endpoint != 'password_reset' %}
+{% if request.endpoint != 'auth.password_reset' %}
 <nav class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation" style="font-size: 0.9rem;">
     <button class="close-sidebar d-lg-none" aria-label="Close menu">
         <i class="fas fa-times"></i>
@@ -13,98 +13,126 @@
     <div class="nav-items flex-grow-1">
         {% if session.get('role') == 'admin' %}
             <!-- Admin Navigation -->
-            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'dashboard' }}" 
-               href="{{ url_for('dashboard') }}"
-               {{ 'aria-current="page"' if request.endpoint == 'dashboard' }}
+            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'admin.dashboard' }}" 
+               href="{{ url_for('admin.dashboard') }}"
+               {{ 'aria-current="page"' if request.endpoint == 'admin.dashboard' }}
                role="menuitem">
                 <i class="bi bi-grid"></i>
                 Dashboard
             </a>
-            <a href="{{ url_for('admin_profile') }}" 
-               class="nav-link {{ 'active' if request.endpoint == 'admin_profile' }}">
+            <a href="{{ url_for('admin.admin_profile') }}" 
+               class="nav-link {{ 'active' if request.endpoint == 'admin.profile' }}">
                 <i class="fas fa-user"></i>
                 Profile
             </a>
-            {% if request.endpoint != 'dashboard' %}
-            <a class="nav-link {{ 'active' if request.endpoint == 'user_management' }}" 
-               href="{{ url_for('user_management') }}">
+            {% if request.endpoint != 'admin.dashboard' %}
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.user_management' }}" 
+               href="{{ url_for('admin.user_management') }}">
                 <i class="bi bi-people-fill"></i>
                 User Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'student_management' }}" 
-               href="{{ url_for('student_management') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.student_management' }}" 
+               href="{{ url_for('admin.student_management') }}">
                 <i class="bi bi-mortarboard"></i>
                 Student Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'company_management' }}" 
-               href="{{ url_for('company_management') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.company_management' }}" 
+               href="{{ url_for('admin.company_management') }}">
                 <i class="bi bi-building-fill"></i>
                 Company Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'class_management' }}" 
-               href="{{ url_for('class_management') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.class_management' }}" 
+               href="{{ url_for('admin.class_management') }}">
                 <i class="bi bi-easel2"></i>
                 Class Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_management' }}" 
-               href="{{ url_for('instructor_management') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.instructor_management' }}" 
+               href="{{ url_for('admin.instructor_management') }}">
                 <i class="bi bi-person-video3"></i>
                 Instructor Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'enrolment_management' }}" 
-               href="{{ url_for('enrolment_management') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.enrolment_management' }}" 
+               href="{{ url_for('admin.enrolment_management') }}">
                 <i class="bi bi-person-plus-fill"></i>
                 Enrolment Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'view_attendance' }}" 
-               href="{{ url_for('view_attendance') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.attendance_view' }}" 
+               href="{{ url_for('admin.attendance_view') }}">
                 <i class="bi bi-eye"></i>
                 View Attendance
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'mark_attendance' }}" 
-               href="{{ url_for('mark_attendance') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.mark_attendance' }}" 
+               href="{{ url_for('admin.mark_attendance') }}">
                 <i class="bi bi-calendar-check"></i>
                 Mark Attendance
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'admin.view_archive' }}" 
+               href="{{ url_for('admin.view_archive') }}">
+                <i class="bi bi-archive"></i>
+                View Archive
             </a>
             {% endif %}
         {% elif session.get('role') == 'instructor' %}
             <!-- Instructor Navigation -->
-            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'instructor_dashboard' }}" 
-               href="{{ url_for('instructor_dashboard') }}"
-               {{ 'aria-current="page"' if request.endpoint == 'instructor_dashboard' }}
+            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'instructor.dashboard' }}" 
+               href="{{ url_for('instructor.dashboard') }}"
+               {{ 'aria-current="page"' if request.endpoint == 'instructor.dashboard' }}
                role="menuitem">
                 <i class="bi bi-grid"></i>
                 Dashboard
             </a>
-            <a href="{{ url_for('instructor_profile') }}" 
-               class="nav-link {{ 'active' if request.endpoint == 'instructor_profile' }}">
+            <a href="{{ url_for('instructor.dashboard') }}" 
+               class="nav-link {{ 'active' if request.endpoint == 'instructor.dashboard' }}">
                 <i class="fas fa-user"></i>
                 Profile
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_mark_attendance' }}" 
-               href="{{ url_for('instructor_mark_attendance') }}">
+            {% if request.endpoint != 'instructor.dashboard' %}
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor.mark_attendance' }}" 
+               href="{{ url_for('instructor.mark_attendance') }}">
                 <i class="bi bi-calendar-check"></i>
                 Mark Attendance
             </a>
-            <!-- <a class="nav-link {{ 'active' if request.endpoint == 'instructor_absence_report' }}" 
-               href="{{ url_for('instructor_absence_report') }}">
+            <!-- <a class="nav-link {{ 'active' if request.endpoint == 'instructor.dashboard' }}" 
+               href="{{ url_for('instructor.dashboard') }}">
                 <i class="bi bi-file-text"></i>
                 Absence Report
             </a> -->
-            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_view_attendance' }}" 
-               href="{{ url_for('instructor_view_attendance') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor.view_attendance' }}" 
+               href="{{ url_for('instructor.view_attendance') }}">
                 <i class="bi bi-eye"></i>
                 View Attendance
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'instructor_archived_reports' }}" 
-               href="{{ url_for('instructor_archived_reports') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'instructor.dashboard' }}" 
+               href="{{ url_for('instructor.dashboard') }}">
                 <i class="bi bi-archive"></i>
                 Archived Reports
             </a>
+            {% endif %}
+        {% elif session.get('role') == 'student' %}
+            <!-- Student Navigation -->
+            <a class="nav-link dashboard {{ 'active' if request.endpoint == 'student.dashboard' }}" 
+               href="{{ url_for('student.dashboard') }}"
+               {{ 'aria-current="page"' if request.endpoint == 'student.dashboard' }}
+               role="menuitem">
+                <i class="bi bi-grid"></i>
+                Dashboard
+            </a>
+            {% if request.endpoint != 'student.dashboard' %}
+            <a class="nav-link {{ 'active' if request.endpoint == 'student.attendance_history' }}" 
+               href="{{ url_for('student.attendance_history') }}">
+                <i class="bi bi-calendar-check"></i>
+                Attendance History
+            </a>
+            <a class="nav-link {{ 'active' if request.endpoint == 'student.enrolment' }}" 
+               href="{{ url_for('student.enrolment') }}">
+                <i class="bi bi-person-plus-fill"></i>
+                Enrolment
+            </a>
+            {% endif %}
         {% endif %}
     </div>
-    {% if request.endpoint != 'password_reset' %}
-    <a href="{{ url_for('logout') }}" class="nav-link logout-link">
+    {% if request.endpoint != 'auth.password_reset' %}
+    <a href="{{ url_for('auth.logout') }}" class="nav-link logout-link">
         <i class="bi bi-box-arrow-right"></i>
         Logout
     </a>
