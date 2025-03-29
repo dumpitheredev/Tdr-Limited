@@ -14,13 +14,13 @@ class AttendanceTable {
     }
 
     initializeDateRange() {
-        // Set default date range (current month)
+        // Set default date range (last 7 days instead of current month)
         const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        const lastWeek = new Date(today);
+        lastWeek.setDate(today.getDate() - 6); // 7 days including today
 
-        this.startDate.value = this.formatDisplayDate(firstDay);
-        this.endDate.value = this.formatDisplayDate(lastDay);
+        this.startDate.value = this.formatDisplayDate(lastWeek);
+        this.endDate.value = this.formatDisplayDate(today);
 
         // Load initial data
         this.loadData(this.startDate.value, this.endDate.value);
@@ -85,9 +85,6 @@ class AttendanceTable {
                                         ${attendance.status}
                                     </span>
                                 </div>
-                                <div class="attendance-time">
-                                    ${attendance.time}
-                                </div>
                             </div>
                         </td>
                     `;
@@ -151,11 +148,11 @@ class AttendanceTable {
 
     resetFilter() {
         const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        const lastWeek = new Date(today);
+        lastWeek.setDate(today.getDate() - 6); // 7 days including today
 
-        this.startDate.value = this.formatDisplayDate(firstDay);
-        this.endDate.value = this.formatDisplayDate(lastDay);
+        this.startDate.value = this.formatDisplayDate(lastWeek);
+        this.endDate.value = this.formatDisplayDate(today);
 
         this.filterAttendance();
     }

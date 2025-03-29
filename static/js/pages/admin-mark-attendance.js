@@ -46,31 +46,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const previousAttendance = {
         '1': {
             '2023-11-15': {
-                'st89mn': { status: 'present', comment: 'On time' },
-                'st12qw': { status: 'absent', comment: 'Sick leave' },
-                'st45ty': { status: 'late', comment: 'Traffic delay' }
+                'st89mn': { status: 'Present', comment: 'On time' },
+                'st12qw': { status: 'Absent', comment: 'Sick leave' },
+                'st45ty': { status: 'Late', comment: 'Traffic delay' }
             },
             '2023-11-22': {
-                'st89mn': { status: 'present', comment: '' },
-                'st12qw': { status: 'present', comment: '' },
-                'st45ty': { status: 'present', comment: '' }
+                'st89mn': { status: 'Present', comment: '' },
+                'st12qw': { status: 'Present', comment: '' },
+                'st45ty': { status: 'Present', comment: '' }
             }
         },
         '2': {
             '2023-11-16': {
-                'st45ty': { status: 'present', comment: '' },
-                'st78gh': { status: 'present', comment: '' },
-                'st34mm': { status: 'absent', comment: 'Family emergency' },
-                'st67kl': { status: 'late', comment: 'Bus delay' }
+                'st45ty': { status: 'Present', comment: '' },
+                'st78gh': { status: 'Present', comment: '' },
+                'st34mm': { status: 'Absent', comment: 'Family emergency' },
+                'st67kl': { status: 'Late', comment: 'Bus delay' }
             }
         },
         '3': {
             '2023-11-17': {
-                'st89mn': { status: 'present', comment: '' },
-                'st78gh': { status: 'present', comment: '' },
-                'st34mm': { status: 'present', comment: '' },
-                'st91ab': { status: 'absent', comment: 'Doctor appointment' },
-                'st23cd': { status: 'present', comment: '' }
+                'st89mn': { status: 'Present', comment: '' },
+                'st78gh': { status: 'Present', comment: '' },
+                'st34mm': { status: 'Present', comment: '' },
+                'st91ab': { status: 'Absent', comment: 'Doctor appointment' },
+                'st23cd': { status: 'Present', comment: '' }
             }
         }
     };
@@ -154,9 +154,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             aria-label="Attendance status"
                             onchange="updateStatusStyle(this)">
                         <option value="" ${!studentAttendance ? 'selected disabled' : ''}>Select status</option>
-                        <option value="present" ${studentAttendance && studentAttendance.status === 'present' ? 'selected' : ''} class="text-success">Present</option>
-                        <option value="absent" ${studentAttendance && studentAttendance.status === 'absent' ? 'selected' : ''} class="text-danger">Absent</option>
-                        <option value="late" ${studentAttendance && studentAttendance.status === 'late' ? 'selected' : ''} class="text-warning">Late</option>
+                        <option value="Present" ${studentAttendance && studentAttendance.status === 'Present' ? 'selected' : ''} class="text-success">Present</option>
+                        <option value="Absent" ${studentAttendance && studentAttendance.status === 'Absent' ? 'selected' : ''} class="text-danger">Absent</option>
+                        <option value="Late" ${studentAttendance && studentAttendance.status === 'Late' ? 'selected' : ''} class="text-warning">Late</option>
                     </select>
                 </td>
                 <td>
@@ -431,13 +431,13 @@ function updateStatusStyle(select) {
     
     // Add appropriate styling based on selected value
     switch(select.value) {
-        case 'present':
+        case 'Present':
             select.classList.add('text-success', 'border-success');
             break;
-        case 'absent':
+        case 'Absent':
             select.classList.add('text-danger', 'border-danger');
             break;
-        case 'late':
+        case 'Late':
             select.classList.add('text-warning', 'border-warning');
             break;
     }

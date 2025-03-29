@@ -464,13 +464,13 @@ const attendanceTable = {
         // Reset date pickers to last 7 days
         const today = new Date();
         const lastWeek = new Date(today);
-        lastWeek.setDate(today.getDate() - 6);
+        lastWeek.setDate(today.getDate() - 6); // Show last 7 days including today
 
         this.startDatePicker.setDate(lastWeek);
         this.endDatePicker.setDate(today);
 
-        // Reset table to show all data
-        this.populateTable();
+        // Reset table to show 7-day data
+        this.filterAttendance();
     },
 
     calculateStatistics: function(lectureData) {
@@ -481,9 +481,9 @@ const attendanceTable = {
         lectureData.forEach(lecture => {
             lecture.attendance.forEach(day => {
                 totalDays++;
-                if (day.status === 'present' || day.status === 'late') {
+                if (day.status === 'Present' || day.status === 'Late') {
                     totalPresent++;
-                } else if (day.status === 'absent') {
+                } else if (day.status === 'Absent') {
                     totalAbsent++;
                 }
             });
@@ -573,13 +573,13 @@ const attendanceTable = {
                 lecture.attendance.forEach(day => {
                     let badgeClasses = '';
                     switch(day.status) {
-                        case 'present':
+                        case 'Present':
                             badgeClasses = 'bg-success-subtle text-success';
                 break;
-                        case 'absent':
+                        case 'Absent':
                             badgeClasses = 'bg-danger-subtle text-danger';
                 break;
-                        case 'late':
+                        case 'Late':
                             badgeClasses = 'bg-warning-subtle text-warning';
                 break;
                     }
@@ -591,7 +591,6 @@ const attendanceTable = {
                                       style="padding: 8px 16px; font-size: 14px;">
                                     ${day.status.charAt(0).toUpperCase() + day.status.slice(1)}
                                 </span>
-                                <span class="attendance-time">${day.time}</span>
                             </div>
                         </td>
                     `;

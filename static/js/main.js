@@ -21,68 +21,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (infoBtn) {
         infoBtn.addEventListener('click', openInfoModal);
     }
-
-    // Add click event for closing modal when clicking outside
-    document.addEventListener('click', function(event) {
-        const modal = document.getElementById('pageInfoModal');
-        if (event.target.classList.contains('modal') || event.target.classList.contains('modal-backdrop')) {
-            closeInfoModal();
-        }
-    });
-
-    // Initialize modal
-    const modalElement = document.getElementById('pageInfoModal');
-    if (modalElement && !window.modalInstance) {
-        window.modalInstance = new bootstrap.Modal(modalElement);
-
-        // Update modal content when shown
-        modalElement.addEventListener('show.bs.modal', function() {
-            const currentPath = window.location.pathname.split('/')[1] || 'dashboard';
-            const pageKey = currentPath.replace('-', '-');
-            const info = window.pageInformation[pageKey];
-
-            if (info) {
-                modalElement.querySelector('.page-title').textContent = info.title;
-                modalElement.querySelector('.page-description').textContent = info.description;
-
-                const featureList = modalElement.querySelector('.feature-list');
-                if (featureList) {
-                    featureList.innerHTML = info.features
-                        .map(feature => `<li><i class="bi bi-check text-success me-2"></i>${feature}</li>`)
-                        .join('');
-                }
-
-                const instructionList = modalElement.querySelector('.instruction-list');
-                if (instructionList) {
-                    instructionList.innerHTML = info.instructions
-                        .map(instruction => `<li><i class="bi bi-arrow-right text-primary me-2"></i>${instruction}</li>`)
-                        .join('');
-                }
-            }
-        });
-
-        // Add ESC key listener
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && window.modalInstance) {
-                window.modalInstance.hide();
-                // Additional cleanup
-                document.body.classList.remove('modal-open');
-                const backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop) backdrop.remove();
-            }
-        });
-
-        // Add click outside listener
-        modalElement.addEventListener('click', (e) => {
-            if (e.target === modalElement && window.modalInstance) {
-                window.modalInstance.hide();
-                // Additional cleanup
-                document.body.classList.remove('modal-open');
-                const backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop) backdrop.remove();
-            }
-        });
-    }
 });
 
 function initializeSidebar() {
@@ -146,64 +84,187 @@ function initializeSidebar() {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', initializeSidebar);
 
-function initializeContextInfo() {
+/**
+ * Updates the page title in the DOM
+ * @param {string} title - The title to set
+ */
+function updatePageTitle(title) {
+    const pageTitleElement = document.querySelector('.page-title');
+    if (pageTitleElement) {
+        pageTitleElement.textContent = title;
+    }
+}
+
+/**
+ * Updates the context instructions shown in the info modal
+ * @param {Array} features - Array of feature descriptions
+ * @param {Array} instructions - Array of instruction steps
+ */
+function updateInstructions(features, instructions) {
+    // Create or get the modal element
+    let modalElement = document.getElementById('pageInfoModal');
+    
+    if (!modalElement) {
+        return;
+    }
+    
+    // Initialize the modal if not already done
+    if (!window.modalInstance) {
+        window.modalInstance = new bootstrap.Modal(modalElement);
+    }
+    
+    // Update features
+    const featureList = modalElement.querySelector('.feature-list');
+    if (featureList) {
+        featureList.innerHTML = features
+            .map(feature => `<li><i class="bi bi-check text-success me-2"></i>${feature}</li>`)
+            .join('');
+    }
+    
+    // Update instructions
+    const instructionList = modalElement.querySelector('.instruction-list');
+    if (instructionList) {
+        instructionList.innerHTML = instructions
+            .map(instruction => `<li><i class="bi bi-arrow-right text-primary me-2"></i>${instruction}</li>`)
+            .join('');
+    }
+    
+    // Update description if available
+    const pageKey = getPageKeyFromUrl();
+    const pageInfo = window.pageInformation[pageKey];
+    if (pageInfo) {
+        const description = modalElement.querySelector('.page-description');
+        if (description) {
+            description.textContent = pageInfo.description;
+        }
+    }
+}
+
+/**
+ * Gets the current page key from the URL
+ * @returns {string} The page key
+ */
+function getPageKeyFromUrl() {
+    const pathname = window.location.pathname;
+    let pageKey = '';
+    
+    // Handle admin routes
+    if (pathname.includes('/admin/')) {
+        let adminPath = pathname.split('/admin/')[1];
+        
+        // Handle cases where the path might include "admin-" already
+        if (adminPath === 'admin-profile') {
+            pageKey = 'admin-profile'; // Use the correct key directly
+        }
+        // Special case for admin profile which can have multiple URL patterns
+        else if (adminPath === 'profile' || adminPath === 'my-profile') {
+            pageKey = 'admin-profile';
+        } else {
+            // For other admin pages, convert path to key
+            pageKey = 'admin-' + (adminPath.replace(/\//g, '-') || 'dashboard');
+        }
+    } 
+    // Handle instructor routes
+    else if (pathname.includes('/instructor/')) {
+        const instructorPath = pathname.split('/instructor/')[1];
+        pageKey = 'instructor-' + (instructorPath.replace(/\//g, '-') || 'dashboard');
+    } 
+    // Handle student routes
+    else if (pathname.includes('/student/')) {
+        const studentPath = pathname.split('/student/')[1];
+        pageKey = 'student-' + (studentPath.replace(/\//g, '-') || 'dashboard');
+    } 
+    // Handle other routes
+    else {
+        // Extract the last part of the URL for standard pages
+        const pathParts = pathname.split('/').filter(Boolean);
+        pageKey = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'dashboard';
+    }
+    
+    return pageKey;
+}
+
+// Set up modal event listeners
+document.addEventListener('DOMContentLoaded', function() {
     const modalElement = document.getElementById('pageInfoModal');
-    if (!modalElement || window.modalInstance) return;
-
-    window.modalInstance = new bootstrap.Modal(modalElement);
-
-    // Update modal content when shown
-    modalElement.addEventListener('show.bs.modal', function() {
-        const currentPath = window.location.pathname.split('/')[1] || 'dashboard';
-        const pageKey = currentPath.replace('_', '-');
-        const pageData = window.pageInformation[pageKey];
-
-        if (!pageData) {
-            console.warn('No information available for page:', pageKey);
-            return;
-        }
-
-        // Update modal content
-        const modalTitle = this.querySelector('.page-title');
-        const description = this.querySelector('.page-description');
-        const featureList = this.querySelector('.feature-list');
-        const instructionList = this.querySelector('.instruction-list');
-
-        if (modalTitle) modalTitle.textContent = pageData.title;
-        if (description) description.textContent = pageData.description;
-
-        // Update features
-        if (featureList) {
-            featureList.innerHTML = pageData.features
-                .map(feature => `<li><i class="bi bi-check text-success me-2"></i>${feature}</li>`)
-                .join('');
-        }
-
-        // Update instructions
-        if (instructionList) {
-            instructionList.innerHTML = pageData.instructions
-                .map(instruction => `<li><i class="bi bi-arrow-right text-primary me-2"></i>${instruction}</li>`)
-                .join('');
-        }
-    });
-
+    if (!modalElement) return;
+    
     // Add ESC key listener
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && window.modalInstance) {
             closeInfoModal();
         }
     });
-
+    
     // Add click outside listener
     modalElement.addEventListener('click', (e) => {
         if (e.target === modalElement) {
             closeInfoModal();
         }
     });
+    
+    // Initialize the context info
+    initializeContextInfo();
+});
+
+function initializeContextInfo() {
+    // Get the current page from the URL
+    const pathname = window.location.pathname;
+    
+    // Extract the page key from the URL
+    let pageKey = '';
+    
+    // Handle admin routes
+    if (pathname.includes('/admin/')) {
+        let adminPath = pathname.split('/admin/')[1];
+        
+        // Handle cases where the path might include "admin-" already
+        if (adminPath === 'admin-profile') {
+            pageKey = 'admin-profile'; // Use the correct key directly
+        }
+        // Special case for admin profile which can have multiple URL patterns
+        else if (adminPath === 'profile' || adminPath === 'my-profile') {
+            pageKey = 'admin-profile';
+        } else {
+            // For other admin pages, convert path to key
+            pageKey = 'admin-' + (adminPath.replace(/\//g, '-') || 'dashboard');
+        }
+    } 
+    // Handle instructor routes
+    else if (pathname.includes('/instructor/')) {
+        const instructorPath = pathname.split('/instructor/')[1];
+        pageKey = 'instructor-' + (instructorPath.replace(/\//g, '-') || 'dashboard');
+    } 
+    // Handle student routes
+    else if (pathname.includes('/student/')) {
+        const studentPath = pathname.split('/student/')[1];
+        pageKey = 'student-' + (studentPath.replace(/\//g, '-') || 'dashboard');
+    } 
+    // Handle other routes
+    else {
+        // Extract the last part of the URL for standard pages
+        const pathParts = pathname.split('/').filter(Boolean);
+        pageKey = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'dashboard';
+    }
+
+    // Get the page information
+    const pageInfo = window.pageInformation[pageKey];
+    
+    if (pageInfo) {
+        // Update the context info in the DOM
+        updatePageTitle(pageInfo.title);
+        updateInstructions(pageInfo.features, pageInfo.instructions);
+    } else {
+        // Set default context info if none is found
+        updatePageTitle('Page');
+        updateInstructions(
+            ['This page provides system functionality.'],
+            ['Navigate using the controls provided on this page.']
+        );
+    }
 }
 
 function handleError(error) {
-    console.error('Error:', error);
     const tableBody = document.querySelector('tbody');
     tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-danger py-4">Error loading data</td></tr>';
 }
@@ -230,6 +291,36 @@ if (typeof window.pageInformation === 'undefined') {
                 'Use the navigation menu to access other pages'
             ]
         },
+        'admin': {
+            title: 'Admin Dashboard',
+            description: 'Administrative control panel for managing the system.',
+            features: [
+                'Access to all admin modules',
+                'System-wide configuration options',
+                'User and data management tools'
+            ],
+            instructions: [
+                'Use the sidebar to navigate between different admin modules',
+                'Click on cards to access specific functionality',
+                'Use the search function to find specific records'
+            ]
+        },
+        'admin-dashboard': {
+            title: 'Admin Dashboard',
+            description: 'Overview of system statistics and key metrics for administrators.',
+            features: [
+                'View total users, students, and instructors',
+                'Monitor active and inactive users',
+                'Quick access to all administrative functions',
+                'System health indicators and alerts'
+            ],
+            instructions: [
+                'Use the cards to view overall statistics',
+                'Click on specific sections to access detailed information',
+                'Use the sidebar menu to navigate to other admin functions',
+                'Check notifications for important system alerts'
+            ]
+        },
         'admin-profile': {
             title: 'Profile Management',
             description: 'View and manage your profile information and account settings.',
@@ -248,6 +339,25 @@ if (typeof window.pageInformation === 'undefined') {
                 'Review your recent account activity in the history section'
             ]
         },
+        'profile': { 
+            title: 'Profile Management',
+            description: 'View and manage your profile information and account settings.',
+            features: [
+                'View profile information',
+                'Update personal details',
+                'Change password',
+                'Manage notification preferences',
+                'View account activity'
+            ],
+            instructions: [
+                'Review your current profile information',
+                'Click edit button to update your details',
+                'Use the change password option to update your credentials',
+                'Save changes after making any updates',
+                'Review your recent account activity in the history section'
+            ]
+        },
+        // Common definitions that apply to both admin and regular routes
         'user-management': {
             title: 'User Management',
             description: 'Manage all system users including administrators, instructors, and students.',
@@ -343,6 +453,27 @@ if (typeof window.pageInformation === 'undefined') {
                 'Use edit icon to modify existing class details'
             ]
         },
+        'archive': {
+            title: 'System Archives',
+            description: 'Central hub for managing and accessing archived records from across the system, including classes, students, instructors, and companies.',
+            features: [
+                'View archived records by category (classes, students, instructors, companies)',
+                'Restore archived items back to active status',
+                'Permanently delete archived records when needed',
+                'Search across all archive types or within specific categories',
+                'Export archived data to CSV for reporting and record-keeping',
+                'Track archive statistics with dynamic count cards'
+            ],
+            instructions: [
+                'Click on the archive type cards to filter by record type',
+                'Use the dropdown to select a specific archive category',
+                'Search across all archives or within a selected category',
+                'Click the "Restore" icon to reactivate archived records',
+                'Use the "Delete" icon to permanently remove records (use with caution)',
+                'Export filtered archives using the CSV export button',
+                'Use pagination controls to navigate through archive records'
+            ]
+        },
         'enrolment-management': {
             title: 'Enrolment Management',
             description: 'Manage student enrolments across different classes and courses.',
@@ -396,7 +527,7 @@ if (typeof window.pageInformation === 'undefined') {
                 'Add any relevant notes',
                 'Save attendance records'
             ]
-        },  
+        },
         'view-archive': {
             title: 'View Archive',
             description: 'View and manage archived classes and students.',
@@ -412,8 +543,24 @@ if (typeof window.pageInformation === 'undefined') {
                 'Click on the edit icon to modify existing class details'
             ]
         },
-        
-
+        'settings': {
+            title: 'System Settings',
+            description: 'Configure system-wide settings and preferences.',
+            features: [
+                'Update system configuration',
+                'Manage email templates',
+                'Configure notification settings',
+                'Set security parameters',
+                'Manage backup and restoration'
+            ],
+            instructions: [
+                'Navigate through setting categories using the tabs',
+                'Make changes to configuration parameters as needed',
+                'Save changes before leaving the page',
+                'Test configuration changes in a controlled environment',
+                'Review system logs for any configuration-related issues'
+            ]
+        },
         'instructor-dashboard': {
             title: 'Instructor Dashboard',
             description: 'Overview of your teaching schedule and important announcements from administration.',
@@ -467,8 +614,213 @@ if (typeof window.pageInformation === 'undefined') {
                 'Export data for your records or reporting',
                 'Identify students who may need intervention'
             ]
+        },
+        'instructor-profile': {
+            title: 'Instructor Profile',
+            description: 'View and manage your personal profile information and settings.',
+            features: [
+                'View your personal information',
+                'Update contact details',
+                'Manage teaching preferences',
+                'Change password and security settings',
+                'View teaching history and statistics'
+            ],
+            instructions: [
+                'Review your current profile information',
+                'Click the edit button to update your personal details',
+                'Use the security tab to manage password and authentication',
+                'Set teaching preferences to improve class assignments',
+                'Save all changes before leaving the page'
+            ]
+        },
+        'instructor-classes': {
+            title: 'Instructor Classes',
+            description: 'View and manage all your assigned classes and schedules.',
+            features: [
+                'View all your assigned classes',
+                'See detailed class schedules and locations',
+                'Access student rosters for each class',
+                'Review class materials and curriculum',
+                'Track class progress and completion status'
+            ],
+            instructions: [
+                'Use filters to view current or past classes',
+                'Click on a class to view detailed information',
+                'Select the roster tab to see enrolled students',
+                'Use the calendar view to see your weekly schedule',
+                'Access class management tools through the action buttons'
+            ]
+        },
+        'student-dashboard': {
+            title: 'Student Dashboard',
+            description: 'Overview of your classes, attendance records, and important announcements.',
+            features: [
+                'View your enrolled classes',
+                'Check your attendance records',
+                'Read important announcements',
+                'Access class materials',
+                'View your academic progress'
+            ],
+            instructions: [
+                'Review announcements at the top for important updates',
+                'Check your class schedule in the calendar section',
+                'Monitor your attendance percentage for each class',
+                'Access class materials through the resources tab',
+                'Contact instructors using the messaging feature'
+            ]
+        },
+        'student-classes': {
+            title: 'Student Classes',
+            description: 'View all your enrolled classes and related information.',
+            features: [
+                'View all classes you are enrolled in',
+                'Check class schedules and locations',
+                'Access class materials and assignments',
+                'View instructor information',
+                'Track your attendance for each class'
+            ],
+            instructions: [
+                'Use the tabs to filter classes by term or status',
+                'Click on a class to view detailed information',
+                'Download class materials from the resources section',
+                'Check your attendance status for each session',
+                'Use the contact button to reach out to instructors'
+            ]
+        },
+        'student-attendance': {
+            title: 'Student Attendance',
+            description: 'View your comprehensive attendance records across all classes.',
+            features: [
+                'View your attendance by class',
+                'Track attendance percentage',
+                'See detailed attendance logs',
+                'Identify missed classes',
+                'View attendance trends over time'
+            ],
+            instructions: [
+                'Select a class to view specific attendance records',
+                'Use date filters to check attendance for specific periods',
+                'Review your overall attendance percentage',
+                'Check absence reasons and documentation',
+                'Export your attendance records if needed'
+            ]
+        },
+        'student-profile': {
+            title: 'Student Profile',
+            description: 'View and manage your personal information and settings.',
+            features: [
+                'View your personal information',
+                'Update contact details',
+                'Manage notification preferences',
+                'Change password and security settings',
+                'View academic history and records'
+            ],
+            instructions: [
+                'Review your current profile information',
+                'Click the edit button to update your personal details',
+                'Use the security tab to manage password and authentication',
+                'Set notification preferences for important updates',
+                'Save all changes before leaving the page'
+            ]
+        },
+        'login': {
+            title: 'Login Page',
+            description: 'Secure access point to the system.',
+            features: [
+                'User authentication',
+                'Password recovery',
+                'Remember me functionality',
+                'Secure connection',
+                'Access control'
+            ],
+            instructions: [
+                'Enter your username/email and password',
+                'Click "Forgot Password" if you need to reset',
+                'Check "Remember Me" for convenience on personal devices',
+                'Contact system administrator if you experience issues',
+                'Ensure you logout when using shared computers'
+            ]
+        },
+        'logout': {
+            title: 'Logout',
+            description: 'Securely exit the system.',
+            features: [
+                'Secure session termination',
+                'Data protection',
+                'Session cleanup'
+            ],
+            instructions: [
+                'Click logout to securely end your session',
+                'Close your browser for additional security',
+                'Log back in when you need to access the system again'
+            ]
+        },
+        'reset-password': {
+            title: 'Reset Password',
+            description: 'Securely reset your password to regain access to your account.',
+            features: [
+                'Secure password reset process',
+                'Email verification',
+                'Strong password guidelines',
+                'Account protection measures'
+            ],
+            instructions: [
+                'Enter your registered email address',
+                'Check your email for the password reset link',
+                'Create a strong password following the guidelines',
+                'Submit your new password to update your account',
+                'Use your new password to log in'
+            ]
+        },
+        'error': {
+            title: 'Error Page',
+            description: 'Information about system errors or access issues.',
+            features: [
+                'Error details',
+                'Troubleshooting guidance',
+                'Support contact information',
+                'Navigation options to return to safety'
+            ],
+            instructions: [
+                'Note the error code or message for reference',
+                'Try refreshing the page or clearing browser cache',
+                'Use the provided links to return to a working page',
+                'Contact support if the issue persists',
+                'Report the error with detailed steps to reproduce it'
+            ]
+        },
+        '404': {
+            title: 'Page Not Found',
+            description: 'The requested page does not exist or is no longer available.',
+            features: [
+                'Clear error notification',
+                'Navigation options',
+                'Search functionality',
+                'Support contact information'
+            ],
+            instructions: [
+                'Check that the URL is correct',
+                'Use the navigation menu to find what you need',
+                'Return to the dashboard using the provided link',
+                'Contact support if you believe this is an error',
+                'Use the search function to find relevant content'
+            ]
         }
     };
+    
+    // Add admin-prefixed aliases for all routes that need them
+    // This prevents duplicate definitions while maintaining correct route matching
+    const routesToDuplicate = [
+        'user-management', 'student-management', 'instructor-management', 
+        'company-management', 'class-management', 'enrolment-management', 
+        'view-attendance', 'mark-attendance', 'view-archive', 'settings'
+    ];
+    
+    routesToDuplicate.forEach(route => {
+        if (window.pageInformation[route]) {
+            window.pageInformation[`admin-${route}`] = window.pageInformation[route];
+        }
+    });
 }
 
 // Modal helper functions
@@ -481,9 +833,28 @@ function openInfoModal() {
 function closeInfoModal() {
     if (window.modalInstance) {
         window.modalInstance.hide();
-        // Additional cleanup
-        document.body.classList.remove('modal-open');
-        const backdrop = document.querySelector('.modal-backdrop');
-        if (backdrop) backdrop.remove();
+        
+        // Give the modal time to complete its hiding animation
+        setTimeout(() => {
+            // Clean up modal remnants
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+            
+            // Remove backdrop
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+            
+            // Remove any inline styles added by Bootstrap
+            const modal = document.getElementById('pageInfoModal');
+            if (modal) {
+                modal.style.display = '';
+                modal.style.paddingRight = '';
+                modal.classList.remove('show');
+                modal.setAttribute('aria-hidden', 'true');
+                modal.removeAttribute('aria-modal');
+                modal.removeAttribute('role');
+            }
+        }, 300); // 300ms should be enough for the modal animation to complete
     }
 }
