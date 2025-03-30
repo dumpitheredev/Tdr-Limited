@@ -528,21 +528,6 @@ if (typeof window.pageInformation === 'undefined') {
                 'Save attendance records'
             ]
         },
-        'view-archive': {
-            title: 'View Archive',
-            description: 'View and manage archived classes and students.',
-            features: [
-                'View archived classes and students',
-                'Filter by date range',
-                'Export archive data',
-                'Search for specific records'
-            ],
-            instructions: [
-                'Use filters to find specific records', 
-                'Click on the view icon to see detailed class information',
-                'Click on the edit icon to modify existing class details'
-            ]
-        },
         'settings': {
             title: 'System Settings',
             description: 'Configure system-wide settings and preferences.',

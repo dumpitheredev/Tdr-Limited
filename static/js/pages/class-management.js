@@ -67,24 +67,21 @@ async function exportClassesCSV() {
         
         showToast('Success', 'CSV file downloaded successfully', 'success');
     } catch (error) {
-        console.error('Error exporting CSV:', error);
         showToast('Error', `Failed to export CSV: ${error.message}`, 'error');
     }
 }
 
-document.addEventListener('DOMContentLoaded', async function() {
-    console.log('DOM Content Loaded - Class Management');
+document.addEventListener('DOMContentLoaded', function() {
     try {
         // Check URL parameters for restored class ID
         const urlParams = new URLSearchParams(window.location.search);
         const restoredId = urlParams.get('restored');
         
-        if (restoredId) {
-            console.log(`Detected restored class ID: ${restoredId}`);
-        }
-        
         // Fetch class data
-        await fetchAndUpdateData();
+        fetchAndUpdateData();
+        
+        // Initialize modals including academic year dropdowns
+        initializeModals();
         
         // If restored ID was provided, highlight it
         if (restoredId) {
@@ -152,7 +149,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
     } catch (error) {
-        console.error('Error initializing class data:', error);
         showToast('Error', 'Failed to load classes', 'error');
     }
 });
@@ -163,7 +159,6 @@ function highlightRestoredClass(classId) {
     const classRow = document.querySelector(`tr[data-class-id="${classId}"]`);
     
     if (classRow) {
-        console.log(`Found restored class row, highlighting it`);
         // Scroll to the row
         classRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         
@@ -178,8 +173,6 @@ function highlightRestoredClass(classId) {
             classRow.classList.remove('bg-success-subtle');
         }, 3000);
     } else {
-        console.log(`Restored class (${classId}) not in current view. Showing notification.`);
-        
         // Simply display a toast notification - no retries or loops
         showToast('Success', 'Class has been successfully restored.', 'success');
         
@@ -200,6 +193,16 @@ async function fetchAndUpdateData() {
         if (!response.ok) throw new Error('Failed to fetch classes');
         const data = await response.json();
         
+        // Clean up the data - handle null/invalid years
+        if (Array.isArray(data)) {
+            data.forEach(item => {
+                // Convert null or "null" years to empty string
+                if (!item.year || item.year === "null") {
+                    item.year = ""; // This will be displayed as N/A in the UI
+                }
+            });
+        }
+        
         currentPageState.currentData = data || [];
         currentPageState.totalItems = currentPageState.currentData.length;
         
@@ -211,7 +214,6 @@ async function fetchAndUpdateData() {
         
         return data;
     } catch (error) {
-        console.error('Error fetching data:', error);
         showToast('Error', 'Failed to load classes', 'error');
         currentPageState.currentData = [];
         return [];
@@ -270,7 +272,7 @@ function updateTable() {
                                 <div class="fw-medium">${classItem.instructor}</div>
                             </div>
                         </td>
-                        <td>${classItem.year}</td>
+                        <td>${classItem.year && classItem.year !== "null" ? classItem.year : "N/A"}</td>
                         <td>
                             <span class="badge ${getStatusBadgeClass(classItem.status)}">
                                 ${classItem.status}
@@ -319,7 +321,6 @@ function updateTable() {
         if (nextButton) nextButton.disabled = endIndex >= filteredData.length;
 
     } catch (error) {
-        console.error('Error updating table:', error);
         showToast('Error', 'Failed to update table', 'error');
     }
 }
@@ -328,7 +329,6 @@ function updateTable() {
 function updateStatusCards(data) {
     try {
         if (!Array.isArray(data)) {
-            console.error('Invalid data format for status cards');
             return;
         }
         
@@ -341,7 +341,7 @@ function updateStatusCards(data) {
         document.querySelector('[data-count="active"]').textContent = activeClasses;
         document.querySelector('[data-count="inactive"]').textContent = inactiveClasses;
     } catch (error) {
-        console.error('Error updating status cards:', error);
+        // Silently handle errors
     }
 }
 
@@ -363,7 +363,6 @@ function showToast(title, message, type = 'success') {
         // Get the toast element
     const toast = document.getElementById('statusToast');
         if (!toast) {
-            console.error('Toast element not found');
             alert(`${title}: ${message}`);
             return;
         }
@@ -396,7 +395,6 @@ function showToast(title, message, type = 'success') {
         bsToast.show();
         
     } catch (error) {
-        console.error('Error showing toast:', error);
         // Fallback to alert
         alert(`${title}: ${message}`);
     }
@@ -419,7 +417,7 @@ window.handleClassAction = async function(classId, action) {
             existingModals.forEach(modal => {
                 closeModalProperly(modal);
             });
-            
+                
             // Populate the modal with class data
                 populateViewClassModal(classData);
             
@@ -502,7 +500,6 @@ window.handleClassAction = async function(classId, action) {
                 confirmArchiveClass(classData);
         }
             } catch (error) {
-        console.error('Error handling action:', error);
         showToast('Error', `Failed to load class details: ${error.message}`, 'error');
     }
 };
@@ -519,7 +516,7 @@ function populateViewClassModal(classData) {
     modal.querySelector('#classTime').textContent = classData.time || 'N/A';
     modal.querySelector('#classInstructor').textContent = classData.instructor || 'Not Assigned';
     modal.querySelector('#instructorId').textContent = classData.instructor_id || 'Not Assigned';
-    modal.querySelector('#academicYear').textContent = classData.year || 'N/A';
+    modal.querySelector('#academicYear').textContent = classData.year && classData.year !== "null" ? classData.year : 'N/A';
     
     // Set description if available
     const descriptionElement = modal.querySelector('#classDescription');
@@ -589,8 +586,6 @@ async function loadClassAttendance(classId, startDate, endDate) {
             endDate = formatDateForApi(endDate);
         }
 
-        console.log(`Loading attendance data for class ${classId}`);
-        
         // Use the correct API endpoint that exists in the backend
         const response = await fetch(`/api/classes/${classId}/attendance?start_date=${startDate}&end_date=${endDate}`);
         
@@ -599,7 +594,6 @@ async function loadClassAttendance(classId, startDate, endDate) {
         }
         
         const data = await response.json();
-        console.log(`Received ${data.length} attendance records`);
         
         // Store the data for later reference
         currentAttendanceData = data;
@@ -773,8 +767,6 @@ function formatTime(timestamp) {
 
 // View attendance details
 window.viewAttendanceDetails = function(recordId) {
-    console.log('Viewing attendance details');
-    
     // Find the record in current attendance data
     const record = currentAttendanceData.find(r => r.id == recordId);
     if (!record) {
@@ -876,7 +868,6 @@ window.viewAttendanceDetails = function(recordId) {
 
 // Edit attendance record
 window.editAttendanceRecord = function(recordId) {
-    console.log('Editing attendance record');
     // Implement edit functionality
 };
 
@@ -908,7 +899,44 @@ function populateEditClassModal(classData) {
     if (classData.instructor_id) {
     modal.querySelector('#editClassInstructor').value = classData.instructor_id;
     }
-    modal.querySelector('#editClassYear').value = classData.year;
+    
+    // Handle year values properly - allow for different academic year formats
+    const yearDropdown = modal.querySelector('#editClassYear');
+    if (yearDropdown) {
+        if (classData.year && classData.year !== "null") {
+            // Try to match the year format exactly
+            let yearFound = false;
+            for (let i = 0; i < yearDropdown.options.length; i++) {
+                if (yearDropdown.options[i].value === classData.year) {
+                    yearDropdown.selectedIndex = i;
+                    yearFound = true;
+                    break;
+                }
+            }
+            
+            // If exact match not found but we have a valid year, set the value directly
+            if (!yearFound) {
+                // First check if the option exists, if not add it
+                const option = document.createElement('option');
+                option.value = classData.year;
+                option.textContent = classData.year;
+                
+                // Add it right after the placeholder (position 1)
+                if (yearDropdown.options.length >= 1) {
+                    yearDropdown.insertBefore(option, yearDropdown.options[1]);
+                } else {
+                    yearDropdown.appendChild(option);
+                }
+                
+                // Select the newly added option
+                yearDropdown.value = classData.year;
+            }
+        } else {
+            // If year is null or empty, select the placeholder option
+            yearDropdown.selectedIndex = 0;
+        }
+    }
+    
     modal.querySelector('#editClassStatus').value = classData.status;
 }
 
@@ -976,7 +1004,6 @@ async function updateClassStatus(classId, newStatus, archiveNote = '') {
         
         showToast('Success', `Class status updated to ${newStatus} and sent to archive`, 'success');
     } catch (error) {
-        console.error('Error updating class status:', error);
         showToast('Error', 'Failed to update class status', 'error');
     }
 }
@@ -989,50 +1016,84 @@ async function handleAddClass(event) {
         const form = event.target;
         const formData = new FormData(form);
         
-        // Create class object from form data
-        const classData = {
-            name: formData.get('className'),
-            description: formData.get('description'),
-            day: formData.get('dayOfWeek'),
-            time: `${formData.get('startTime')} - ${formData.get('endTime')}`,
-            instructor_id: formData.get('instructor'),
-            year: formData.get('academicYear'),
-            status: 'Active'
-        };
+        // Try multiple possible field names for class name
+        let className = formData.get('addClassName') || formData.get('className') || '';
         
+        // Get remaining fields - try multiple possible names
+        const dayOfWeek = formData.get('addClassDay') || formData.get('dayOfWeek') || '';
+        const startTime = formData.get('addClassStartTime') || formData.get('startTime') || '09:00';
+        const endTime = formData.get('addClassEndTime') || formData.get('endTime') || '10:00';
+        const instructorId = formData.get('addClassInstructor') || formData.get('instructor') || '';
+        
+        // Validate required fields
+        if (!className || className.trim() === '') {
+            throw new Error('Please enter a class name');
+        }
+        
+        if (!dayOfWeek || dayOfWeek === 'null') {
+            throw new Error('Please select a day of the week');
+        }
+        
+        if (!instructorId || instructorId === 'null') {
+            throw new Error('Please select an instructor');
+        }
+        
+        // Check if either time is null, empty or invalid
+        if (!startTime || startTime === "null") {
+            throw new Error('Please select a start time');
+        }
+        
+        if (!endTime || endTime === "null") {
+            throw new Error('Please select an end time');
+        }
+        
+        // Get the year value and handle empty selection
+        let yearValue = formData.get('addClassYear') || formData.get('academicYear') || '';
+        
+        // If year is empty or null, use "N/A" as fallback
+        if (!yearValue || yearValue === "null" || yearValue === "") {
+            yearValue = "N/A";
+        }
+        
+        // Create new class object
+        const newClass = {
+            name: className,
+            description: formData.get('addClassDescription') || formData.get('description') || '',
+            day: dayOfWeek,
+            time: `${startTime} - ${endTime}`,
+            instructor_id: instructorId,
+            year: yearValue,
+            status: formData.get('addClassStatus') || formData.get('status') || 'Active'
+        };
+
         // Get the modal element
         const modalEl = document.getElementById('addClassModal');
-        
+
         // Close modal properly before making API request
         closeModalProperly(modalEl);
         
-        // Send data to server
+        // Send to server
         const response = await fetch('/api/classes', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(classData),
+            body: JSON.stringify(newClass),
         });
 
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Failed to add class');
         }
-            
-            // Reset form
-            form.reset();
-            
-            // Refresh data
-            await fetchAndUpdateData();
-            
+        
+        // Refresh data
+        await fetchAndUpdateData();
+        
         // Show success message after a small delay to ensure modal is fully gone
         setTimeout(() => {
             showToast('Success', 'Class added successfully', 'success');
         }, 300);
-        
     } catch (error) {
-        console.error('Error adding class:', error);
         showToast('Error', `Failed to add class: ${error.message}`, 'error');
     }
 }
@@ -1045,6 +1106,22 @@ async function handleEditClass(event) {
         const form = event.target;
         const formData = new FormData(form);
         
+        // Get the year value and respect user selection
+        let yearValue = formData.get('editClassYear');
+        
+        // Only use fallbacks if the year is truly empty or "null" string
+        if (!yearValue || yearValue === "null" || yearValue === "") {
+            // Get the selected value directly from the dropdown
+            const yearDropdown = document.getElementById('editClassYear');
+            if (yearDropdown && yearDropdown.selectedIndex > 0) {
+                // Use the actually selected option
+                yearValue = yearDropdown.options[yearDropdown.selectedIndex].value;
+            } else {
+                // Use "N/A" as the fallback
+                yearValue = "N/A";
+            }
+        }
+        
         // Create updated class object
         const updatedClass = {
             name: formData.get('editClassName'),
@@ -1052,7 +1129,7 @@ async function handleEditClass(event) {
             day: formData.get('editClassDay'),
             time: `${formData.get('editClassStartTime')} - ${formData.get('editClassEndTime')}`,
             instructor_id: formData.get('editClassInstructor'),
-            year: formData.get('editClassYear'),
+            year: yearValue,
             status: formData.get('editClassStatus')
         };
         
@@ -1078,8 +1155,8 @@ async function handleEditClass(event) {
             throw new Error(errorData.error || 'Failed to update class');
         }
             
-            // Refresh data
-            await fetchAndUpdateData();
+        // Refresh data
+        await fetchAndUpdateData();
             
         // Show success message after a small delay to ensure modal is fully gone
         setTimeout(() => {
@@ -1087,7 +1164,6 @@ async function handleEditClass(event) {
         }, 300);
 
     } catch (error) {
-        console.error('Error updating class:', error);
         showToast('Error', `Failed to update class: ${error.message}`, 'error');
     }
 }
@@ -1161,8 +1237,6 @@ window.resetDateFilter = function() {
 
 // Update attendance tables with data
 function updateAttendanceTables(attendanceData) {
-    console.log('Updating attendance tables');
-    
     const studentNameColumn = document.querySelector('#studentNameColumn');
     const recordsTableBody = document.querySelector('#recordsTableBody');
     const calendarHeaderRow = document.querySelector('#calendarHeaderRow');
@@ -1427,5 +1501,130 @@ function closeModalProperly(modalEl) {
             document.body.style.overflow = '';
             document.body.style.paddingRight = '';
         }, { once: true }); // Only run once
+    }
+} 
+
+// Function to generate academic years (current year -1 to current year +5)
+function generateAcademicYears() {
+    const academicYears = [];
+    const currentYear = new Date().getFullYear();
+    
+    // Generate years from (current - 1) to (current + 5)
+    for (let year = currentYear - 1; year <= currentYear + 5; year++) {
+        academicYears.push(`${year}/${year + 1}`);
+    }
+    
+    return academicYears;
+}
+
+// Function to populate academic year dropdowns
+function populateAcademicYearDropdowns() {
+    const academicYears = generateAcademicYears();
+    
+    // Populate academic year dropdowns for the add class modal only
+    const addClassModal = document.getElementById('addClassModal');
+    if (addClassModal) {
+        addClassModal.addEventListener('show.bs.modal', function() {
+            // Get the add modal dropdown
+            const addYearDropdown = document.getElementById('academicYear');
+            
+            if (addYearDropdown) {
+                // Clear existing options except the first one (placeholder)
+                while (addYearDropdown.options.length > 1) {
+                    addYearDropdown.remove(1);
+                }
+                
+                // Add new options
+                academicYears.forEach(year => {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    addYearDropdown.appendChild(option);
+                });
+            }
+        });
+    }
+    
+    // For edit modal, we'll populate the dropdown only once at page load
+    // and rely on the values being set in populateEditClassModal
+    const editYearDropdown = document.getElementById('editClassYear');
+    if (editYearDropdown && editYearDropdown.options.length <= 1) {
+        const academicYears = generateAcademicYears();
+        
+        // Add options only if they don't already exist
+        academicYears.forEach(year => {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            editYearDropdown.appendChild(option);
+        });
+    }
+}
+
+// Function to initialize modals
+function initializeModals() {
+    // Populate academic year dropdowns for the add class modal only
+    const addClassModal = document.getElementById('addClassModal');
+    if (addClassModal) {
+        addClassModal.addEventListener('show.bs.modal', function() {
+            // Get the add modal dropdown
+            const addYearDropdown = document.getElementById('academicYear');
+            
+            if (addYearDropdown) {
+                const academicYears = generateAcademicYears();
+                
+                // Clear existing options except the first one (placeholder)
+                while (addYearDropdown.options.length > 1) {
+                    addYearDropdown.remove(1);
+                }
+                
+                // Add new options
+                academicYears.forEach(year => {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    addYearDropdown.appendChild(option);
+                });
+            }
+            
+            // Set default times if they're empty
+            const startTimeField = document.getElementById('addClassStartTime');
+            const endTimeField = document.getElementById('addClassEndTime');
+            
+            if (startTimeField && !startTimeField.value) {
+                startTimeField.value = "09:00";
+            }
+            
+            if (endTimeField && !endTimeField.value) {
+                endTimeField.value = "10:00";
+            }
+            
+            // Don't reset the form on open as it clears user input
+            // Instead, ensure the proper defaults are set
+            const nameField = document.getElementById('addClassName');
+            const dayField = document.getElementById('addClassDay');
+            const statusField = document.getElementById('addClassStatus');
+            const instructorField = document.getElementById('addClassInstructor');
+            
+            // Set default values for required fields if they're empty
+            if (statusField && !statusField.value) {
+                statusField.value = "Active";
+            }
+        });
+    }
+    
+    // For edit modal, we'll populate the dropdown only once at page load
+    // and rely on the values being set in populateEditClassModal
+    const editYearDropdown = document.getElementById('editClassYear');
+    if (editYearDropdown && editYearDropdown.options.length <= 1) {
+        const academicYears = generateAcademicYears();
+        
+        // Add options only if they don't already exist
+        academicYears.forEach(year => {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            editYearDropdown.appendChild(option);
+        });
     }
 } 
