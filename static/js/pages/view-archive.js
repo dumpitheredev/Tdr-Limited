@@ -125,7 +125,7 @@ function setupEventListeners() {
                     if (currentState.folder) {
                         // Reload current folder data
                         loadArchiveData(currentState.folder);
-                    } else {
+    } else {
                         // Show default message and load initial counts
                         hideAllArchiveTables();
                         document.getElementById('defaultMessage').classList.remove('d-none');
@@ -743,7 +743,7 @@ async function performRestore(id, type) {
             }
         }
         
-    } catch (error) {
+        } catch (error) {
         console.error('Error restoring record:', error);
         // Show error toast notification
         showToast('Error', `Failed to restore record: ${error.message}`, 'error');

@@ -128,7 +128,7 @@
         </div>
         <div class="col-12 col-sm-6 col-md-3">
             <div class="card border-0 shadow-sm archive-stat-card" id="instructorArchiveCard" onClick="switchArchiveType('instructor')">
-                <div class="card-body">
+        <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Instructor Archives</h6>
@@ -169,7 +169,7 @@
                             <i class="bi bi-x"></i>
                         </button>
                     </div>
-                </div>
+    </div>
 
                 <!-- Right side: Export button -->
                 <div>
@@ -202,125 +202,125 @@
                     </h3>
                 </div>
                 <div class="card-body">
-                    <!-- Student Archive Table -->
+            <!-- Student Archive Table -->
                     <div id="studentArchiveTable" class="archive-table table-responsive d-none">
-                        <table class="table">
-                            <thead>
-                                <tr>
+        <table class="table">
+            <thead>
+                        <tr>
                                     <th scope="col"><i class="bi bi-person me-1"></i> Name</th>
                                     <th scope="col"><i class="bi bi-envelope me-1"></i> Email</th>
                                     <th scope="col"><i class="bi bi-building me-1"></i> Company</th>
                                     <th scope="col"><i class="bi bi-calendar-date me-1"></i> Archived Date</th>
                                     <th scope="col"><i class="bi bi-info-circle me-1"></i> Reason</th>
-                                    <th scope="col" class="text-end">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="studentArchiveBody">
+                            <th scope="col" class="text-end">Action</th>
+                </tr>
+            </thead>
+                    <tbody id="studentArchiveBody">
                                 <!-- Loading skeleton -->
                                 <tr>
                                     <td colspan="6" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                         <span>Loading archives...</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                            </td>
+                        </tr>
+                    </tbody>
+        </table>
+    </div>
 
-                    <!-- Class Archive Table -->
+            <!-- Class Archive Table -->
                     <div id="classArchiveTable" class="archive-table table-responsive d-none">
-                        <table class="table">
-                            <thead>
-                                <tr>
+    <table class="table">
+        <thead>
+                        <tr>
                                     <th scope="col"><i class="bi bi-book me-1"></i> Class</th>
                                     <th scope="col"><i class="bi bi-person-video3 me-1"></i> Instructor</th>
                                     <th scope="col"><i class="bi bi-calendar2-week me-1"></i> Schedule</th>
                                     <th scope="col"><i class="bi bi-calendar-date me-1"></i> Archived Date</th>
                                     <th scope="col"><i class="bi bi-info-circle me-1"></i> Reason</th>
-                                    <th scope="col" class="text-end">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="classArchiveBody">
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="classArchiveBody">
                                 <!-- Loading skeleton -->
                                 <tr>
                                     <td colspan="6" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                         <span>Loading archives...</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
 
-                    <!-- Company Archive Table -->
+<!-- Company Archive Table -->
                     <div id="companyArchiveTable" class="archive-table table-responsive d-none">
-                        <table class="table">
-                            <thead>
-                                <tr>
+    <table class="table">
+        <thead>
+                        <tr>
                                     <th scope="col"><i class="bi bi-building me-1"></i> Company</th>
                                     <th scope="col"><i class="bi bi-person me-1"></i> Contact Person</th>
                                     <th scope="col"><i class="bi bi-envelope me-1"></i> Email</th>
                                     <th scope="col"><i class="bi bi-calendar-date me-1"></i> Archived Date</th>
                                     <th scope="col"><i class="bi bi-info-circle me-1"></i> Reason</th>
-                                    <th scope="col" class="text-end">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="companyArchiveBody">
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="companyArchiveBody">
                                 <!-- Loading skeleton -->
                                 <tr>
                                     <td colspan="6" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                         <span>Loading archives...</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
 
-                    <!-- Instructor Archive Table -->
+<!-- Instructor Archive Table -->
                     <div id="instructorArchiveTable" class="archive-table table-responsive d-none">
-                        <table class="table">
-                            <thead>
-                                <tr>
+    <table class="table">
+        <thead>
+                        <tr>
                                     <th scope="col"><i class="bi bi-person-video3 me-1"></i> Instructor</th>
                                     <th scope="col"><i class="bi bi-envelope me-1"></i> Email</th>
                                     <th scope="col"><i class="bi bi-building me-1"></i> Department</th>
                                     <th scope="col"><i class="bi bi-calendar-date me-1"></i> Archived Date</th>
                                     <th scope="col"><i class="bi bi-info-circle me-1"></i> Reason</th>
-                                    <th scope="col" class="text-end">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="instructorArchiveBody">
+                            <th scope="col" class="text-end">Action</th>
+            </tr>
+        </thead>
+                    <tbody id="instructorArchiveBody">
                                 <!-- Loading skeleton -->
                                 <tr>
                                     <td colspan="6" class="text-center py-4">
                                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                                         <span>Loading archives...</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                            </td>
+                        </tr>
+                    </tbody>
+    </table>
+</div>
 
-                    <!-- Pagination -->
-                    <div class="d-flex align-items-center mt-3">
+    <!-- Pagination -->
+    <div class="d-flex align-items-center mt-3">
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-body-secondary">Show rows per page:</span>
-                            <select class="form-select form-select-sm" id="rowsPerPage" style="width: 75px;">
-                                <option value="5">5</option>
-                                <option value="10">10</option>
-                                <option value="25">25</option>
-                                <option value="50">50</option>
-                            </select>
-                        </div>
-                        <div class="ms-auto d-flex align-items-center gap-2">
-                            <button class="btn btn-sm btn-outline-secondary" id="prevPage">
-                                <i class="bi bi-chevron-left"></i>
-                            </button>
+            <select class="form-select form-select-sm" id="rowsPerPage" style="width: 75px;">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+            </select>
+        </div>
+        <div class="ms-auto d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="prevPage">
+                <i class="bi bi-chevron-left"></i>
+            </button>
                             <span id="pageInfo" style="min-width: 100px; text-align: center;">0-0 of 0</span>
-                            <button class="btn btn-sm btn-outline-secondary" id="nextPage">
-                                <i class="bi bi-chevron-right"></i>
-                            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="nextPage">
+                <i class="bi bi-chevron-right"></i>
+            </button>
                         </div>
                     </div>
                 </div>

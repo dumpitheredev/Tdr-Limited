@@ -105,28 +105,28 @@ function updateInstructions(features, instructions) {
     let modalElement = document.getElementById('pageInfoModal');
     
     if (!modalElement) {
-        return;
-    }
-    
+            return;
+        }
+
     // Initialize the modal if not already done
     if (!window.modalInstance) {
         window.modalInstance = new bootstrap.Modal(modalElement);
     }
-    
-    // Update features
+
+        // Update features
     const featureList = modalElement.querySelector('.feature-list');
-    if (featureList) {
+        if (featureList) {
         featureList.innerHTML = features
-            .map(feature => `<li><i class="bi bi-check text-success me-2"></i>${feature}</li>`)
-            .join('');
-    }
-    
-    // Update instructions
+                .map(feature => `<li><i class="bi bi-check text-success me-2"></i>${feature}</li>`)
+                .join('');
+        }
+
+        // Update instructions
     const instructionList = modalElement.querySelector('.instruction-list');
-    if (instructionList) {
+        if (instructionList) {
         instructionList.innerHTML = instructions
-            .map(instruction => `<li><i class="bi bi-arrow-right text-primary me-2"></i>${instruction}</li>`)
-            .join('');
+                .map(instruction => `<li><i class="bi bi-arrow-right text-primary me-2"></i>${instruction}</li>`)
+                .join('');
     }
     
     // Update description if available
@@ -188,14 +188,14 @@ function getPageKeyFromUrl() {
 document.addEventListener('DOMContentLoaded', function() {
     const modalElement = document.getElementById('pageInfoModal');
     if (!modalElement) return;
-    
+
     // Add ESC key listener
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && window.modalInstance) {
             closeInfoModal();
         }
     });
-    
+
     // Add click outside listener
     modalElement.addEventListener('click', (e) => {
         if (e.target === modalElement) {
@@ -277,34 +277,6 @@ if (!window.modalInstance) {
 // Define pageInformation globally if it doesn't exist
 if (typeof window.pageInformation === 'undefined') {
     window.pageInformation = {
-        'dashboard': {
-            title: 'Dashboard',
-            description: 'Overview of system statistics and key metrics.',
-            features: [
-                'View total users, students, and instructors',
-                'Monitor active and inactive users',
-                'Quick access to key functions'
-            ],
-            instructions: [
-                'Use the cards to view overall statistics',
-                'Click on specific sections to view detailed information',
-                'Use the navigation menu to access other pages'
-            ]
-        },
-        'admin': {
-            title: 'Admin Dashboard',
-            description: 'Administrative control panel for managing the system.',
-            features: [
-                'Access to all admin modules',
-                'System-wide configuration options',
-                'User and data management tools'
-            ],
-            instructions: [
-                'Use the sidebar to navigate between different admin modules',
-                'Click on cards to access specific functionality',
-                'Use the search function to find specific records'
-            ]
-        },
         'admin-dashboard': {
             title: 'Admin Dashboard',
             description: 'Overview of system statistics and key metrics for administrators.',
@@ -453,7 +425,7 @@ if (typeof window.pageInformation === 'undefined') {
                 'Use edit icon to modify existing class details'
             ]
         },
-        'archive': {
+        'view-archive': {
             title: 'System Archives',
             description: 'Central hub for managing and accessing archived records from across the system, including classes, students, instructors, and companies.',
             features: [
@@ -527,7 +499,7 @@ if (typeof window.pageInformation === 'undefined') {
                 'Add any relevant notes',
                 'Save attendance records'
             ]
-        },
+        },  
         'settings': {
             title: 'System Settings',
             description: 'Configure system-wide settings and preferences.',
@@ -808,6 +780,16 @@ if (typeof window.pageInformation === 'undefined') {
     });
 }
 
+// After defining pageInformation
+const dashboardAliases = {
+  'admin': 'admin-dashboard'
+};
+
+// Add aliases
+Object.entries(dashboardAliases).forEach(([alias, target]) => {
+  window.pageInformation[alias] = window.pageInformation[target];
+});
+
 // Modal helper functions
 function openInfoModal() {
     if (window.modalInstance) {
@@ -822,13 +804,13 @@ function closeInfoModal() {
         // Give the modal time to complete its hiding animation
         setTimeout(() => {
             // Clean up modal remnants
-            document.body.classList.remove('modal-open');
+        document.body.classList.remove('modal-open');
             document.body.style.overflow = '';
             document.body.style.paddingRight = '';
             
             // Remove backdrop
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) backdrop.remove();
+        const backdrop = document.querySelector('.modal-backdrop');
+        if (backdrop) backdrop.remove();
             
             // Remove any inline styles added by Bootstrap
             const modal = document.getElementById('pageInfoModal');
