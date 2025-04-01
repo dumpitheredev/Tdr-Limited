@@ -1,0 +1,130 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Coding Pattern Preferences
+# General Principles
+- Always prefer simple and maintainable solutions. Complex logic should only be used when absolutely necessary.
+
+- Avoid duplication of code whenever possible by reusing existing functionality or refactoring code to eliminate redundancy.
+
+- Ensure code is modular and reusable to support future scalability and maintainability.
+
+- Follow the DRY (Don't Repeat Yourself) and KISS (Keep It Simple, Stupid) principles.
+
+# Code Quality and Organization
+- Write code that considers different environments: development (dev), testing (test), and production (prod). Ensure configuration settings are environment-specific.
+
+- Keep the codebase clean, well-structured, and organized. Maintain clear directory structures and meaningful file names.
+
+- Consistent naming conventions should be followed for variables, functions, and files to improve readability.
+
+- Write comment as humanly as possible
+
+- Write self-documenting code. Use meaningful names and avoid unnecessary comments, but provide documentation where required.
+
+- Follow a standard coding style guide for formatting and conventions (e.g., PEP8 for Python, Airbnb for JavaScript, etc.).
+
+# Code Changes and Fixes
+-Only make changes that are either explicitly requested or well understood in relation to the issue being addressed.
+
+- When fixing an issue or bug, do not introduce a new pattern or technology unless all options with the existing implementation have been exhausted.
+
+- If a new pattern or technology must be introduced, ensure the old implementation is properly removed to avoid duplicate logic.
+
+- Every change should be thoroughly tested to prevent regressions or unintended side effects.
+
+# Code Structure and File Management
+- Avoid writing scripts inside core files if possible. Place scripts in separate utility files if they are used more than once.
+
+- Avoid having large files (over 200-300 lines of code). If a file grows too large, refactor it by breaking it into smaller, modular components.
+
+- Ensure all functions and classes have a single responsibility to enhance maintainability and reusability.
+
+# Data Handling and Security
+- Mock data should only be used for testing. Never use mock data in development or production.
+
+- Never hardcode sensitive information such as API keys, database credentials, or passwords. Always use environment variables (.env files) or a secure configuration manager.
+
+- Never add stubbing or fake data patterns that could affect the development or production environments.
+
+- Always validate and sanitize user input to prevent security vulnerabilities such as SQL injection and XSS attacks.
+
+# Version Control and Collaboration
+Always commit meaningful changes with clear and descriptive commit messages. Avoid vague commit messages like "fixed bug" or "updated code".
+
+- Follow a branching strategy such as Git Flow or feature branching to maintain a structured workflow.
+
+- Always review and test code before merging to the main branch. Peer reviews and automated tests should be part of the workflow.
+
+# Environment and Deployment
+- Never overwrite the .env file without first asking and confirming. Ensure environment-specific configurations are properly handled.
+
+- Ensure logs and error messages do not expose sensitive information.
+
+- Minimize external dependencies where possible to reduce security risks and improve maintainability.
+
+# JavaScript Conventions
+- Code structure: Keep scripts in static/js and link them using url_for('static', filename='js/...').
+
+- Event handling:
+
+- Name event handlers using a handle prefix (handleFormSubmit(), handleUserLogin()).
+
+- Use event delegation instead of binding multiple event listeners.
+
+- Prefer async/await over callbacks for cleaner code.
+
+- Form handling:
+
+- Use FormData() for AJAX form submissions.
+
+- Implement client-side validation before submitting requests.
+
+- Minimize and concatenate JavaScript files for better performance.
+
+# MySQL & Database Management
+- Use a Flask MySQL extension or SQLAlchemy for database management.
+
+- Implement CRUD operations (Create, Read, Update, Delete) in a separate data-access layer (models.py).
+
+- Replace mock data in templates with real database data after verifying UI.
+
+- Ensure database migrations are handled using Flask-Migrate.
+
+
+# Authentication & Security Best Practices
+- Implement secure user authentication using Flask-Login or Flask-Security.
+
+- Flask-Mail for SMTP:
+
+- Ensure proper email configuration (SMTP host, port, TLS/SSL).
+
+- Use a dedicated app password (never store personal credentials).
+
+- Keep sensitive information (SMTP password, API keys) in environment variables or a secure .env file.
+
+- Use @login_required decorators to protect routes requiring authentication.
+- You can improve modularity by moving models to models.py, setting up Flask-Migrate, and splitting routes into separate files.
+- project aligns well with principles like DRY, KISS, and security (e.g., preventing SQL injection with SQLAlchemy).
+
+- Security Enhancements:
+
+- Implement rate limiting to prevent brute-force attacks.
+
+- Store passwords securely using Flask-Bcrypt or Werkzeug's hashing utilities.
+
+- Enable CSRF protection with Flask-WTF.
+
+- Validate and sanitize all user inputs to prevent SQL injection and XSS attacks.
+
+# Final Notes
+- Adhere to DRY principles and use standard Bootstrap patterns across pages.
+
+- Validate the front-end with mock data before integrating authentication, MySQL, and SMTP.
+
+- Thoroughly test authentication flows, email sending, and database CRUD before production deployment.
+
+- Regularly review and refactor the codebase to maintain performance and security.
+

@@ -51,8 +51,8 @@
                                 Class Management
                             {% elif active_page == 'instructor_management' %}
                                 Instructor Management
-                            {% elif active_page == 'enrolment_management' %}
-                                Enrolment Management
+                            {% elif active_page == 'enrollment_management' %}
+                                Enrollment Management
                             {% elif active_page == 'view_attendance' %}
                                 View Attendance
                             {% elif active_page == 'mark_attendance' %}
@@ -65,10 +65,6 @@
                                 Mark Attendance
                             {% elif active_page == 'instructor_view_attendance' %}
                                 View Attendance 
-                            {% elif active_page == 'instructor_archived_reports' %}
-                                Archived Reports
-                            {% elif active_page == 'instructor_absence_report' %}
-                                Absence Reports
                             {% else %}
                                 {{ page_title|default('') }}
                             {% endif %}

@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4">Loading...</td></tr>';
         
         // Fetch data
-        fetch(`/api/companies${selectedStatus ? `?status=${selectedStatus}` : ''}`)
+        fetch(`/api/companies-direct${selectedStatus ? `?status=${selectedStatus}` : ''}`)
             .then(response => response.json())
             .then(data => {
                 allCompanies = data.companies;
@@ -340,7 +340,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.handleCompanyAction = function(action, companyId) {
     switch(action) {
         case 'edit':
-            fetch(`/api/companies/${companyId}`)
+            fetch(`/api/companies-direct/${companyId}`)
                 .then(response => response.json())
                 .then(company => {
                     // Update edit form fields
@@ -367,7 +367,7 @@ window.handleCompanyAction = function(action, companyId) {
                             status: document.getElementById('editCompanyStatus').value
                         };
 
-                        fetch(`/api/companies/${companyId}`, {
+                        fetch(`/api/companies-direct/${companyId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -432,7 +432,7 @@ window.handleCompanyAction = function(action, companyId) {
                 });
             break;
         case 'view':
-            fetch(`/api/companies/${companyId}`)
+            fetch(`/api/companies-direct/${companyId}`)
                 .then(response => response.json())
                 .then(company => {
                     // Update company details

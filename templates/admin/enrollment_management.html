@@ -1,6 +1,6 @@
 {% extends "base/layout.html" %}
-{% block title %}Enrolment Management{% endblock %}
-{% block active_page %}enrolment_management{% endblock %}
+{% block title %}Enrollment Management{% endblock %}
+{% block active_page %}enrollment_management{% endblock %}
 
 {% block styles %}
 <!-- Select2 CSS -->
@@ -37,77 +37,6 @@
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Info Cards Row -->
-    <div class="row g-3 mb-4">
-        <!-- Total Students Card -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Total Students</h6>
-                            <h2 class="card-title mb-0 fw-bold">{{ total_students }}</h2>
-                        </div>
-                        <div class="p-2 bg-primary bg-opacity-10 rounded">
-                            <i class="bi bi-people-fill text-primary fs-4"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Active Enrolled Card -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Active Enrolled</h6>
-                            <h2 class="card-title mb-0 fw-bold">{{ active_enrollments }}</h2>
-                        </div>
-                        <div class="p-2 bg-success bg-opacity-10 rounded">
-                            <i class="bi bi-person-check-fill text-success fs-4"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Completed Enrolments Card -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Completed Enrolments</h6>
-                            <h2 class="card-title mb-0 fw-bold">{{ completed_enrollments }}</h2>
-                        </div>
-                        <div class="p-2 bg-info bg-opacity-10 rounded">
-                            <i class="bi bi-mortarboard-fill text-info fs-4"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Pending Enrolment Card -->
-        <div class="col-12 col-sm-6 col-lg-3">
-            <div class="card border-0 shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div>
-                            <h6 class="card-subtitle text-muted mb-1">Pending Enrolment</h6>
-                            <h2 class="card-title mb-0 fw-bold">{{ pending_enrollments }}</h2>
-                        </div>
-                        <div class="p-2 bg-warning bg-opacity-10 rounded">
-                            <i class="bi bi-hourglass-split text-warning fs-4"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div class="row">
         <div class="col-12">
             <!-- Controls Row -->
@@ -116,9 +45,8 @@
                 <div class="d-flex gap-3 flex-grow-1">
                     <select id="statusFilter" class="form-select" style="width: 150px;">
                         <option value="">Select Status</option>
-                        <option value="Active" {% if status_filter == 'Active' %}selected{% endif %}>Active</option>
-                        <option value="Pending" {% if status_filter == 'Pending' %}selected{% endif %}>Pending</option>
-                        <option value="Completed" {% if status_filter == 'Completed' %}selected{% endif %}>Completed</option>
+                        <option value="Active">Active</option>
+                        <option value="Pending">Pending</option>
                     </select>
 
                     <div class="position-relative flex-grow-1" style="max-width: 400px;">
@@ -150,7 +78,7 @@
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
                     <h3 class="h5 mb-0" style="color: #191970;">
-                        <i class="bi bi-person-plus-fill"></i>Enrolment Records
+                        <i class="bi bi-person-plus-fill"></i>Enrollment Records
                     </h3>
                 </div>
                 <div class="card-body">
@@ -159,15 +87,14 @@
                             <thead class="table-light">
                         <tr>
                             <th>Name</th>
-                            <th>Company</th>
-                            <th>Classes Enrolled</th>
-                            <th>Enrolment Date</th>
-                            <th>Status</th>
+                            <th>Class(es)</th>
+                            <th>Enrollment Date</th>
+                            <th>Student Status</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="enrolmentTableBody">
-                        {% for enrolment in enrollments %}
+                        {% for enrolment in enrolments %}
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center">
@@ -182,17 +109,19 @@
                                     </div>
                                 </div>
                             </td>
-                            <td>{{ enrolment.company.name }}</td>
                             <td>{{ enrolment.classes|length }} Classes</td>
                             <td>{{ enrolment.enrollment_date }}</td>
                             <td>
-                                <span class="badge {% if enrolment.status == 'Active' %}bg-success-subtle text-success
-                                          {% elif enrolment.status == 'Completed' %}bg-info-subtle text-info
+                                <span class="badge {% if enrolment.student.status == 'Active' %}bg-success-subtle text-success
+                                          {% elif enrolment.student.status == 'Inactive' %}bg-danger-subtle text-danger
                                           {% else %}bg-warning-subtle text-warning{% endif %}">
-                                    {{ enrolment.status }}
+                                    {{ enrolment.student.status }}
                                 </span>
                             </td>
                             <td class="text-end">
+                                {% if enrolment.status == 'Pending' %}
+                                <!-- Approval button removed as requested -->
+                                {% endif %}
                                 <button class="btn btn-sm btn-link text-muted" 
                                         onclick="viewEnrolment('{{ enrolment.student.user_id }}')">
                                         <i class="bi bi-eye" style="color: #191970;"></i>
@@ -239,9 +168,10 @@
     </div>
 </div>
 
-{% include 'components/add_enrolment_modal.html' %}
-{% include 'components/view_enrolment_modal.html' %}
-{% include 'components/edit_enrolment_modal.html' %}
+{% include 'components/add_enrollment_modal.html' %}
+{% include 'components/view_enrollment_modal.html' %}
+{% include 'components/edit_enrollment_modal.html' %}
+{% include 'components/unenroll_confirmation_modal.html' %}
 {% include 'components/toast_notification.html' %}
 
 <!-- Add this right before the closing body tag -->
@@ -259,5 +189,5 @@
 <!-- Then Flatpickr -->
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <!-- Finally your custom JS -->
-<script src="{{ url_for('static', filename='js/pages/enrolment-management.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/enrollment-management.js') }}"></script>
 {% endblock %} 

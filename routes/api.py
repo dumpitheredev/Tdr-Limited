@@ -1,13 +1,40 @@
-from flask import Blueprint, jsonify, request, make_response
-from flask_login import login_required
+from flask import Blueprint, jsonify, request, make_response, render_template
+from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Company, Attendance
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import csv
 from io import StringIO
-from sqlalchemy import text
+from sqlalchemy import text, or_, func, and_
+import traceback
+import json
+import uuid
+import math
+import os
+import re
 
 # Create API blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# Helper function to safely map company attributes
+def map_company_to_dict(company):
+    """Map company model to dictionary, handling attribute access safely"""
+    result = {
+        'name': getattr(company, 'name', ''),
+        'contact': getattr(company, 'contact', ''),
+        'email': getattr(company, 'email', ''),
+        'status': getattr(company, 'status', 'Active')
+    }
+    
+    # Handle ID field which might be 'id' or 'company_id'
+    if hasattr(company, 'id'):
+        result['company_id'] = company.id
+    elif hasattr(company, 'company_id'):
+        result['company_id'] = company.company_id
+    else:
+        # Fallback to using the primary key
+        result['company_id'] = str(company.get_id()) if hasattr(company, 'get_id') else 'unknown'
+    
+    return result
 
 @api_bp.route('/users', methods=['GET'])
 @login_required
@@ -159,23 +186,155 @@ def get_students():
 @api_bp.route('/students/unenrolled', methods=['GET'])
 @login_required
 def get_unenrolled_students():
-    """API endpoint to get students who aren't enrolled in any classes"""
-    # Get all students
-    students = User.query.filter_by(role='Student').all()
-    
-    # Filter out those who are already enrolled
-    unenrolled = []
-    for student in students:
-        # Check if this student has any enrollments
-        enrollments = Enrollment.query.filter_by(student_id=student.id).count()
-        if enrollments == 0:
-            unenrolled.append({
-                'user_id': student.id,
+    """API endpoint to get all students for enrollment"""
+    try:
+        # Get all users without any role or active filters initially
+        query = User.query
+        
+        # Debug to check total users first
+        all_users = query.all()
+        print(f"DEBUG: Total users (all roles): {len(all_users)}")
+        for user in all_users:
+            print(f"DEBUG: User: {user.id} - {user.first_name} {user.last_name} - Role: {user.role} - Active: {user.is_active}")
+        
+        # Case-insensitive role matching is needed - use upper case for consistent comparison
+        # Get students with case-insensitive role matching
+        students = []
+        for user in all_users:
+            if user.role and user.role.upper() == 'STUDENT':
+                students.append(user)
+                
+        print(f"DEBUG: Students with proper role matching: {len(students)}")
+        
+        for student in students:
+            print(f"DEBUG: Student found: {student.id} - {student.first_name} {student.last_name}")
+        
+        # Format the response with proper role capitalization
+        result = []
+        for student in students:
+            result.append({
+                'id': student.id,
                 'name': f"{student.first_name} {student.last_name}",
+                'role': 'Student',  # Use proper capitalization for client-side
+                'is_active': student.is_active,
                 'email': student.email
             })
     
-    return jsonify(unenrolled)
+        print(f"DEBUG: Returning {len(result)} students for enrollment")
+        return jsonify({'students': result})
+    except Exception as e:
+        import traceback
+        print(f"Error in get_unenrolled_students: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e), 'students': []}), 500
+
+@api_bp.route('/enrollments', methods=['POST'])
+@login_required
+def create_enrollments():
+    """API endpoint to create or reactivate enrollment records"""
+    data = request.json
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    # Validate required fields
+    required_fields = ['student_ids', 'class_ids']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+    
+    # Extract data from request
+    student_ids = data['student_ids']
+    class_ids = data['class_ids']
+    status = data.get('status', 'Pending')
+    
+    # Parse enrollment date
+    if 'start_date' in data and data['start_date']:
+        try:
+            enrollment_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Expected format: YYYY-MM-DD'}), 400
+    else:
+        enrollment_date = datetime.now().date()
+    
+    success_count = 0
+    updated_count = 0
+    skipped_count = 0
+    error_details = []
+    
+    try:
+        # Process each student and class combination
+        for student_id in student_ids:
+            for class_id in class_ids:
+                try:
+                    # Verify student and class exist
+                    student = User.query.get(student_id)
+                    if not student:
+                        error_details.append(f"Student {student_id} not found")
+                        continue
+                    
+                    class_obj = Class.query.get(class_id)
+                    if not class_obj:
+                        error_details.append(f"Class {class_id} not found")
+                        continue
+                    
+                    # Check if an active enrollment already exists
+                    existing_enrollment = Enrollment.query.filter(
+                        Enrollment.student_id == student_id,
+                        Enrollment.class_id == class_id,
+                        Enrollment.unenrollment_date.is_(None)
+                    ).first()
+                    
+                    if existing_enrollment:
+                        skipped_count += 1
+                        continue
+                    
+                    # Check for previous enrollment that was unenrolled
+                    previous_enrollment = Enrollment.query.filter(
+                        Enrollment.student_id == student_id,
+                        Enrollment.class_id == class_id,
+                        Enrollment.unenrollment_date.isnot(None)
+                    ).first()
+                    
+                    if previous_enrollment:
+                        # Re-activate the enrollment by updating the existing record
+                        previous_enrollment.unenrollment_date = None
+                        previous_enrollment.status = status
+                        previous_enrollment.enrollment_date = enrollment_date
+                        updated_count += 1
+                    else:
+                        # Create new enrollment
+                        new_enrollment = Enrollment(
+                            student_id=student_id,
+                            class_id=class_id,
+                            enrollment_date=enrollment_date,
+                            status=status
+                        )
+                        
+                        db.session.add(new_enrollment)
+                        success_count += 1
+                    
+                except Exception as e:
+                    db.session.rollback()
+                    error_details.append(f"Error processing enrollment for student {student_id} in class {class_id}: {str(e)}")
+        
+        # Commit changes if any were successful
+        if success_count > 0 or updated_count > 0:
+            db.session.commit()
+            
+        return jsonify({
+            'success': True,
+            'message': f"Created {success_count} enrollments, reactivated {updated_count} enrollments",
+            'count': success_count + updated_count,
+            'created': success_count,
+            'updated': updated_count,
+            'skipped': skipped_count,
+            'errors': error_details if error_details else None
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/instructors', methods=['GET'])
 @login_required
@@ -235,15 +394,229 @@ def get_companies():
     
     result = []
     for company in companies:
-        result.append({
-            'company_id': company.company_id,
-            'name': company.name,
-            'contact': company.contact,
-            'email': company.email,
-            'status': company.status
-        })
+        result.append(map_company_to_dict(company))
     
     return jsonify(result)
+
+@api_bp.route('/companies/<string:company_id>', methods=['GET'])
+@login_required
+def get_company(company_id):
+    """API endpoint to get a specific company by ID"""
+    company = Company.query.get_or_404(company_id)
+    
+    # Get students associated with this company
+    students = User.query.filter_by(company_id=company_id, role='Student').all()
+    student_list = []
+    
+    for student in students:
+        student_list.append({
+            'id': student.id,
+            'name': f"{student.first_name} {student.last_name}",
+            'email': student.email,
+            'status': 'Active' if student.is_active else 'Inactive'
+        })
+    
+    # Map company to dictionary and add students
+    result = map_company_to_dict(company)
+    result['students'] = student_list
+    
+    return jsonify(result)
+
+@api_bp.route('/companies/<string:company_id>', methods=['PUT'])
+@login_required
+def update_company(company_id):
+    """API endpoint to update a specific company"""
+    company = Company.query.get_or_404(company_id)
+    data = request.json
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    try:
+        # Update company fields
+        if 'name' in data:
+            company.name = data['name']
+        if 'contact' in data:
+            company.contact = data['contact']
+        if 'email' in data:
+            company.email = data['email']
+        if 'status' in data:
+            company.status = data['status']
+        
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Company updated successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update company: {str(e)}'}), 500
+
+@api_bp.route('/companies', methods=['POST'])
+@login_required
+def create_company():
+    """API endpoint to create a new company"""
+    data = request.json
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    # Validate required fields
+    required_fields = ['name', 'contact', 'email', 'company_id']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+    
+    try:
+        # Check if company ID already exists
+        if Company.query.get(data['company_id']):
+            return jsonify({'error': 'Company ID already exists'}), 400
+        
+        # Create new company
+        new_company = Company(
+            company_id=data['company_id'],
+            name=data['name'],
+            contact=data['contact'],
+            email=data['email'],
+            status='Active'
+        )
+        
+        # Add to database
+        db.session.add(new_company)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Company created successfully',
+            'company_id': data['company_id']
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to create company: {str(e)}'}), 500
+
+@api_bp.route('/companies-direct', methods=['GET'])
+@login_required
+def get_companies_direct():
+    """API endpoint to get all companies using direct SQL to avoid ORM mapping issues"""
+    try:
+        # Use raw SQL to query the companies table
+        result = db.session.execute(text("SELECT id, name, contact, email, status, created_at, updated_at FROM company"))
+        companies = []
+        
+        # Map the results to dictionaries
+        for row in result:
+            companies.append({
+                'company_id': row.id,
+                'name': row.name,
+                'contact': row.contact,
+                'email': row.email,
+                'status': row.status,
+                'created_at': row.created_at.isoformat() if row.created_at else None,
+                'updated_at': row.updated_at.isoformat() if row.updated_at else None
+            })
+        
+        return jsonify(companies)
+    except Exception as e:
+        print(f"Error fetching companies: {str(e)}")
+        return jsonify([]), 500
+
+@api_bp.route('/companies-direct/<string:company_id>', methods=['GET'])
+@login_required
+def get_company_direct(company_id):
+    """API endpoint to get a specific company by ID using direct SQL to avoid ORM mapping issues"""
+    try:
+        # Use raw SQL to query the company
+        result = db.session.execute(
+            text("SELECT id, name, contact, email, status, created_at, updated_at FROM company WHERE id = :company_id"),
+            {"company_id": company_id}
+        ).fetchone()
+        
+        if not result:
+            return jsonify({"error": "Company not found"}), 404
+        
+        # Get students associated with this company
+        students = User.query.filter_by(company_id=company_id, role='Student').all()
+        student_list = []
+        
+        for student in students:
+            student_list.append({
+                'id': student.id,
+                'name': f"{student.first_name} {student.last_name}",
+                'email': student.email,
+                'status': 'Active' if student.is_active else 'Inactive'
+            })
+        
+        # Map the result to a dictionary
+        company = {
+            'company_id': result.id,
+            'name': result.name,
+            'contact': result.contact,
+            'email': result.email,
+            'status': result.status,
+            'created_at': result.created_at.isoformat() if result.created_at else None,
+            'updated_at': result.updated_at.isoformat() if result.updated_at else None,
+            'students': student_list
+        }
+        
+        return jsonify(company)
+    except Exception as e:
+        print(f"Error fetching company: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/companies-direct/<string:company_id>', methods=['PUT'])
+@login_required
+def update_company_direct(company_id):
+    """API endpoint to update a specific company using direct SQL to avoid ORM mapping issues"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Prepare update fields
+        update_fields = []
+        params = {"company_id": company_id}
+        
+        if 'name' in data:
+            update_fields.append("name = :name")
+            params["name"] = data['name']
+        
+        if 'contact' in data:
+            update_fields.append("contact = :contact")
+            params["contact"] = data['contact']
+        
+        if 'email' in data:
+            update_fields.append("email = :email")
+            params["email"] = data['email']
+        
+        if 'status' in data:
+            update_fields.append("status = :status")
+            params["status"] = data['status']
+        
+        # Add updated_at timestamp
+        update_fields.append("updated_at = NOW()")
+        
+        # Build and execute update query
+        if update_fields:
+            query = f"UPDATE company SET {', '.join(update_fields)} WHERE id = :company_id"
+            db.session.execute(text(query), params)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Company updated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No fields to update'
+            }), 400
+            
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating company: {str(e)}")
+        return jsonify({'error': f'Failed to update company: {str(e)}'}), 500
 
 @api_bp.route('/classes', methods=['GET', 'POST'])
 @login_required
@@ -316,79 +689,81 @@ def get_classes():
             return jsonify({'error': f'Failed to create class: {str(e)}'}), 500
     
     # Handle GET request
-    # Get filter parameters
-    status_filter = request.args.get('status', '')
-    instructor_id = request.args.get('instructor_id', '')
-    
-    # Check if we're looking for a recently restored class
-    restored_id = request.args.get('restored', '')
-    if restored_id:
-        print(f"Looking for recently restored class with ID: {restored_id}")
-        # Check if this class exists and its status
-        restored_class = Class.query.get(restored_id)
-        if restored_class:
-            print(f"Found restored class: {restored_class.name}, active: {restored_class.is_active}")
-            print(f"Description: {restored_class.description}")
-    
-    # BUILD QUERY - IMPORTANT: Include all classes, whether active or not
-    # Only exclude classes with valid ARCHIVE NOTEs that are inactive
-    # This ensures properly archived classes don't show up, but restored ones do
-    
-    # Start with all classes
-    query = Class.query
-    
-    # Only exclude inactive classes that have ARCHIVE NOTE (truly archived)
-    # Active classes and inactive classes without ARCHIVE NOTE will be included
-    query = query.filter(
-        (Class.is_active == True) |  # Active classes should always be included
-        (
-            (Class.is_active == False) &  # Only filter inactive classes
-            (
-                (Class.description.is_(None)) |  # with no description
-                (Class.description == '') |      # or empty description
-                (~Class.description.like('%ARCHIVE NOTE%'))  # or without ARCHIVE NOTE
-            )
-        )
-    )
-    
-    # If explicitly filtering by status, apply that filter instead
-    if status_filter:
-        is_active = status_filter == 'Active'
-        query = query.filter(Class.is_active == is_active)
-    
-    if instructor_id:
-        query = query.filter(Class.instructor_id == instructor_id)
-    
-    # Execute query and check count before processing
-    classes = query.all()
-    print(f"Found {len(classes)} classes in get_classes API")
-    
-    # Debug first 5 classes if any exist
-    for i, class_obj in enumerate(classes[:5]):
-        print(f"Class {i+1}: ID={class_obj.id}, Name={class_obj.name}, Active={class_obj.is_active}")
-        if class_obj.description:
-            print(f"  Description: {class_obj.description[:50]}...")
-    
-    result = []
-    for class_obj in classes:
-        # Get instructor info
-        instructor_name = "Not Assigned"
-        if class_obj.instructor_id:
-            instructor = User.query.get(class_obj.instructor_id)
-            if instructor:
-                instructor_name = f"{instructor.first_name} {instructor.last_name}"
+    try:
+        # Get filter parameters
+        status_filter = request.args.get('status', '')
+        instructor_id = request.args.get('instructor_id', '')
         
-        result.append({
-            'class_id': class_obj.id,
-            'name': class_obj.name,
-            'day': class_obj.day_of_week,
-            'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
-            'year': class_obj.term,
-            'instructor': instructor_name,
-            'status': 'Active' if class_obj.is_active else 'Inactive'
-        })
-    
-    return jsonify(result)
+        # Check if we're looking for a recently restored class
+        restored_id = request.args.get('restored', '')
+        if restored_id:
+            print(f"Looking for recently restored class with ID: {restored_id}")
+            # Check if this class exists and its status
+            restored_class = Class.query.get(restored_id)
+            if restored_class:
+                print(f"Found restored class: {restored_class.name}, active: {restored_class.is_active}")
+                print(f"Description: {restored_class.description}")
+        
+        # Build query
+        query = Class.query
+        
+        # Apply status filter if provided
+        if status_filter:
+            is_active = status_filter.lower() == 'active'
+            query = query.filter(Class.is_active == is_active)
+        else:
+            # Default: Only show active classes and restored inactive classes (without ARCHIVE NOTE)
+            query = query.filter(
+                (Class.is_active == True) |  # Active classes
+                (
+                    (Class.is_active == False) &  # Inactive classes
+                    (
+                        (Class.description.is_(None)) |  # with no description
+                        (Class.description == '') |      # or empty description
+                        (~Class.description.like('%ARCHIVE NOTE%'))  # or without ARCHIVE NOTE
+                    )
+                )
+            )
+        
+        # Apply instructor filter if provided
+        if instructor_id:
+            query = query.filter(Class.instructor_id == instructor_id)
+        
+        # Execute query
+        classes = query.all()
+        print(f"Found {len(classes)} classes in get_classes API")
+        
+        # Debug first 5 classes
+        for i, class_obj in enumerate(classes[:5]):
+            print(f"Class {i+1}: ID={class_obj.id}, Name={class_obj.name}, Active={class_obj.is_active}")
+            
+        # Format response
+        result = []
+        for class_obj in classes:
+            # Get instructor info
+            instructor_name = "Not Assigned"
+            if class_obj.instructor_id:
+                instructor = User.query.get(class_obj.instructor_id)
+                if instructor:
+                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
+            
+            # Format class data
+            result.append({
+                'class_id': class_obj.id,
+                'name': class_obj.name,
+                'day': class_obj.day_of_week,
+                'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
+                'year': class_obj.term,
+                'instructor': instructor_name,
+                'status': 'Active' if class_obj.is_active else 'Inactive'
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in get_classes API: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify([]), 200  # Return empty array to prevent UI errors
 
 @api_bp.route('/classes/<string:class_id>', methods=['GET'])
 @login_required
@@ -1439,3 +1814,514 @@ def get_archive_counts():
             'company': 0,
             'instructor': 0
         }}), 200  # Return zeros with 200 status to prevent breaking the UI 
+
+@api_bp.route('/students/<string:student_id>/enrollment', methods=['GET'])
+@login_required
+def get_student_enrollment(student_id):
+    try:
+        student = User.query.get_or_404(student_id)
+        
+        # Get student info
+        student_info = {
+            'user_id': student.id,
+            'name': f"{student.first_name} {student.last_name}",
+            'email': student.email,
+            'status': 'Active' if student.is_active else 'Inactive',
+            'profile_img': student.profile_img
+        }
+        
+        # Get company info
+        company_info = {
+            'company_id': student.company_id,
+            'name': 'Not Assigned'
+        }
+        
+        if student.company_id:
+            try:
+                company = Company.query.get(student.company_id)
+                if company:
+                    company_info['name'] = company.name
+            except Exception as company_error:
+                print(f"Error getting company info: {company_error}")
+                # Continue with default company info
+        
+        # Get enrollment info with classes
+        classes = []
+        active_classes = []
+        historical_classes = []
+        
+        # Use raw SQL to get ALL enrollments, including past ones
+        try:
+            # First, get active enrollments (no unenrollment_date)
+            active_sql = text("""
+                SELECT id, student_id, class_id, enrollment_date, status, 
+                       IFNULL(unenrollment_date, '') as unenrollment_date
+                FROM enrollment
+                WHERE student_id = :student_id
+                AND (unenrollment_date IS NULL)
+                ORDER BY enrollment_date DESC
+            """)
+            
+            active_enrollments = db.session.execute(active_sql, {"student_id": student_id}).fetchall()
+            print(f"Found {len(active_enrollments)} active enrollments for student {student_id}")
+            
+            # Then, get historical enrollments (with unenrollment_date)
+            historical_sql = text("""
+                SELECT id, student_id, class_id, enrollment_date, status, 
+                       IFNULL(unenrollment_date, '') as unenrollment_date
+                FROM enrollment
+                WHERE student_id = :student_id
+                AND unenrollment_date IS NOT NULL
+                ORDER BY unenrollment_date DESC
+            """)
+            
+            historical_enrollments = db.session.execute(historical_sql, {"student_id": student_id}).fetchall()
+            print(f"Found {len(historical_enrollments)} historical enrollments for student {student_id}")
+            
+            # Process active enrollments
+            for enrollment in active_enrollments:
+                # Get enrollment data from SQL result
+                enrollment_id = enrollment[0]
+                class_id = enrollment[2]
+                enrollment_date = enrollment[3]
+                enrollment_status = enrollment[4]
+                
+                # Get class info
+                class_obj = Class.query.get(class_id)
+                if not class_obj:
+                    print(f"Warning: Class {class_id} not found for active enrollment {enrollment_id}")
+                    continue  # Skip if class not found
+                
+                # Create class info dictionary
+                class_info = {
+                    'class_id': class_obj.id,
+                    'name': class_obj.name,
+                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
+                    'enrollment_status': enrollment_status,
+                    'enrollment_id': enrollment_id,
+                    'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else enrollment_date,
+                    'is_active': True
+                }
+                active_classes.append(class_info)
+            
+            # Process historical enrollments
+            for enrollment in historical_enrollments:
+                # Get enrollment data from SQL result
+                enrollment_id = enrollment[0]
+                class_id = enrollment[2]
+                enrollment_date = enrollment[3]
+                enrollment_status = enrollment[4]
+                unenrollment_date = enrollment[5]
+                
+                # Get class info
+                class_obj = Class.query.get(class_id)
+                if not class_obj:
+                    print(f"Warning: Class {class_id} not found for historical enrollment {enrollment_id}")
+                    continue  # Skip if class not found
+                
+                # Create class info dictionary
+                class_info = {
+                    'class_id': class_obj.id,
+                    'name': class_obj.name,
+                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
+                    'enrollment_status': 'Unenrolled',
+                    'enrollment_id': enrollment_id,
+                    'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else enrollment_date,
+                    'unenrollment_date': unenrollment_date if isinstance(unenrollment_date, str) else (unenrollment_date.strftime('%Y-%m-%d') if unenrollment_date else None),
+                    'is_active': False
+                }
+                historical_classes.append(class_info)
+            
+            # Combine active and historical classes
+            classes = active_classes + historical_classes
+                
+        except Exception as e:
+            print(f"Error getting enrollments: {e}")
+            import traceback
+            print(traceback.format_exc())
+            # If SQL fails, return empty classes list
+            classes = []
+        
+        # Return the full response
+        return jsonify({
+            'student': student_info,
+            'company': company_info,
+            'classes': classes
+        })
+    except Exception as e:
+        import traceback
+        print(f"Error fetching student enrollment: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({
+            'error': str(e),
+            'student': {'name': 'Unknown Student', 'user_id': student_id},
+            'company': {'name': 'Unknown'},
+            'classes': []
+        }), 500
+
+@api_bp.route('/enrollments/approve', methods=['POST'])
+@login_required
+def approve_student_enrollment():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if 'student_id' not in data or 'class_id' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        student_id = data['student_id']
+        class_id = data['class_id']
+        
+        # Get the requested status (default to 'Active' for backward compatibility)
+        requested_status = data.get('status', 'Active')
+        
+        # Validate that status is either Active or Pending
+        if requested_status not in ['Active', 'Pending']:
+            return jsonify({'error': f'Invalid status: {requested_status}. Must be Active or Pending'}), 400
+        
+        print(f"Updating enrollment status to {requested_status} for student {student_id} in class {class_id}")
+        
+        # Find the enrollment
+        enrollment = Enrollment.query.filter_by(
+            student_id=student_id, 
+            class_id=class_id,
+            unenrollment_date=None  # Make sure we're updating an active enrollment
+        ).first()
+        
+        if not enrollment:
+            return jsonify({'error': 'Active enrollment not found'}), 404
+        
+        # Update status to requested value
+        enrollment.status = requested_status
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Enrollment status updated to {requested_status} successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating enrollment status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/enrollments/unenroll', methods=['POST'])
+@login_required
+def unenroll_student():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if 'student_id' not in data or 'class_id' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        student_id = data['student_id']
+        class_id = data['class_id']
+        
+        print(f"DEBUG: Attempting to unenroll student {student_id} from class {class_id}")
+        
+        # Get unenrollment date from request or use current date
+        unenrollment_date = datetime.now().date()
+        if 'unenrollment_date' in data:
+            try:
+                unenrollment_date = datetime.strptime(data['unenrollment_date'], '%Y-%m-%d').date()
+                print(f"DEBUG: Using provided unenrollment_date: {unenrollment_date}")
+            except (ValueError, TypeError):
+                print(f"WARNING: Invalid unenrollment_date format. Using current date instead.")
+        
+        # First check if the enrollment exists using raw SQL to avoid ORM issues
+        check_sql = text("""
+            SELECT id FROM enrollment 
+            WHERE student_id = :student_id AND class_id = :class_id
+            LIMIT 1
+        """)
+        
+        print(f"DEBUG: Looking for enrollment with student_id={student_id}, class_id={class_id}")
+        result = db.session.execute(check_sql, {
+            "student_id": student_id, 
+            "class_id": class_id
+        }).fetchone()
+        
+        if not result:
+            print(f"DEBUG: Enrollment not found for student {student_id}, class {class_id}")
+            return jsonify({'error': 'Enrollment not found'}), 404
+        
+        enrollment_id = result[0]
+        print(f"DEBUG: Found enrollment id: {enrollment_id}")
+        
+        # Instead of deleting, update the enrollment to set unenrollment_date
+        update_sql = text("""
+            UPDATE enrollment
+            SET unenrollment_date = :unenrollment_date,
+                status = 'Pending'
+            WHERE id = :enrollment_id
+        """)
+        
+        # Execute the update statement
+        db.session.execute(update_sql, {
+            "enrollment_id": enrollment_id,
+            "unenrollment_date": unenrollment_date
+        })
+        
+        # Commit the changes
+        db.session.commit()
+        
+        print(f"DEBUG: Successfully unenrolled student {student_id} from class {class_id} with unenrollment date {unenrollment_date}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Student unenrolled successfully',
+            'unenrollment_date': unenrollment_date.isoformat()
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"Error deleting enrollment: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/enrollments/revert-to-pending', methods=['POST'])
+@login_required
+def revert_enrollment_to_pending():
+    """API endpoint to change an enrollment status from Active to Pending"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        if 'student_id' not in data or 'class_id' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        student_id = data['student_id']
+        class_id = data['class_id']
+        
+        print(f"DEBUG: Attempting to revert enrollment status to Pending for student {student_id} in class {class_id}")
+        
+        # Check if the enrollment exists using raw SQL to avoid ORM issues
+        check_sql = text("""
+            SELECT id, status FROM enrollment 
+            WHERE student_id = :student_id AND class_id = :class_id
+            LIMIT 1
+        """)
+        
+        result = db.session.execute(check_sql, {
+            "student_id": student_id, 
+            "class_id": class_id
+        }).fetchone()
+        
+        if not result:
+            return jsonify({'error': 'Enrollment not found'}), 404
+        
+        enrollment_id = result[0]
+        current_status = result[1]
+        
+        # Only proceed if status is currently Active
+        if current_status.upper() != 'ACTIVE':
+            return jsonify({'error': f'Cannot revert: Enrollment is not Active (current status: {current_status})'}), 400
+        
+        # Update enrollment status to Pending
+        update_sql = text("""
+            UPDATE enrollment
+            SET status = 'Pending'
+            WHERE id = :enrollment_id
+        """)
+        
+        # Execute the update statement
+        db.session.execute(update_sql, {
+            "enrollment_id": enrollment_id
+        })
+        
+        # Commit the update
+        db.session.commit()
+        
+        print(f"DEBUG: Successfully reverted enrollment status to Pending for record {enrollment_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Enrollment status reverted to Pending successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"Error reverting enrollment status: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/enrollments/<string:student_id>/<string:class_id>', methods=['DELETE'])
+@login_required
+def delete_enrollment(student_id, class_id):
+    """Delete/unenroll a student from a class by setting unenrollment_date"""
+    try:
+        print(f"Processing unenrollment for student {student_id} from class {class_id}")
+        
+        # Check if enrollment exists without filtering by unenrollment_date
+        check_sql = text("""
+            SELECT id, enrollment_date, status, unenrollment_date
+            FROM enrollment 
+            WHERE student_id = :student_id 
+            AND class_id = :class_id
+            AND unenrollment_date IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+        """)
+        enrollment = db.session.execute(check_sql, {"student_id": student_id, "class_id": class_id}).fetchone()
+        
+        if not enrollment:
+            print(f"Active enrollment not found for student {student_id} and class {class_id}")
+            return jsonify({"error": "Active enrollment not found"}), 404
+        
+        enrollment_id = enrollment[0]
+        current_unenrollment_date = enrollment[3] if len(enrollment) > 3 else None
+        
+        print(f"Found active enrollment ID {enrollment_id}, current unenrollment_date: {current_unenrollment_date}")
+        
+        # Use current date for unenrollment - don't rely on request.json
+        unenrollment_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Set the unenrollment_date for this specific enrollment record
+        update_sql = text("""
+            UPDATE enrollment 
+            SET unenrollment_date = :unenrollment_date, 
+                status = 'Pending' 
+            WHERE id = :enrollment_id
+        """)
+        
+        db.session.execute(update_sql, {
+            "unenrollment_date": unenrollment_date,
+            "enrollment_id": enrollment_id
+        })
+        db.session.commit()
+        
+        print(f"Successfully unenrolled student {student_id} from class {class_id} with unenrollment date {unenrollment_date}")
+        return jsonify({
+            "success": True, 
+            "message": "Enrollment successfully updated with unenrollment date",
+            "unenrollment_date": unenrollment_date
+        }), 200
+            
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in delete_enrollment: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/enrollments/export-csv', methods=['GET'])
+@login_required
+def export_enrollments_csv():
+    """Generate CSV export of enrollments with filtering options"""
+    try:
+        # Get filter parameters from the request
+        status_filter = request.args.get('status', '')
+        search_term = request.args.get('search', '')
+        
+        # Get all enrollments from database
+        enrollments_query = db.session.execute(text("""
+            SELECT id, student_id, class_id, enrollment_date, status, unenrollment_date
+            FROM enrollment
+            ORDER BY enrollment_date DESC
+        """)).fetchall()
+        
+        # Get all student data
+        students_data = {}
+        for student in User.query.filter_by(role='Student').all():
+            students_data[student.id] = {
+                'id': student.id,
+                'name': f"{student.first_name} {student.last_name}",
+                'email': student.email,
+                'company_id': student.company_id,
+                'is_active': student.is_active
+            }
+        
+        # Get all class data
+        classes_data = {}
+        for class_obj in Class.query.all():
+            classes_data[class_obj.id] = {
+                'id': class_obj.id,
+                'name': class_obj.name
+            }
+        
+        # Get all company data
+        companies_data = {}
+        for company in Company.query.all():
+            companies_data[company.id] = {
+                'id': company.id,
+                'name': company.name
+            }
+        
+        # Process and filter enrollments
+        processed_enrollments = []
+        
+        for enrollment in enrollments_query:
+            enrollment_id = enrollment[0]
+            student_id = enrollment[1]
+            class_id = enrollment[2]
+            enrollment_date = enrollment[3]
+            status = enrollment[4]
+            unenrollment_date = enrollment[5]
+            
+            # Skip if student doesn't exist in our data
+            if student_id not in students_data:
+                continue
+            
+            # Get student data
+            student_data = students_data.get(student_id, {})
+            student_name = student_data.get('name', 'Unknown')
+            
+            # Get class data
+            class_data = classes_data.get(class_id, {})
+            class_name = class_data.get('name', 'Unknown Class')
+            
+            # Apply search filter if specified
+            if search_term and not (
+                search_term.lower() in student_name.lower() or 
+                search_term.lower() in str(student_id).lower()
+            ):
+                continue
+            
+            # Apply status filter if specified
+            if status_filter and status != status_filter:
+                continue
+            
+            # Get company data
+            company_id = student_data.get('company_id')
+            company_name = "Not Assigned"
+            if company_id and company_id in companies_data:
+                company_name = companies_data[company_id].get('name', 'Unknown Company')
+            
+            # Create record for CSV
+            processed_enrollments.append({
+                'student_id': student_id,
+                'student_name': student_name,
+                'student_status': 'Active' if student_data.get('is_active', False) else 'Inactive',
+                'company_name': company_name,
+                'class_id': class_id,
+                'class_name': class_name,
+                'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else str(enrollment_date),
+                'enrollment_status': status,
+                'unenrollment_date': unenrollment_date.strftime('%Y-%m-%d') if unenrollment_date and hasattr(unenrollment_date, 'strftime') else ''
+            })
+        
+        # Generate CSV
+        output = StringIO()
+        fieldnames = [
+            'student_id', 'student_name', 'student_status', 'company_name',
+            'class_id', 'class_name', 'enrollment_date', 'enrollment_status', 'unenrollment_date'
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(processed_enrollments)
+        
+        # Create response with CSV data
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename=enrollments-{datetime.now().strftime('%Y%m%d')}.csv"
+        response.headers["Content-Type"] = "text/csv"
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

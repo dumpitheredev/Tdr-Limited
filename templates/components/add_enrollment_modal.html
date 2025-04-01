@@ -1,0 +1,97 @@
+<div class="modal fade" id="addEnrolmentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title" style="color: #191970;">Add New Enrollment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addEnrollmentForm">
+                    <!-- Students Selection -->
+                    <div class="mb-3">
+                        <label for="studentSelect" class="form-label">Select Students</label>
+                        
+                        <!-- Search bar for students -->
+                        <div class="input-group mb-2">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" id="studentSearchInput" class="form-control" placeholder="Search for a student...">
+                        </div>
+                        
+                        <!-- Use standard select with size attribute for scrolling -->
+                        <select class="form-select" id="studentSelect" multiple size="6">
+                            <!-- Will be populated dynamically -->
+                        </select>
+                        <small class="text-muted">Hold Ctrl or Cmd to select multiple students. All students are shown here.</small>
+                    </div>
+
+                    <!-- Classes Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Select Classes</label>
+                        <div class="border rounded p-3" id="classCheckboxes" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                        <small class="text-muted">Students will not be re-enrolled in classes they're already enrolled in.</small>
+                    </div>
+
+                    <!-- After Classes Selection -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="enrollmentStatus" class="form-label">Status</label>
+                            <select class="form-select" id="enrollmentStatus">
+                                <option value="Pending">Pending</option>
+                                <option value="Active">Active</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="startDate" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" id="startDate">
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn" style="background-color: #191970; color: white;" id="enrollStudentsBtn">Enroll Students</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Style for multiple select */
+    select[multiple] {
+        padding: 8px;
+    }
+    
+    select[multiple] option {
+        padding: 8px;
+        margin-bottom: 4px;
+        border-radius: 4px;
+    }
+    
+    select[multiple] option:hover {
+        background-color: #e9ecef;
+    }
+    
+    select[multiple] option:checked {
+        background-color: #191970;
+        color: white;
+    }
+    
+    /* Checkbox styling */
+    #classCheckboxes .form-check {
+        padding: 8px;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+    }
+    
+    #classCheckboxes .form-check:hover {
+        background-color: #f8f9fa;
+    }
+    
+    #classCheckboxes .form-check-input:checked + .form-check-label {
+        color: #191970;
+        font-weight: 500;
+    }
+</style> 

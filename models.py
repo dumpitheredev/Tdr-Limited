@@ -16,7 +16,7 @@ class User(db.Model, UserMixin):
     last_name = db.Column(db.String(50), nullable=False)
     role = db.Column(db.String(20), nullable=False)  # 'Administrator', 'Instructor', 'Student'
     date_of_birth = db.Column(db.Date)
-    company_id = db.Column(db.String(6), db.ForeignKey('company.company_id'))
+    company_id = db.Column(db.String(6), db.ForeignKey('company.id'))
     is_active = db.Column(db.Boolean, default=True)
     profile_img = db.Column(db.String(100), default='profile.png')
 
@@ -57,12 +57,10 @@ class Enrollment(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     student_id = db.Column(db.String(6), db.ForeignKey('user.id'), nullable=False)
     class_id = db.Column(db.String(6), db.ForeignKey('class.id'), nullable=False)
-    company_id = db.Column(db.String(6), db.ForeignKey('company.company_id'), nullable=False)
     enrollment_date = db.Column(db.Date, nullable=False)
-    status = db.Column(db.Enum('Active', 'Pending', 'Completed'), default='Active')
-    is_archived = db.Column(db.Boolean, default=False)
-    archive_date = db.Column(db.Date)
-
+    unenrollment_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.Enum('Active', 'Pending'), default='Pending')
+    
     def __repr__(self):
         return f'<Enrollment {self.student_id} in {self.class_id}>'
 
@@ -128,7 +126,8 @@ def fix_attendance_status_values():
 
 class Company(db.Model):
     __tablename__ = 'company'
-    company_id = db.Column(db.String(6), primary_key=True)
+    id = db.Column(db.String(6), primary_key=True)  
+    company_id = db.synonym('id')  
     name = db.Column(db.String(100), nullable=False)
     contact = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(100), nullable=False)

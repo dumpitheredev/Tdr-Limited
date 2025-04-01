@@ -245,7 +245,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 1045;
+    z-index: 1055;
     width: 100%;
     height: 100%;
     overflow-x: hidden;
@@ -352,10 +352,10 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 1040;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1050;
 }
 
 .modal-backdrop.fade {

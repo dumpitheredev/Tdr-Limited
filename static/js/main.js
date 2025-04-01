@@ -446,22 +446,26 @@ if (typeof window.pageInformation === 'undefined') {
                 'Use pagination controls to navigate through archive records'
             ]
         },
-        'enrolment-management': {
-            title: 'Enrolment Management',
-            description: 'Manage student enrolments across different classes and courses.',
+        'enrollment-management': {
+            title: 'Enrollment Management',
+            description: 'Comprehensive system for managing student enrollments across different classes, including historical enrollment tracking with soft-delete capability for improved data management.',
             features: [
-                'View all enrolments',
-                'Add new enrolments',
-                'Manage class assignments',
-                'Track enrolment status',
-                'Export enrolment data'
+                'View and filter all student enrollments',
+                'Add new enrollments with batch processing support',
+                'Change enrollment status (Active/Pending)',
+                'Manage class assignments with detailed student information',
+                'Track historical enrollment data with soft-delete capability',
+                'Re-enroll previously unenrolled students seamlessly',
+                'Export enrollment data for reporting and analysis'
             ],
             instructions: [
-                'Use filters to view specific enrolments',
-                'Click "Add New Enrolment" to enroll students',
-                'Review and update enrolment status',
-                'Export data for reporting',
-                'Monitor class capacity and availability'
+                'Use status filters and search to find specific enrollments',
+                'Click "Add New Enrollment" to enroll one or more students in classes',
+                'View detailed information by clicking the eye icon',
+                'Edit enrollments by clicking the pencil icon or the "Edit Enrollments" button',
+                'Unenroll students by toggling the "Keep Enrolled" switch in edit mode',
+                'Change enrollment status using the dropdown in edit mode',
+                'Export data using the "Export CSV" button for reporting'
             ]
         },
         'view-attendance': {
@@ -769,7 +773,7 @@ if (typeof window.pageInformation === 'undefined') {
     // This prevents duplicate definitions while maintaining correct route matching
     const routesToDuplicate = [
         'user-management', 'student-management', 'instructor-management', 
-        'company-management', 'class-management', 'enrolment-management', 
+        'company-management', 'class-management', 'enrollment-management', 
         'view-attendance', 'mark-attendance', 'view-archive', 'settings'
     ];
     

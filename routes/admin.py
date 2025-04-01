@@ -1,9 +1,10 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response
 from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Attendance, Company
-from datetime import datetime
+from datetime import datetime, timedelta
 import csv
 from io import StringIO
+from sqlalchemy import text
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -145,64 +146,239 @@ def class_management():
                            instructors=instructors,
                            total_classes=len(classes))
 
-@admin_bp.route('/enrolment-management')
+@admin_bp.route('/enrollment-management')
 @login_required
-def enrolment_management():
-    # Get all students for the dropdowns
-    students = User.query.filter_by(role='student', is_active=True).all()
-    
-    # Use try-except for Class and Enrollment queries that might fail
-    try:
-        # Get all enrollments with student and class info
-        enrollments = db.session.query(
-            Enrollment, User, Class
-        ).join(
-            User, Enrollment.student_id == User.id
-        ).join(
-            Class, Enrollment.class_id == Class.id
-        ).filter(
-            User.role == 'student'
-        ).all()
-        
-        classes = Class.query.filter_by(status='Active').all()
-        
-        # Calculate pagination variables
-        total_enrollments = len(enrollments)
-        active_enrollments = len([e for e in enrollments if e[0].status == 'Active'])
-        completed_enrollments = len([e for e in enrollments if e[0].status == 'Completed'])
-        pending_enrollments = len([e for e in enrollments if e[0].status == 'Pending'])
-    except Exception as e:
-        print(f"Error fetching enrollments or classes: {e}")
-        enrollments = []
-        classes = []
-        total_enrollments = 0
-        active_enrollments = 0
-        completed_enrollments = 0
-        pending_enrollments = 0
-    
-    # Calculate pagination variables
-    per_page = int(request.args.get('per_page', 10))
+def enrollment_management():
+    """Main enrollment management page."""
+    # Get URL parameters for filtering and pagination
+    status_filter = request.args.get('status', '')
+    search_term = request.args.get('search', '')
+    per_page = int(request.args.get('per_page', 5))
     page = int(request.args.get('page', 1))
-    start_idx = (page - 1) * per_page if total_enrollments > 0 else 0
-    end_idx = min(start_idx + per_page, total_enrollments) if total_enrollments > 0 else 0
+    
+    # Get all students for the dropdowns
+    students = User.query.filter_by(role='Student', is_active=True).all()
+    
+    # Get classes for the form
+    classes = Class.query.filter_by(is_active=True).all()
     
     # Get counts for statistics cards
-    total_students = User.query.filter_by(role='student').count()
+    total_students = User.query.filter_by(role='Student').count()
     
-    return render_template('admin/enrolment_management.html', 
-                           active_page='enrolment_management',
-                           enrollments=enrollments,
-                           students=students,
-                           classes=classes,
-                           total_enrollments=total_enrollments,
-                           start_idx=start_idx,
-                           end_idx=end_idx,
-                           page=page,
-                           per_page=per_page,
-                           total_students=total_students,
-                           active_enrollments=active_enrollments,
-                           completed_enrollments=completed_enrollments,
-                           pending_enrollments=pending_enrollments)
+    try:
+        # Get enrollment data using the data endpoint
+        api_url = f"/admin/enrollment-management/data?status={status_filter}&search={search_term}&per_page={per_page}&page={page}"
+        
+        # Call our own API endpoint internally
+        from flask import current_app
+        with current_app.test_client() as client:
+            response = client.get(api_url)
+            data = response.get_json()
+            
+            # Extract data from the response
+            enrollments = data.get('enrollments', [])
+            pagination = data.get('pagination', {})
+            
+            # Get pagination values
+            total_enrollments = pagination.get('total', 0)
+            active_enrollments = pagination.get('active', 0)
+            pending_enrollments = pagination.get('pending', 0)
+            start_idx = pagination.get('start_idx', 0)
+            end_idx = pagination.get('end_idx', 0)
+    except Exception as e:
+        print(f"Error fetching enrollments: {e}")
+        enrollments = []
+        total_enrollments = 0
+        active_enrollments = 0
+        pending_enrollments = 0
+        total_students = User.query.filter_by(role='Student').count()
+        start_idx = 0
+        end_idx = 0
+    
+    return render_template('admin/enrollment_management.html', 
+                         active_page='enrollment_management',
+                         enrolments=enrollments,
+                         students=students,
+                         classes=classes,
+                         total_enrollments=total_enrollments,
+                         total_students=total_students,
+                         active_enrollments=active_enrollments,
+                         pending_enrollments=pending_enrollments,
+                         status_filter=status_filter,
+                         start_idx=start_idx,
+                         end_idx=end_idx)
+
+@admin_bp.route('/enrollment-management/data')
+@login_required
+def enrollment_management_data():
+    """API endpoint for enrollment management data (AJAX)"""
+    # Get URL parameters for filtering and pagination
+    status_filter = request.args.get('status', '')
+    search_term = request.args.get('search', '')
+    per_page = int(request.args.get('per_page', 5))
+    page = int(request.args.get('page', 1))
+    
+    try:
+        # Step 1: Get basic enrollment data
+        enrollments = db.session.execute(text("""
+            SELECT id, student_id, class_id, enrollment_date, status, unenrollment_date
+            FROM enrollment
+            ORDER BY enrollment_date DESC
+        """)).fetchall()
+        
+        # Step 2: Get student data for efficient lookups
+        students_data = {}
+        for student in User.query.filter_by(role='Student').all():
+            students_data[student.id] = {
+                'id': student.id,
+                'name': f"{student.first_name} {student.last_name}",
+                'email': student.email,
+                'company_id': student.company_id,
+                'is_active': student.is_active,
+                'profile_img': student.profile_img or 'profile.png'
+            }
+        
+        # Step 3: Get class data for efficient lookups
+        classes_data = {}
+        for class_obj in Class.query.all():
+            classes_data[class_obj.id] = {
+                'id': class_obj.id,
+                'name': class_obj.name
+            }
+        
+        # Step 4: Process enrollments and filter by search term
+        processed_enrollments = []
+        for enrollment in enrollments:
+            # Extract enrollment data
+            enrollment_id = enrollment[0]
+            student_id = enrollment[1]
+            class_id = enrollment[2]
+            enrollment_date = enrollment[3]
+            status = enrollment[4]
+            unenrollment_date = enrollment[5]
+            
+            # Skip if student doesn't exist in our data
+            if student_id not in students_data:
+                continue
+                
+            # Get student and class data
+            student_data = students_data.get(student_id, {})
+            class_data = classes_data.get(class_id, {})
+            
+            # Apply search filter if specified
+            student_name = student_data.get('name', 'Unknown')
+            if search_term and not (
+                search_term.lower() in student_name.lower() or 
+                search_term.lower() in str(student_id).lower()
+            ):
+                continue
+                
+            # Create the enrollment record
+            processed_enrollments.append({
+                'id': enrollment_id,
+                'student_id': student_id,
+                'class_id': class_id,
+                'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else str(enrollment_date),
+                'status': status,
+                'unenrollment_date': unenrollment_date.strftime('%Y-%m-%d') if unenrollment_date and hasattr(unenrollment_date, 'strftime') else str(unenrollment_date) if unenrollment_date else None,
+                'student_name': student_name,
+                'student_status': 'Active' if student_data.get('is_active', False) else 'Inactive',
+                'class_name': class_data.get('name', 'Unknown Class'),
+                'student_profile_img': student_data.get('profile_img', 'profile.png')
+            })
+        
+        # Step 5: Apply status filter if provided
+        if status_filter:
+            processed_enrollments = [e for e in processed_enrollments if e['status'] == status_filter]
+            
+        # Step 6: Group by student for display
+        student_enrollments = {}
+        
+        for enrollment in processed_enrollments:
+            student_id = enrollment['student_id']
+            
+            # Initialize student data if first time seeing this student
+            if student_id not in student_enrollments:
+                student_data = students_data.get(student_id, {})
+                company_id = student_data.get('company_id')
+                
+                # Get company name if available
+                company_name = "Not Assigned"
+                if company_id:
+                    try:
+                        company = Company.query.get(company_id)
+                        if company:
+                            company_name = company.name
+                    except Exception:
+                        pass
+                
+                student_enrollments[student_id] = {
+                    'id': enrollment['id'],
+                    'student': {
+                        'user_id': student_id,
+                        'name': enrollment['student_name'],
+                        'status': enrollment['student_status'],
+                        'profile_img': enrollment['student_profile_img']
+                    },
+                    'company': {
+                        'company_id': company_id,
+                        'name': company_name
+                    },
+                    'enrollment_date': enrollment['enrollment_date'],
+                    'status': enrollment['status'],
+                    'classes': []
+                }
+            
+            # Add class to student's classes list
+            class_info = {
+                'class_id': enrollment['class_id'],
+                'name': enrollment['class_name']
+            }
+            
+            # Add unenrollment_date if it exists
+            if enrollment['unenrollment_date']:
+                class_info['unenrollment_date'] = enrollment['unenrollment_date']
+            
+            # Skip duplicate classes
+            student_classes = student_enrollments[student_id]['classes']
+            if not any(c.get('class_id') == enrollment['class_id'] for c in student_classes):
+                student_classes.append(class_info)
+        
+        # Step 7: Calculate active class counts for each student
+        formatted_enrollments = list(student_enrollments.values())
+        for student_enrollment in formatted_enrollments:
+            # Count only classes without unenrollment_date
+            active_classes = [cls for cls in student_enrollment['classes'] if not cls.get('unenrollment_date')]
+            student_enrollment['active_class_count'] = len(active_classes)
+        
+        # Step 8: Calculate statistics for cards
+        total_enrollments = len(formatted_enrollments)
+        active_enrollments = sum(1 for e in formatted_enrollments if e['status'] == 'Active')
+        pending_enrollments = sum(1 for e in formatted_enrollments if e['status'] == 'Pending')
+        
+        # Step 9: Apply pagination
+        start_idx = (page - 1) * per_page
+        end_idx = min(start_idx + per_page, total_enrollments)
+        paginated_enrollments = formatted_enrollments[start_idx:end_idx] if formatted_enrollments else []
+        
+        # Return JSON response with data and pagination info
+        return jsonify({
+            'enrollments': paginated_enrollments,
+            'pagination': {
+                'current_page': page,
+                'per_page': per_page,
+                'total': total_enrollments,
+                'start_idx': start_idx,
+                'end_idx': end_idx,
+                'active': active_enrollments,
+                'pending': pending_enrollments
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @admin_bp.route('/attendance-view')
 @login_required
@@ -260,7 +436,7 @@ def mark_attendance():
     # Use try-except for Class queries that might fail
     try:
         # Get all classes
-        classes = Class.query.filter_by(status='Active').all()
+        classes = Class.query.filter_by(is_active=True).all()
     except Exception as e:
         print(f"Error fetching classes: {e}")
         classes = []
