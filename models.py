@@ -18,6 +18,7 @@ class User(db.Model, UserMixin):
     date_of_birth = db.Column(db.Date)
     company_id = db.Column(db.String(6), db.ForeignKey('company.id'))
     is_active = db.Column(db.Boolean, default=True)
+    is_archived = db.Column(db.Boolean, default=False)
     profile_img = db.Column(db.String(100), default='profile.png')
 
     # Relationships
@@ -41,6 +42,7 @@ class Class(db.Model):
     start_time = db.Column(db.Time)
     end_time = db.Column(db.Time)
     is_active = db.Column(db.Boolean, default=True)
+    is_archived = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime)
     updated_at = db.Column(db.DateTime)
     

@@ -1,34 +1,48 @@
 {% extends "base/layout.html" %}
-{% block title %}View Attendance{% endblock %}
+{% block title %}Admin View Attendance{% endblock %}
+{% block active_page %}view_attendance{% endblock %}
 
-{% block content %}
+{% block head %}
 <style>
-    /* Badge container to align badges horizontally */
-    .badge-container {
-        display: flex;
-        align-items: center;
-        gap: 10px; /* Space between badges */
-    }
-
-    /* Optional: Enhance badge styles if needed */
     .badge {
-        border-radius: 5px; /* Slight rounding for consistency */
-        font-weight: 500; /* Medium weight */
-        text-align: center;
-        display: inline-block;
+        padding: 8px 16px;
+        font-size: 14px;
+        border-radius: 5px;
+        font-weight: 500;
+    }
+    .attendance-table {
+        width: 100%;
+    }
+    .loading-indicator {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem 0;
+    }
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1060;
     }
 </style>
+{% endblock %}
+
+{% block content %}
+<!-- Include Toast Notification Component -->
+{% include 'components/toast_notification.html' %}
 
 <div class="container-fluid">
     <!-- Stats Cards -->
     <div class="row g-3 mb-4">
-        <div class="col-12 col-sm-6 col-md-3">
+        <div class="col-12 col-sm-6 col-lg-3">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Total Records</h6>
-                            <h2 class="mb-0" id="totalRecords">0</h2>
+                            <h2 class="mb-0" id="admin-totalRecords">-</h2>
                         </div>
                         <div class="p-2 bg-primary-subtle rounded">
                             <i class="bi bi-calendar-check" style="color: #191970;"></i>
@@ -38,13 +52,13 @@
             </div>
         </div>
 
-        <div class="col-12 col-sm-6 col-md-3">
+        <div class="col-12 col-sm-6 col-lg-3">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Present</h6>
-                            <h2 class="mb-0" id="presentCount">0</h2>
+                            <h2 class="mb-0" id="admin-presentCount">-</h2>
                         </div>
                         <div class="p-2 bg-success-subtle rounded">
                             <i class="bi bi-check-circle" style="color: #198754;"></i>
@@ -54,13 +68,13 @@
             </div>
         </div>
 
-        <div class="col-12 col-sm-6 col-md-3">
+        <div class="col-12 col-sm-6 col-lg-3">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Absent</h6>
-                            <h2 class="mb-0" id="absentCount">0</h2>
+                            <h2 class="mb-0" id="admin-absentCount">-</h2>
                         </div>
                         <div class="p-2 bg-danger-subtle rounded">
                             <i class="bi bi-x-circle" style="color: #dc3545;"></i>
@@ -70,13 +84,13 @@
             </div>
         </div>
 
-        <div class="col-12 col-sm-6 col-md-3">
+        <div class="col-12 col-sm-6 col-lg-3">
             <div class="card border-0 shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Late</h6>
-                            <h2 class="mb-0" id="lateCount">0</h2>
+                            <h2 class="mb-0" id="admin-lateCount">-</h2>
                         </div>
                         <div class="p-2 bg-warning-subtle rounded">
                             <i class="bi bi-exclamation-circle" style="color: #ffc107;"></i>
@@ -95,53 +109,50 @@
             </h3>
         </div>
         <div class="card-body">
-            <form id="filterForm">
+            <form id="admin-filterForm">
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <label for="classSelect" class="form-label">Class</label>
-                        <select class="form-select" id="classSelect">
+                        <label for="admin-classSelect" class="form-label">Class</label>
+                        <select class="form-select" id="admin-classSelect">
                             <option value="">All Classes</option>
                             {% for class in classes %}
-                            <option value="{{ class.class_id }}">{{ class.name }}</option>
+                            <option value="{{ class.id }}">{{ class.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label for="instructorSelect" class="form-label">Instructor</label>
-                        <select class="form-select" id="instructorSelect">
+                        <label for="admin-instructorSelect" class="form-label">Instructor</label>
+                        <select class="form-select" id="admin-instructorSelect">
                             <option value="">All Instructors</option>
                             {% for instructor in instructors %}
-                            <option value="{{ instructor.user_id }}">{{ instructor.name }}</option>
+                            <option value="{{ instructor.id }}">{{ instructor.first_name }} {{ instructor.last_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label for="studentSearch" class="form-label">Student Name</label>
-                        <input type="text" class="form-control" id="studentSearch" placeholder="Search by name">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="statusSelect" class="form-label">Status</label>
-                        <select class="form-select" id="statusSelect">
+                        <label for="admin-statusSelect" class="form-label">Status</label>
+                        <select class="form-select" id="admin-statusSelect">
                             <option value="">All Statuses</option>
-                            <option value="Present">Present</option>
-                            <option value="Absent">Absent</option>
-                            <option value="Late">Late</option>
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="late">Late</option>
                         </select>
                     </div>
                     <div class="col-md-3">
-                        <label for="dateRangeStart" class="form-label">Date Range</label>
-                        <input type="date" class="form-control" id="dateRangeStart">
+                        <label for="admin-studentSearch" class="form-label">Student Name</label>
+                        <input type="text" class="form-control" id="admin-studentSearch" placeholder="Search by name">
                     </div>
                     <div class="col-md-3">
-                        <label for="dateRangeEnd" class="form-label">To</label>
-                        <input type="date" class="form-control" id="dateRangeEnd">
+                        <label for="admin-dateRangeStart" class="form-label">Date Range</label>
+                        <input type="date" class="form-control" id="admin-dateRangeStart">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="admin-dateRangeEnd" class="form-label">To</label>
+                        <input type="date" class="form-control" id="admin-dateRangeEnd">
                     </div>
                 </div>
                 <div class="mt-3">
-                    <button type="button" id="applyFiltersBtn" class="btn btn-primary me-2" style="background-color: #191970; border-color: #191970;">
-                        <i class="bi bi-funnel-fill me-1"></i> Apply Filters
-                    </button>
-                    <button type="reset" id="clearFiltersBtn" class="btn btn-outline-secondary">
+                    <button type="button" id="admin-clearFiltersBtn" class="btn btn-outline-secondary">
                         <i class="bi bi-x-circle me-1"></i> Clear
                     </button>
                 </div>
@@ -155,98 +166,110 @@
             <h3 class="h5 mb-0" style="color: #191970;">
                 <i class="bi bi-table me-2"></i>Attendance Records
             </h3>
-            <button class="btn btn-sm" id="exportCsvBtn" style="background-color: #191970; color: white;">
+            <button id="admin-exportCsvBtn" class="btn btn-sm" style="background-color: #191970; color: white;">
                 <i class="bi bi-arrow-up-right me-1"></i> Export CSV
             </button>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Date</th>
-                            <th>Student</th>
-                            <th>Class</th>
-                            <th>Instructor</th>
-                            <th>Attendance</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="attendanceTableBody">
-                        <!-- Table content will be dynamically populated -->
-                    </tbody>
-                </table>
+            <!-- Loading Indicator -->
+            <div id="admin-loading-indicator" class="loading-indicator">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Loading attendance data...</p>
             </div>
             
-            <!-- Pagination -->
-            <div class="d-flex justify-content-between align-items-center mt-3">
-                <div class="d-flex align-items-center">
-                    <span class="me-2">Show rows per page:</span>
-                    <select class="form-select form-select-sm" id="rowsPerPageSelect" style="width: 70px;">
-                        <option value="5" selected>5</option>
-                        <option value="10">10</option>
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                    </select>
+            <!-- Attendance Table -->
+            <div id="admin-attendance-table" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle attendance-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Student</th>
+                                <th>Class</th>
+                                <th>Instructor</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-tableBody">
+                            <!-- Table content will be populated by JavaScript -->
+                        </tbody>
+                    </table>
                 </div>
-                <div class="d-flex align-items-center">
-                    <button class="btn btn-sm btn-outline-secondary me-2" id="prevPageBtn" disabled>
-                        <i class="bi bi-chevron-left"></i>
-                    </button>
-                    <span class="mx-2" id="paginationInfo">0-0 of 0</span>
-                    <button class="btn btn-sm btn-outline-secondary ms-2" id="nextPageBtn" disabled>
-                        <i class="bi bi-chevron-right"></i>
-                    </button>
+                
+                <!-- Pagination -->
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Rows per page:</span>
+                        <select class="form-select form-select-sm" id="admin-rowsPerPageSelect" style="width: 70px;">
+                            <option value="5" selected>5</option>
+                            <option value="10">10</option>
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <button class="btn btn-sm btn-outline-secondary me-2" id="admin-prevPageBtn" disabled>
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <span class="mx-2" id="admin-paginationInfo" data-page="1">-</span>
+                        <button class="btn btn-sm btn-outline-secondary ms-2" id="admin-nextPageBtn" disabled>
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Attendance Detail Modal -->
-    <div class="modal fade" id="attendanceDetailModal" tabindex="-1" aria-labelledby="attendanceDetailModalLabel" aria-hidden="true">
+    <!-- Toast Container -->
+    <div class="toast-container"></div>
+
+    <!-- View Attendance Modal -->
+    <div class="modal fade" id="attendanceDetailModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="attendanceDetailModalLabel">Attendance Details</h5>
+                    <h5 class="modal-title">Attendance Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Student:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailStudent">-</p>
+                            <p class="form-control-plaintext" id="attendanceDetailStudentName">-</p>
                         </div>
                     </div>
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Class:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailClass">-</p>
+                            <p class="form-control-plaintext" id="attendanceDetailClassName">-</p>
                         </div>
                     </div>
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Instructor:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailInstructor">-</p>
+                            <p class="form-control-plaintext" id="attendanceDetailInstructorName">-</p>
                         </div>
                     </div>
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Date:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailDate">-</p>
+                            <p class="form-control-plaintext" id="attendanceDetailDate">-</p>
                         </div>
                     </div>
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Status:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailStatus">
-                                <span class="badge bg-secondary-subtle text-secondary">-</span>
-                            </p>
+                            <span class="badge" id="attendanceDetailStatus">-</span>
                         </div>
                     </div>
                     <div class="mb-3 row">
                         <label class="col-sm-4 col-form-label">Comments:</label>
                         <div class="col-sm-8">
-                            <p class="form-control-plaintext" id="detailComment">-</p>
+                            <p class="form-control-plaintext" id="attendanceDetailComment">-</p>
                         </div>
                     </div>
                 </div>
@@ -258,56 +281,53 @@
     </div>
 
     <!-- Edit Attendance Modal -->
-    <div class="modal fade" id="editAttendanceModal" tabindex="-1" aria-labelledby="editAttendanceModalLabel" aria-hidden="true">
+    <div class="modal fade" id="editAttendanceModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="editAttendanceModalLabel">Edit Attendance</h5>
+                    <h5 class="modal-title">Edit Attendance</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <form id="editAttendanceForm">
+                <form id="editAttendanceForm">
+                    <div class="modal-body">
                         <input type="hidden" id="editAttendanceId">
                         <div class="mb-3">
-                            <label for="editStudent" class="form-label">Student</label>
-                            <input type="text" class="form-control" id="editStudent" readonly>
+                            <label class="form-label">Student</label>
+                            <p class="form-control-plaintext" id="editStudentName">-</p>
                         </div>
                         <div class="mb-3">
-                            <label for="editClass" class="form-label">Class</label>
-                            <input type="text" class="form-control" id="editClass" readonly>
+                            <label class="form-label">Class</label>
+                            <p class="form-control-plaintext" id="editClassName">-</p>
                         </div>
                         <div class="mb-3">
-                            <label for="editInstructor" class="form-label">Instructor</label>
-                            <input type="text" class="form-control" id="editInstructor" readonly>
+                            <label class="form-label">Instructor</label>
+                            <p class="form-control-plaintext" id="editInstructorName">-</p>
                         </div>
                         <div class="mb-3">
-                            <label for="editDate" class="form-label">Date</label>
-                            <input type="date" class="form-control" id="editDate" readonly>
+                            <label class="form-label">Date</label>
+                            <p class="form-control-plaintext" id="editDate">-</p>
                         </div>
                         <div class="mb-3">
                             <label for="editStatus" class="form-label">Status</label>
-                            <select class="form-select" id="editStatus">
-                                <option value="Present">Present</option>
-                                <option value="Absent">Absent</option>
-                                <option value="Late">Late</option>
+                            <select class="form-select" id="editStatus" required>
+                                <option value="present">Present</option>
+                                <option value="absent">Absent</option>
+                                <option value="late">Late</option>
                             </select>
                         </div>
                         <div class="mb-3">
                             <label for="editComment" class="form-label">Comment</label>
                             <textarea class="form-control" id="editComment" rows="3"></textarea>
                         </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="saveAttendanceBtn" style="background-color: #191970; border-color: #191970;">Save Changes</button>
-                </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">Save Changes</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
-
-    <!-- Status Toast -->
-    {% include 'components/toast_notification.html' %}
 
     <!-- Archive Confirmation Modal -->
     <div class="modal fade" id="archiveConfirmModal" tabindex="-1" aria-labelledby="archiveConfirmModalLabel" aria-hidden="true">
@@ -319,37 +339,39 @@
                 </div>
                 <div class="modal-body">
                     <p>Are you sure you want to archive this attendance record?</p>
-                    <p class="mb-2"><strong>Student:</strong> <span id="archiveStudentName"></span></p>
-                    <p class="mb-3"><strong>Class:</strong> <span id="archiveClassName"></span></p>
+                    <p class="mb-3"><strong>Student:</strong> <span id="archiveStudentName">-</span></p>
+                    <p class="mb-3"><strong>Class:</strong> <span id="archiveClassName">-</span></p>
                     
                     <div class="mb-3">
                         <label for="archiveReason" class="form-label">Reason for archiving</label>
                         <select class="form-select" id="archiveReason">
                             <option value="">Select a reason</option>
-                            <option value="Record error">Record error</option>
-                            <option value="Duplicate entry">Duplicate entry</option>
-                            <option value="Student withdrawn">Student withdrawn</option>
-                            <option value="Class cancelled">Class cancelled</option>
+                            <option value="Incorrect entry">Incorrect entry</option>
+                            <option value="Duplicate record">Duplicate record</option>
+                            <option value="Student withdrawal">Student withdrawal</option>
+                            <option value="Administrative decision">Administrative decision</option>
                             <option value="Other">Other</option>
                         </select>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="archiveComment" class="form-label">Additional comments</label>
-                        <textarea class="form-control" id="archiveComment" rows="3" placeholder="Add any additional information about why this record is being archived..."></textarea>
+                        <label for="archiveComment" class="form-label">Additional comment (optional)</label>
+                        <textarea class="form-control" id="archiveComment" rows="3" placeholder="Enter any additional information"></textarea>
                     </div>
                     
-                    <input type="hidden" id="archiveRecordId">
+                    <input type="hidden" id="archiveAttendanceId">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="confirmArchiveBtn">Archive</button>
+                    <button type="button" id="confirmArchiveBtn" class="btn btn-danger">Archive</button>
                 </div>
             </div>
         </div>
     </div>
-
 </div>
+
+<!-- Include Page Info Modal Component -->
+{% include 'components/page_info_modal.html' %}
 {% endblock %}
 
 {% block scripts %}

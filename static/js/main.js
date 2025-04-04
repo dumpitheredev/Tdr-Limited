@@ -1,5 +1,5 @@
 // static/js/main.js
-// Add any custom JavaScript functionality here
+// Main initialization function
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
@@ -8,11 +8,8 @@ document.addEventListener('DOMContentLoaded', function() {
     })
 
     // Sidebar functionality
-    const cleanup = initializeSidebar();
+    initializeSidebar();
     
-    // Clean up when navigating away
-    window.addEventListener('beforeunload', cleanup);
-
     // Initialize context-aware info modal
     initializeContextInfo();
 
@@ -81,12 +78,8 @@ function initializeSidebar() {
     });
 }
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', initializeSidebar);
-
 /**
  * Updates the page title in the DOM
- * @param {string} title - The title to set
  */
 function updatePageTitle(title) {
     const pageTitleElement = document.querySelector('.page-title');
@@ -97,8 +90,6 @@ function updatePageTitle(title) {
 
 /**
  * Updates the context instructions shown in the info modal
- * @param {Array} features - Array of feature descriptions
- * @param {Array} instructions - Array of instruction steps
  */
 function updateInstructions(features, instructions) {
     // Create or get the modal element
@@ -113,7 +104,7 @@ function updateInstructions(features, instructions) {
         window.modalInstance = new bootstrap.Modal(modalElement);
     }
 
-        // Update features
+    // Update features
     const featureList = modalElement.querySelector('.feature-list');
         if (featureList) {
         featureList.innerHTML = features
@@ -121,7 +112,7 @@ function updateInstructions(features, instructions) {
                 .join('');
         }
 
-        // Update instructions
+    // Update instructions
     const instructionList = modalElement.querySelector('.instruction-list');
         if (instructionList) {
         instructionList.innerHTML = instructions
@@ -142,12 +133,35 @@ function updateInstructions(features, instructions) {
 
 /**
  * Gets the current page key from the URL
- * @returns {string} The page key
  */
 function getPageKeyFromUrl() {
     const pathname = window.location.pathname;
     let pageKey = '';
     
+    // First check active_page data attribute which is the most reliable indicator
+    const activePage = document.body.getAttribute('data-active-page') || 
+                       document.body.getAttribute('data-page');
+    
+    if (activePage) {
+        // Direct mapping of active_page values to pageInformation keys
+        if (activePage === 'view_attendance') {
+            return 'view-attendance';
+        }
+        if (activePage === 'mark_attendance') {
+            return 'mark-attendance';
+        }
+        // Replace underscores with hyphens for consistency
+        const formattedKey = activePage.replace(/_/g, '-');
+        
+        // Add admin prefix if in admin section and not already prefixed
+        if (pathname.includes('/admin/') && !formattedKey.startsWith('admin-')) {
+            return 'admin-' + formattedKey;
+        }
+        
+        return formattedKey;
+    }
+    
+    // Fallback to URL parsing if data-active-page is not available
     // Handle admin routes
     if (pathname.includes('/admin/')) {
         let adminPath = pathname.split('/admin/')[1];
@@ -208,44 +222,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeContextInfo() {
-    // Get the current page from the URL
-    const pathname = window.location.pathname;
-    
-    // Extract the page key from the URL
-    let pageKey = '';
-    
-    // Handle admin routes
-    if (pathname.includes('/admin/')) {
-        let adminPath = pathname.split('/admin/')[1];
-        
-        // Handle cases where the path might include "admin-" already
-        if (adminPath === 'admin-profile') {
-            pageKey = 'admin-profile'; // Use the correct key directly
-        }
-        // Special case for admin profile which can have multiple URL patterns
-        else if (adminPath === 'profile' || adminPath === 'my-profile') {
-            pageKey = 'admin-profile';
-        } else {
-            // For other admin pages, convert path to key
-            pageKey = 'admin-' + (adminPath.replace(/\//g, '-') || 'dashboard');
-        }
-    } 
-    // Handle instructor routes
-    else if (pathname.includes('/instructor/')) {
-        const instructorPath = pathname.split('/instructor/')[1];
-        pageKey = 'instructor-' + (instructorPath.replace(/\//g, '-') || 'dashboard');
-    } 
-    // Handle student routes
-    else if (pathname.includes('/student/')) {
-        const studentPath = pathname.split('/student/')[1];
-        pageKey = 'student-' + (studentPath.replace(/\//g, '-') || 'dashboard');
-    } 
-    // Handle other routes
-    else {
-        // Extract the last part of the URL for standard pages
-        const pathParts = pathname.split('/').filter(Boolean);
-        pageKey = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'dashboard';
-    }
+    // Get the page key using the enhanced getPageKeyFromUrl function
+    const pageKey = getPageKeyFromUrl();
 
     // Get the page information
     const pageInfo = window.pageInformation[pageKey];
@@ -470,20 +448,28 @@ if (typeof window.pageInformation === 'undefined') {
         },
         'view-attendance': {
             title: 'View Attendance',
-            description: 'View and analyze attendance records for all classes and students.',
+            description: 'Comprehensive system for viewing, analyzing, editing, and archiving attendance records across all classes and students. This module provides detailed filtering, statistics, and record management capabilities.',
             features: [
-                'View attendance records',
-                'Filter by date range',
-                'Export attendance data',
-                'View attendance statistics',
-                'Track student attendance patterns'
+                'View detailed attendance records with status indicators',
+                'Advanced filtering by class, instructor, student, status, and date range',
+                'Real-time attendance statistics tracking (present, absent, late)',
+                'Edit attendance records with immediate UI updates',
+                'Archive functionality for record management',
+                'Detailed view of individual attendance records',
+                'Export attendance data to CSV for reporting',
+                'Search capabilities for finding specific student records',
+                'Responsive table with pagination and dynamic updates'
             ],
             instructions: [
-                'Select date range to view specific periods',
-                'Use filters to find specific records',
-                'Export data for reporting purposes',
-                'Review attendance statistics',
-                'Monitor individual student attendance'
+                'Use the filter panel to select class, instructor, status, and date range',
+                'View attendance statistics in the cards at the top of the page',
+                'Click the view icon to see detailed information about a record',
+                'Use the edit icon to modify attendance status and comments',
+                'Click the archive icon to archive records no longer needed',
+                'Export filtered data using the "Export CSV" button',
+                'Use pagination controls to navigate through records',
+                'Search for specific students using the search box',
+                'Clear all filters using the clear button when needed'
             ]
         },
         'mark-attendance': {
@@ -805,18 +791,15 @@ function closeInfoModal() {
     if (window.modalInstance) {
         window.modalInstance.hide();
         
-        // Give the modal time to complete its hiding animation
         setTimeout(() => {
-            // Clean up modal remnants
-        document.body.classList.remove('modal-open');
+            // Clean up modal elements
+            document.body.classList.remove('modal-open');
             document.body.style.overflow = '';
             document.body.style.paddingRight = '';
             
-            // Remove backdrop
-        const backdrop = document.querySelector('.modal-backdrop');
-        if (backdrop) backdrop.remove();
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
             
-            // Remove any inline styles added by Bootstrap
             const modal = document.getElementById('pageInfoModal');
             if (modal) {
                 modal.style.display = '';
@@ -826,6 +809,6 @@ function closeInfoModal() {
                 modal.removeAttribute('aria-modal');
                 modal.removeAttribute('role');
             }
-        }, 300); // 300ms should be enough for the modal animation to complete
+        }, 300);
     }
 }

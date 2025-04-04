@@ -24,7 +24,7 @@ def dashboard():
     
     # Get student count across all instructor's classes
     student_count = db.session.query(Enrollment).join(
-        Class, Enrollment.class_id == Class.class_id
+        Class, Enrollment.class_id == Class.id
     ).filter(
         Class.instructor_id == instructor_id
     ).distinct(Enrollment.student_id).count()
@@ -35,7 +35,7 @@ def dashboard():
     
     # Get recently marked attendance
     recent_attendance = Attendance.query.join(
-        Class, Attendance.class_id == Class.class_id
+        Class, Attendance.class_id == Class.id
     ).filter(
         Class.instructor_id == instructor_id
     ).order_by(Attendance.date.desc()).limit(5).all()
@@ -62,7 +62,7 @@ def mark_attendance():
     students = []
     if class_id:
         # Get the class
-        selected_class = Class.query.filter_by(class_id=class_id).first()
+        selected_class = Class.query.filter_by(id=class_id).first()
         
         if selected_class:
             # Get enrolled students
@@ -104,14 +104,14 @@ def view_attendance():
     ).join(
         User, Attendance.student_id == User.id
     ).join(
-        Class, Attendance.class_id == Class.class_id
+        Class, Attendance.class_id == Class.id
     ).filter(
         Class.instructor_id == instructor_id,
         User.role == 'Student'
     )
     
     if class_id:
-        query = query.filter(Class.class_id == class_id)
+        query = query.filter(Class.id == class_id)
     
     if date:
         query = query.filter(Attendance.date == datetime.strptime(date, '%Y-%m-%d'))

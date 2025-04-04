@@ -56,7 +56,7 @@
                 <i class="bi bi-person-plus-fill"></i>
                 Enrollment Management
             </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'admin.attendance_view' }}" 
+            <a class="nav-link {{ 'active' if active_page == 'view_attendance' }}" 
                href="{{ url_for('admin.attendance_view') }}">
                 <i class="bi bi-eye"></i>
                 View Attendance
@@ -81,8 +81,8 @@
                 <i class="bi bi-grid"></i>
                 Dashboard
             </a>
-            <a href="{{ url_for('instructor.dashboard') }}" 
-               class="nav-link {{ 'active' if request.endpoint == 'instructor.dashboard' }}">
+            <a href="{{ url_for('instructor.instructor_profile') }}" 
+               class="nav-link {{ 'active' if request.endpoint == 'instructor.instructor_profile' }}">
                 <i class="fas fa-user"></i>
                 Profile
             </a>
@@ -101,11 +101,6 @@
                href="{{ url_for('instructor.view_attendance') }}">
                 <i class="bi bi-eye"></i>
                 View Attendance
-            </a>
-            <a class="nav-link {{ 'active' if request.endpoint == 'instructor.dashboard' }}" 
-               href="{{ url_for('instructor.dashboard') }}">
-                <i class="bi bi-archive"></i>
-                Archived Reports
             </a>
             {% endif %}
         {% elif session.get('role') == 'student' %}

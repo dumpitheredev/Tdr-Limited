@@ -4,66 +4,66 @@
 <div class="container-fluid">
     <!-- Welcome Message -->
     <div class="mb-4">
-        <h2 class="welcome-heading mb-4">Hello Admin1!</h2>
+        <h2 class="welcome-heading mb-4">Hello {{ session.name }}!</h2>
     </div>
 
     <!-- Management Cards Grid -->
     <div class="row g-4">
         {% set cards = [
-            {
-                'title': 'User Management',
-                'icon': 'bi-people-fill',
-                'url': '/admin/user-management',
-                'bg_class': 'bg-light-purple'
-            },
-            {
-                'title': 'Student Management',
-                'icon': 'bi-mortarboard',
-                'url': '/admin/student-management',
-                'bg_class': 'bg-light-pink'
-            },
-            {
-                'title': 'Company Management',
-                'icon': 'bi-building',
-                'url': '/admin/company-management',
-                'bg_class': 'bg-light-green'
-            },
-            {
-                'title': 'Class Management',
-                'icon': 'bi-easel',
-                'url': '/admin/class-management',
-                'bg_class': 'bg-light-gray'
-            },
-            {
-                'title': 'Instructor Management',
-                'icon': 'bi-person-video3',
-                'url': '/admin/instructor-management',
-                'bg_class': 'bg-light-yellow'
-            },
-            {
-                'title': 'Enrollment Management',
-                'icon': 'bi-person-plus-fill',
-                'url': '/admin/enrollment-management',
-                'bg_class': 'bg-light-blue'
-            },
-            {
-                'title': 'View Attendance',
-                'icon': 'bi-eye',
-                'url': '/admin/view-attendance',
-                'bg_class': 'bg-light-yellow-soft'
-            },
-            {
-                'title': 'Mark Attendance',
-                'icon': 'bi-calendar-check',
-                'url': '/admin/mark-attendance',
-                'bg_class': 'bg-light-pink-soft'
-            },
-            {
-                'title': 'View Archive',
-                'icon': 'bi-archive',
-                'url': '/admin/view-archive',
-                'bg_class': 'bg-light-orange'
-            }
+        {
+        'title': 'User Management',
+        'icon': 'bi-people-fill',
+        'url': '/admin/user-management',
+        'bg_class': 'bg-light-purple'
+        },
+        {
+        'title': 'Student Management',
+        'icon': 'bi-mortarboard',
+        'url': '/admin/student-management',
+        'bg_class': 'bg-light-pink'
+        },
+        {
+        'title': 'Company Management',
+        'icon': 'bi-building',
+        'url': '/admin/company-management',
+        'bg_class': 'bg-light-green'
+        },
+        {
+        'title': 'Class Management',
+        'icon': 'bi-easel',
+        'url': '/admin/class-management',
+        'bg_class': 'bg-light-gray'
+        },
+        {
+        'title': 'Instructor Management',
+        'icon': 'bi-person-video3',
+        'url': '/admin/instructor-management',
+        'bg_class': 'bg-light-yellow'
+        },
+        {
+        'title': 'Enrollment Management',
+        'icon': 'bi-person-plus-fill',
+        'url': '/admin/enrollment-management',
+        'bg_class': 'bg-light-blue'
+        },
+        {
+        'title': 'View Attendance',
+        'icon': 'bi-eye',
+        'url': '/admin/view-attendance',
+        'bg_class': 'bg-light-yellow-soft'
+        },
+        {
+        'title': 'Mark Attendance',
+        'icon': 'bi-calendar-check',
+        'url': '/admin/mark-attendance',
+        'bg_class': 'bg-light-pink-soft'
+        },
+        {
+        'title': 'View Archive',
+        'icon': 'bi-archive',
+        'url': '/admin/view-archive',
+        'bg_class': 'bg-light-orange'
+        }
         ] %}
 
         {% for card in cards %}

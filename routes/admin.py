@@ -1,12 +1,75 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response, abort
 from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Attendance, Company
 from datetime import datetime, timedelta
 import csv
 from io import StringIO
-from sqlalchemy import text
+from sqlalchemy import text, or_
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+# --------------- Helper Functions ---------------
+
+def filter_by_role(query, role):
+    """Filter query by role (case insensitive)"""
+    return query.filter(or_(
+        User.role == role.capitalize(),
+        User.role == role.lower()
+    ))
+
+def apply_user_filters(query, status_filter=None, search_term=None, role=None):
+    """Apply common filters to a User query"""
+    # Apply role filter if provided
+    if role:
+        query = filter_by_role(query, role)
+    
+    # Apply status filter if provided
+    if status_filter:
+        is_active = status_filter == 'Active'
+        query = query.filter(User.is_active == is_active)
+    
+    # Apply search filter if provided
+    if search_term:
+        query = query.filter(or_(
+            User.first_name.like(f'%{search_term}%'),
+            User.last_name.like(f'%{search_term}%'),
+            User.email.like(f'%{search_term}%'),
+            User.id.like(f'%{search_term}%')
+        ))
+    
+    return query
+
+def export_query_to_csv(query, filename_prefix, headers, row_formatter):
+    """Export query results to CSV"""
+    # Create CSV string
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write headers
+    writer.writerow(headers)
+    
+    # Write data using the provided formatter function
+    for item in query:
+        writer.writerow(row_formatter(item))
+    
+    # Create response
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename_prefix}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    
+    return response
+
+def safe_query_execution(func, error_fallback):
+    """Execute a database query function with error handling"""
+    try:
+        return func()
+    except Exception as e:
+        print(f"Error in database query: {e}")
+        # Instead of using fallback which may show mock/default data temporarily, 
+        # propagate a clear error to the frontend
+        flash(f"Database error: {str(e)}", "error")
+        # Return None so we can check if there's an error
+        return None
 
 # Middleware to check if user is admin
 @admin_bp.before_request
@@ -18,16 +81,21 @@ def check_admin():
 @admin_bp.route('/dashboard')
 @login_required
 def dashboard():
-    # Get dashboard stats
-    student_count = User.query.filter_by(role='student').count()
-    instructor_count = User.query.filter_by(role='instructor').count()
+    # Get dashboard stats with error handling using the helper functions
+    student_count = safe_query_execution(
+        lambda: filter_by_role(User.query, 'student').count(),
+        0
+    )
     
-    # Use try-except for Class queries that might fail due to schema mismatches
-    try:
-        class_count = Class.query.count()
-    except Exception as e:
-        print(f"Error counting classes: {e}")
-        class_count = 0
+    instructor_count = safe_query_execution(
+        lambda: filter_by_role(User.query, 'instructor').count(),
+        0
+    )
+    
+    class_count = safe_query_execution(
+        lambda: Class.query.count(),
+        0
+    )
     
     return render_template('admin/dashboard.html', 
                            active_page='dashboard',
@@ -50,128 +118,155 @@ def user_management():
     # Get filter parameters
     role_filter = request.args.get('role', '')
     status_filter = request.args.get('status', '')
-    search = request.args.get('search', '')
+    search_term = request.args.get('search', '')
     
-    # Get all users for stats
-    all_users = User.query.all()
-    total_users = len(all_users)
-    active_users = len([u for u in all_users if u.is_active])
-    inactive_users = total_users - active_users
+    def get_user_data():
+        # Get all users for stats
+        all_users = User.query.all()
+        total_users = len(all_users)
+        active_users = len([u for u in all_users if u.is_active])
+        inactive_users = total_users - active_users
+        
+        # Build the query with filters
+        query = User.query
+        
+        # Apply role filter if provided
+        if role_filter:
+            query = query.filter(User.role == role_filter)
+        
+        # Apply status and search filters using the helper function
+        query = apply_user_filters(query, 
+                                  status_filter=status_filter, 
+                                  search_term=search_term)
+        
+        users = query.all()
+        
+        return {
+            'users': users,
+            'total_users': total_users,
+            'active_users': active_users,
+            'inactive_users': inactive_users
+        }
     
-    # Get all users (later we'll add filtering)
-    query = User.query
+    # Use safe execution with fallback
+    fallback = {
+        'users': [],
+        'total_users': 0,
+        'active_users': 0,
+        'inactive_users': 0
+    }
     
-    # Apply filters
-    if role_filter:
-        query = query.filter(User.role == role_filter)
-    
-    if status_filter:
-        is_active = status_filter == 'Active'
-        query = query.filter(User.is_active == is_active)
-    
-    if search:
-        query = query.filter(
-            (User.first_name.like(f'%{search}%')) |
-            (User.last_name.like(f'%{search}%')) |
-            (User.email.like(f'%{search}%'))
-        )
-    
-    users = query.all()
+    result = safe_query_execution(get_user_data, fallback)
     
     return render_template('admin/user_management.html', 
                           active_page='user_management',
-                          users=users,
-                          total_users=total_users,
-                          active_users=active_users,
-                          inactive_users=inactive_users,
+                          users=result['users'],
+                          total_users=result['total_users'],
+                          active_users=result['active_users'],
+                          inactive_users=result['inactive_users'],
                           role_filter=role_filter,
                           status_filter=status_filter,
-                          search_term=search)
+                          search_term=search_term)
 
 @admin_bp.route('/student-management')
 @login_required
 def student_management():
     # Get filter parameters
     status_filter = request.args.get('status', '')
-    search = request.args.get('search', '')
+    search_term = request.args.get('search', '')
     
-    # Get all students for stats
-    all_students = User.query.filter_by(role='Student').all()
-    total_students = len(all_students)
-    active_students = len([s for s in all_students if s.is_active])
-    inactive_students = total_students - active_students
+    def get_student_data():
+        # Get all students for stats
+        all_students = filter_by_role(User.query, 'student').all()
+        total_students = len(all_students)
+        active_students = len([s for s in all_students if s.is_active])
+        inactive_students = total_students - active_students
+        
+        # Get filtered students using the helper function
+        query = apply_user_filters(User.query, 
+                                  status_filter=status_filter, 
+                                  search_term=search_term, 
+                                  role='student')
+        
+        students = query.all()
+        
+        return {
+            'students': students,
+            'total_students': total_students,
+            'active_students': active_students,
+            'inactive_students': inactive_students
+        }
     
-    # Get filtered students
-    query = User.query.filter_by(role='Student')
+    # Use safe execution with fallback empty values
+    fallback = {
+        'students': [],
+        'total_students': 0,
+        'active_students': 0,
+        'inactive_students': 0
+    }
     
-    if status_filter:
-        is_active = status_filter == 'Active'
-        query = query.filter(User.is_active == is_active)
-    
-    if search:
-        query = query.filter(
-            (User.first_name.like(f'%{search}%')) |
-            (User.last_name.like(f'%{search}%')) |
-            (User.email.like(f'%{search}%')) |
-            (User.id.like(f'%{search}%'))
-        )
-    
-    students = query.all()
+    result = safe_query_execution(get_student_data, fallback)
     
     return render_template('admin/student_management.html',
                            active_page='student_management',
-                           students=students,
-                           total_students=total_students,
-                           active_students=active_students,
-                           inactive_students=inactive_students,
+                          students=result['students'],
+                          total_students=result['total_students'],
+                          active_students=result['active_students'],
+                          inactive_students=result['inactive_students'],
                            status_filter=status_filter,
-                           search_term=search)
+                          search_term=search_term)
 
 @admin_bp.route('/class-management')
 @login_required
 def class_management():
-    # Use try-except for Class queries that might fail due to schema mismatches
-    try:
+    def get_class_data():
+        # Query classes directly from database
         classes = Class.query.all()
-    except Exception as e:
-        print(f"Error fetching classes: {e}")
-        classes = []
     
-    # Get instructors with properly formatted fields for the dropdown
-    instructors = User.query.filter_by(role='Instructor').all()
+        # Get instructors with properly formatted fields for the dropdown
+        instructors = filter_by_role(User.query, 'instructor').all()
+        
+        return {
+            'classes': classes,
+            'instructors': instructors
+        }
+    
+    # Use safe execution with fallback
+    result = safe_query_execution(
+        get_class_data,
+        {'classes': [], 'instructors': []}
+    )
     
     return render_template('admin/class_management.html', 
                            active_page='class_management',
-                           classes=classes,
-                           instructors=instructors,
-                           total_classes=len(classes))
+                          classes=result['classes'],
+                          instructors=result['instructors'],
+                          total_classes=len(result['classes']))
 
 @admin_bp.route('/enrollment-management')
 @login_required
 def enrollment_management():
     """Main enrollment management page."""
-    # Get URL parameters for filtering and pagination
-    status_filter = request.args.get('status', '')
-    search_term = request.args.get('search', '')
-    per_page = int(request.args.get('per_page', 5))
-    page = int(request.args.get('page', 1))
-    
-    # Get all students for the dropdowns
-    students = User.query.filter_by(role='Student', is_active=True).all()
-    
-    # Get classes for the form
-    classes = Class.query.filter_by(is_active=True).all()
-    
-    # Get counts for statistics cards
-    total_students = User.query.filter_by(role='Student').count()
-    
-    try:
-        # Get enrollment data using the data endpoint
-        api_url = f"/admin/enrollment-management/data?status={status_filter}&search={search_term}&per_page={per_page}&page={page}"
+    def get_enrollment_data():
+        # Get URL parameters for filtering and pagination
+        status_filter = request.args.get('status', '')
+        search_term = request.args.get('search', '')
+        per_page = int(request.args.get('per_page', 5))
+        page = int(request.args.get('page', 1))
+        
+        # Get all active students for the dropdowns
+        students = filter_by_role(User.query, 'student').filter_by(is_active=True).all()
+        
+        # Get active classes for the form
+        classes = Class.query.filter_by(is_active=True).all()
+        
+        # Get counts for statistics cards
+        total_students = filter_by_role(User.query, 'student').count()
         
         # Call our own API endpoint internally
         from flask import current_app
         with current_app.test_client() as client:
+            api_url = f"/admin/enrollment-management/data?status={status_filter}&search={search_term}&per_page={per_page}&page={page}"
             response = client.get(api_url)
             data = response.get_json()
             
@@ -179,34 +274,55 @@ def enrollment_management():
             enrollments = data.get('enrollments', [])
             pagination = data.get('pagination', {})
             
-            # Get pagination values
+            # Extract pagination values
             total_enrollments = pagination.get('total', 0)
             active_enrollments = pagination.get('active', 0)
             pending_enrollments = pagination.get('pending', 0)
             start_idx = pagination.get('start_idx', 0)
             end_idx = pagination.get('end_idx', 0)
-    except Exception as e:
-        print(f"Error fetching enrollments: {e}")
-        enrollments = []
-        total_enrollments = 0
-        active_enrollments = 0
-        pending_enrollments = 0
-        total_students = User.query.filter_by(role='Student').count()
-        start_idx = 0
-        end_idx = 0
+            
+        return {
+            'students': students,
+            'classes': classes,
+            'enrollments': enrollments,
+            'total_students': total_students,
+            'total_enrollments': total_enrollments,
+            'active_enrollments': active_enrollments,
+            'pending_enrollments': pending_enrollments,
+            'start_idx': start_idx,
+            'end_idx': end_idx
+        }
+    
+    # Use safe execution with appropriate fallback
+    fallback = {
+        'students': [],
+        'classes': [],
+        'enrollments': [],
+        'total_students': 0,
+        'total_enrollments': 0,
+        'active_enrollments': 0,
+        'pending_enrollments': 0,
+        'start_idx': 0,
+        'end_idx': 0
+    }
+    
+    result = safe_query_execution(get_enrollment_data, fallback)
+    
+    # Get filter parameters for passing to template
+    status_filter = request.args.get('status', '')
     
     return render_template('admin/enrollment_management.html', 
-                         active_page='enrollment_management',
-                         enrolments=enrollments,
-                         students=students,
-                         classes=classes,
-                         total_enrollments=total_enrollments,
-                         total_students=total_students,
-                         active_enrollments=active_enrollments,
-                         pending_enrollments=pending_enrollments,
+                           active_page='enrollment_management',
+                         enrolments=result['enrollments'],
+                         students=result['students'],
+                         classes=result['classes'],
+                         total_enrollments=result['total_enrollments'],
+                         total_students=result['total_students'],
+                         active_enrollments=result['active_enrollments'],
+                         pending_enrollments=result['pending_enrollments'],
                          status_filter=status_filter,
-                         start_idx=start_idx,
-                         end_idx=end_idx)
+                         start_idx=result['start_idx'],
+                         end_idx=result['end_idx'])
 
 @admin_bp.route('/enrollment-management/data')
 @login_required
@@ -221,14 +337,18 @@ def enrollment_management_data():
     try:
         # Step 1: Get basic enrollment data
         enrollments = db.session.execute(text("""
-            SELECT id, student_id, class_id, enrollment_date, status, unenrollment_date
-            FROM enrollment
-            ORDER BY enrollment_date DESC
-        """)).fetchall()
+        SELECT id, student_id, class_id, enrollment_date, status, unenrollment_date
+                FROM enrollment
+        ORDER BY enrollment_date DESC
+            """)).fetchall()
         
-        # Step 2: Get student data for efficient lookups
+        # Step 2: Get student data for efficient lookups - handle both capitalization styles
         students_data = {}
-        for student in User.query.filter_by(role='Student').all():
+        student_query = User.query.filter(
+            (User.role == 'Student') | (User.role == 'student')
+        ).all()
+        
+        for student in student_query:
             students_data[student.id] = {
                 'id': student.id,
                 'name': f"{student.first_name} {student.last_name}",
@@ -245,7 +365,7 @@ def enrollment_management_data():
                 'id': class_obj.id,
                 'name': class_obj.name
             }
-        
+            
         # Step 4: Process enrollments and filter by search term
         processed_enrollments = []
         for enrollment in enrollments:
@@ -374,7 +494,6 @@ def enrollment_management_data():
                 'pending': pending_enrollments
             }
         })
-        
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -385,69 +504,134 @@ def enrollment_management_data():
 def attendance_view():
     # Get filter parameters
     class_id = request.args.get('class_id', '')
+    instructor_id = request.args.get('instructor_id', '')
+    student_name = request.args.get('student_name', '')
+    status = request.args.get('status', '')
     date_start = request.args.get('date_start', '')
     date_end = request.args.get('date_end', '')
     
-    # Use try-except for Class and Attendance queries that might fail
-    try:
-        # Get all classes for the dropdown
-        classes = Class.query.all()
-        
-        # Get attendance records with filtering
-        query = db.session.query(
-            Attendance, User, Class
-        ).join(
-            User, Attendance.student_id == User.id
-        ).join(
-            Class, Attendance.class_id == Class.id
-        ).filter(
-            User.role == 'student'
-        )
-        
-        if class_id:
-            query = query.filter(Class.id == class_id)
-        
-        if date_start:
-            query = query.filter(Attendance.date >= datetime.strptime(date_start, '%Y-%m-%d'))
-        
-        if date_end:
-            query = query.filter(Attendance.date <= datetime.strptime(date_end, '%Y-%m-%d'))
-        
-        attendances = query.order_by(Attendance.date.desc()).all()
-    except Exception as e:
-        print(f"Error fetching attendance or classes: {e}")
-        classes = []
-        attendances = []
+    def get_attendance_data():
+        try:
+            # Get all classes for the dropdown
+            classes = Class.query.all()
+            
+            # Get all instructors for the dropdown
+            instructors = filter_by_role(User.query, 'instructor').all()
+            
+            # Get attendance records with filtering
+            query = db.session.query(
+                Attendance, User, Class
+            ).join(
+                User, Attendance.student_id == User.id
+            ).join(
+                Class, Attendance.class_id == Class.id
+            )
+            
+            # Apply student role filter
+            query = query.filter(or_(User.role == 'Student', User.role == 'student'))
+            
+            # Apply class filter if provided
+            if class_id:
+                query = query.filter(Class.id == class_id)
+            
+            # Apply instructor filter if provided
+            if instructor_id:
+                query = query.filter(Class.instructor_id == instructor_id)
+            
+            # Apply status filter if provided
+            if status:
+                query = query.filter(Attendance.status == status)
+            
+            # Apply student name filter if provided
+            if student_name:
+                query = query.filter(
+                    or_(
+                        User.first_name.like(f'%{student_name}%'),
+                        User.last_name.like(f'%{student_name}%'),
+                        User.id.like(f'%{student_name}%')
+                    )
+                )
+            
+            # Apply date filters if provided
+            if date_start:
+                query = query.filter(Attendance.date >= datetime.strptime(date_start, '%Y-%m-%d'))
+            
+            if date_end:
+                query = query.filter(Attendance.date <= datetime.strptime(date_end, '%Y-%m-%d'))
+            
+            # Get results ordered by date
+            attendances = query.order_by(Attendance.date.desc()).all()
+            
+            return {
+                'classes': classes,
+                'instructors': instructors,
+                'attendances': attendances
+            }
+        except Exception as e:
+            # Log the specific error
+            import logging
+            logging.error(f"Error fetching attendance data: {str(e)}")
+            # Raise a more specific error
+            raise ValueError(f"Failed to retrieve attendance data: {str(e)}")
     
-    return render_template('admin/attendance_view.html',
-                           active_page='attendance_view',
-                           classes=classes,
-                           attendances=attendances,
+    # Use safe execution with fallback
+    fallback = {
+        'classes': [],
+        'instructors': [],
+        'attendances': []
+    }
+    
+    result = safe_query_execution(get_attendance_data, fallback)
+    
+    # Set default date range if none provided
+    if not date_start and not date_end:
+        today = datetime.now()
+        thirty_days_ago = today - timedelta(days=30)
+        date_start = thirty_days_ago.strftime('%Y-%m-%d')
+        date_end = today.strftime('%Y-%m-%d')
+    
+    return render_template('admin/view_attendance.html',
+                           active_page='view_attendance',
+                           classes=result['classes'],
+                           instructors=result['instructors'],
+                           attendances=result['attendances'],
                            selected_class=class_id,
+                           selected_instructor=instructor_id,
+                           student_name=student_name,
+                           status=status,
                            date_start=date_start,
                            date_end=date_end)
 
 @admin_bp.route('/mark-attendance')
 @login_required
 def mark_attendance():
-    # Get students for attendance marking
-    students = User.query.filter_by(role='student', is_active=True).all()
+    def get_attendance_data():
+        # Get active students for attendance marking
+        students = filter_by_role(User.query, 'student').filter_by(is_active=True).all()
     
-    # Use try-except for Class queries that might fail
-    try:
-        # Get all classes
+        # Get all active classes
         classes = Class.query.filter_by(is_active=True).all()
-    except Exception as e:
-        print(f"Error fetching classes: {e}")
-        classes = []
+        
+        return {
+            'students': students,
+            'classes': classes
+        }
+    
+    # Use safe execution with fallback
+    fallback = {
+        'students': [],
+        'classes': []
+    }
+    
+    result = safe_query_execution(get_attendance_data, fallback)
     
     # Get today's date formatted
     today = datetime.now().strftime('%Y-%m-%d')
     
     return render_template('admin/mark_attendance.html',
                            active_page='mark_attendance',
-                           classes=classes,
-                           students=students,
+                           classes=result['classes'],
+                           students=result['students'],
                            today=today)
 
 @admin_bp.route('/export-users-csv')
@@ -457,191 +641,248 @@ def export_users_csv():
     role_filter = request.args.get('role', '')
     search_term = request.args.get('search', '')
 
-    # Get filtered users
+    # Build the query with filters
     query = User.query
     
+    # Apply role filter if provided
     if role_filter:
         query = query.filter(User.role == role_filter)
     
+    # Apply search filter
     if search_term:
-        query = query.filter(
-            (User.first_name.like(f'%{search_term}%')) |
-            (User.last_name.like(f'%{search_term}%')) |
-            (User.email.like(f'%{search_term}%'))
-        )
+        query = query.filter(or_(
+            User.first_name.like(f'%{search_term}%'),
+            User.last_name.like(f'%{search_term}%'),
+            User.email.like(f'%{search_term}%')
+        ))
     
-    users = query.all()
-
-    # Create CSV string
-    output = StringIO()
-    writer = csv.writer(output)
+    # Define CSV headers
+    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Role', 'Status']
     
-    # Write headers
-    writer.writerow(['ID', 'Name', 'Email', 'Role', 'Status'])
-    
-    # Write data
-    for user in users:
-        writer.writerow([
+    # Define row formatter function
+    def format_user_row(user):
+        return [
             user.id,
-            f"{user.first_name} {user.last_name}",
+            user.first_name,
+            user.last_name,
             user.email,
             user.role,
             'Active' if user.is_active else 'Inactive'
-        ])
+        ]
     
-    # Create the response
-    response = make_response(output.getvalue())
-    response.headers['Content-Type'] = 'text/csv'
-    response.headers['Content-Disposition'] = f'attachment; filename=users_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    
-    return response
+    return export_query_to_csv(
+        query=query,
+        filename_prefix='users',
+        headers=headers,
+        row_formatter=format_user_row
+    )
 
-@admin_bp.route('/export-students-csv')
+@admin_bp.route('/export-students-to-csv')
 @login_required
-def export_students_csv():
-    # Get filter parameters
-    status_filter = request.args.get('status', '')
-    search_term = request.args.get('search', '')
+def export_students_to_csv():
+    # Create query to get students with both capitalized and lowercase role names
+    query = filter_by_role(User.query, 'student')
     
-    # Get filtered students
-    query = User.query.filter_by(role='Student')
+    # Define CSV headers
+    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status']
     
-    if status_filter:
-        is_active = status_filter.lower() == 'active'
-        query = query.filter(User.is_active == is_active)
-    
-    if search_term:
-        query = query.filter(
-            (User.first_name.like(f'%{search_term}%')) |
-            (User.last_name.like(f'%{search_term}%')) |
-            (User.email.like(f'%{search_term}%')) |
-            (User.id.like(f'%{search_term}%'))
-        )
-    
-    students = query.all()
-    
-    # Create CSV
-    si = StringIO()
-    writer = csv.writer(si)
-    
-    # Write header
-    writer.writerow(['ID', 'Name', 'Email', 'Status'])
-    
-    # Write data
-    for student in students:
-        writer.writerow([
+    # Define row formatter function
+    def format_student_row(student):
+        return [
             student.id,
-            f"{student.first_name} {student.last_name}",
+            student.first_name,
+            student.last_name,
             student.email,
+            student.phone or '',
             'Active' if student.is_active else 'Inactive'
-        ])
+        ]
     
-    # Create response
-    output = make_response(si.getvalue())
-    output.headers['Content-Disposition'] = f'attachment; filename=students_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    output.headers['Content-type'] = 'text/csv'
+    return export_query_to_csv(
+        query=query,
+        filename_prefix='students',
+        headers=headers,
+        row_formatter=format_student_row
+    )
+
+@admin_bp.route('/export-instructors-to-csv')
+@login_required
+def export_instructors_to_csv():
+    # Create query to get instructors with both capitalized and lowercase role names
+    query = filter_by_role(User.query, 'instructor')
     
-    return output
+    # Define CSV headers
+    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status']
+    
+    # Define row formatter function
+    def format_instructor_row(instructor):
+        return [
+            instructor.id,
+            instructor.first_name,
+            instructor.last_name,
+            instructor.email,
+            instructor.phone or '',
+            'Active' if instructor.is_active else 'Inactive'
+        ]
+    
+    return export_query_to_csv(
+        query=query,
+        filename_prefix='instructors',
+        headers=headers,
+        row_formatter=format_instructor_row
+    )
 
 @admin_bp.route('/company-management')
 @login_required
 def company_management():
-    # For now, we'll return a basic template with mock data
-    # In the future, this would connect to a Company model
-    companies = [
-        {
-            'id': 1,
-            'name': 'Acme Corporation',
-            'contact_name': 'John Smith',
-            'email': 'john@acme.com',
-            'phone': '555-123-4567',
-            'status': 'Active'
-        },
-        {
-            'id': 2,
-            'name': 'Wayne Enterprises',
-            'contact_name': 'Bruce Wayne',
-            'email': 'bruce@wayne.com',
-            'phone': '555-876-5432',
-            'status': 'Active'
-        },
-        {
-            'id': 3,
-            'name': 'Stark Industries',
-            'contact_name': 'Tony Stark',
-            'email': 'tony@stark.com',
-            'phone': '555-432-1098',
-            'status': 'Inactive'
+    def get_company_data():
+        # Get all companies for stats
+        all_companies = Company.query.all()
+        total_companies = len(all_companies)
+        active_companies = len([c for c in all_companies if c.is_active])
+        inactive_companies = total_companies - active_companies
+        
+        # Format company data for template
+        formatted_companies = []
+        for company in all_companies:
+            formatted_companies.append({
+                'id': company.id,
+                'name': company.name,
+                'address': company.address,
+                'status': 'Active' if company.is_active else 'Inactive'
+            })
+        
+        return {
+            'companies': formatted_companies,
+            'total_companies': total_companies,
+            'active_companies': active_companies,
+            'inactive_companies': inactive_companies
         }
-    ]
+    
+    # Use safe execution with fallback
+    fallback = {
+        'companies': [],
+        'total_companies': 0,
+        'active_companies': 0,
+        'inactive_companies': 0
+    }
+    
+    result = safe_query_execution(get_company_data, fallback)
     
     return render_template('admin/company_management.html', 
                           active_page='company_management',
-                          companies=companies,
-                          total_companies=len(companies),
-                          active_companies=len([c for c in companies if c['status'] == 'Active']),
-                          inactive_companies=len([c for c in companies if c['status'] == 'Inactive']))
+                           companies=result['companies'],
+                           total_companies=result['total_companies'],
+                           active_companies=result['active_companies'],
+                           inactive_companies=result['inactive_companies'])
 
 @admin_bp.route('/instructor-management')
 @login_required
 def instructor_management():
     # Get filter parameters
     status_filter = request.args.get('status', '')
-    search = request.args.get('search', '')
+    search_term = request.args.get('search', '')
     
-    # Get all instructors for stats
-    instructors_query = User.query.filter_by(role='instructor')
-    all_instructors = instructors_query.all()
-    total_instructors = len(all_instructors)
-    active_instructors = len([i for i in all_instructors if i.is_active])
-    inactive_instructors = total_instructors - active_instructors
+    def get_instructor_data():
+        # Get all instructors for stats
+        all_instructors = filter_by_role(User.query, 'instructor').all()
+        total_instructors = len(all_instructors)
+        active_instructors = len([i for i in all_instructors if i.is_active])
+        inactive_instructors = total_instructors - active_instructors
+        
+        # Apply filters using the helper function
+        query = apply_user_filters(User.query, 
+                                   status_filter=status_filter, 
+                                   search_term=search_term, 
+                                   role='instructor')
+        
+        instructors = query.all()
+        
+        # Format instructor data for template
+        formatted_instructors = []
+        for instructor in instructors:
+            formatted_instructors.append({
+                'name': f"{instructor.first_name} {instructor.last_name}",
+                'user_id': instructor.id,
+                'role': 'Instructor',
+                'status': 'Active' if instructor.is_active else 'Inactive',
+                'profile_img': instructor.profile_img or 'profile.png'  # Default profile image
+            })
+            
+        return {
+            'instructors': formatted_instructors,
+            'total_instructors': total_instructors,
+            'active_instructors': active_instructors,
+            'inactive_instructors': inactive_instructors
+        }
     
-    # Apply filters if provided
-    query = User.query.filter_by(role='instructor')
+    # Use safe execution with fallback
+    fallback = {
+        'instructors': [],
+        'total_instructors': 0,
+        'active_instructors': 0,
+        'inactive_instructors': 0
+    }
     
-    if status_filter:
-        is_active = status_filter == 'Active'
-        query = query.filter(User.is_active == is_active)
-    
-    if search:
-        query = query.filter(
-            (User.first_name.like(f'%{search}%')) |
-            (User.last_name.like(f'%{search}%')) |
-            (User.email.like(f'%{search}%'))
-        )
-    
-    instructors = query.all()
-    
-    # Format instructor data for template
-    formatted_instructors = []
-    for instructor in instructors:
-        formatted_instructors.append({
-            'name': f"{instructor.first_name} {instructor.last_name}",
-            'user_id': instructor.id,
-            'role': 'Instructor',
-            'status': 'Active' if instructor.is_active else 'Inactive',
-            'profile_img': 'profile.png'  # Default profile image
-        })
+    result = safe_query_execution(get_instructor_data, fallback)
     
     return render_template('admin/instructor_management.html', 
                            active_page='instructor_management',
-                           instructors=formatted_instructors,
-                           total_instructors=total_instructors,
-                           active_instructors=active_instructors,
-                           inactive_instructors=inactive_instructors,
+                           instructors=result['instructors'],
+                           total_instructors=result['total_instructors'],
+                           active_instructors=result['active_instructors'],
+                           inactive_instructors=result['inactive_instructors'],
                            status_filter=status_filter,
-                           search_term=search)
+                           search_term=search_term)
 
-@admin_bp.route('/view-archive')
+@admin_bp.route('/archive-view')
 @login_required
 def view_archive():
-    """View archived records."""
-    # Get the archive type from the query parameter, if provided
+    # Check if user is an admin
+    if current_user.role.lower() != 'admin':
+        abort(403)  # Forbidden
+    
+    # Get the archive type from the URL query string
     archive_type = request.args.get('type', '')
     
-    # In a real app, you would query archived records
-    # For now, we'll use the template with mock data
+    def get_archive_data():
+        # Get archived classes and students
+        archived_classes = Class.query.filter_by(is_archived=True).all()
+        
+        # Get archived students (role can be Student or student)
+        archived_students = filter_by_role(User.query, 'student').filter_by(is_archived=True).all()
+        
+        # Get archived attendance records
+        archived_attendance = Attendance.query.filter_by(is_archived=True).all()
+        
+        return {
+            'archived_classes': archived_classes,
+            'archived_students': archived_students,
+            'archived_attendance': archived_attendance,
+            'archived_counts': {
+                'class': len(archived_classes),
+                'student': len(archived_students),
+                'attendance': len(archived_attendance)
+            }
+        }
+    
+    # Use safe execution with fallback
+    fallback = {
+        'archived_classes': [],
+        'archived_students': [],
+        'archived_attendance': [],
+        'archived_counts': {
+            'class': 0,
+            'student': 0,
+            'attendance': 0
+        }
+    }
+    
+    result = safe_query_execution(get_archive_data, fallback)
     
     return render_template('admin/archive.html',
                            active_page='view_archive',
-                           archive_type=archive_type,) 
+                           archived_classes=result['archived_classes'],
+                           archived_students=result['archived_students'],
+                           archived_attendance=result['archived_attendance'],
+                           archive_type=archive_type,
+                           archived_counts=result['archived_counts'])
