@@ -1,10 +1,11 @@
-from flask import Blueprint, jsonify, request, make_response, render_template
+from flask import Blueprint, jsonify, request, make_response, render_template, current_app
 from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Company, Attendance
 from datetime import datetime, date, timedelta
 import csv
 from io import StringIO
 from sqlalchemy import text, or_, func, and_
+from sqlalchemy.orm import aliased
 import traceback
 import json
 import uuid
@@ -1000,6 +1001,59 @@ def save_attendance():
         print(f"Error saving attendance: {str(e)}")
         return jsonify({'success': False, 'message': f'Error saving attendance: {str(e)}'}), 500
 
+@api_bp.route('/attendance/<int:record_id>', methods=['GET'])
+@login_required
+def get_attendance_record(record_id):
+    """API endpoint to get a specific attendance record by ID"""
+    try:
+        # Get the attendance record with student and class information
+        result = db.session.query(
+            Attendance, User, Class
+        ).outerjoin(
+            User, User.id == Attendance.student_id
+        ).outerjoin(
+            Class, Class.id == Attendance.class_id
+        ).filter(
+            Attendance.id == record_id
+        ).first()
+        
+        if not result:
+            return jsonify({'error': 'Attendance record not found'}), 404
+            
+        attendance, student, class_obj = result
+        
+        # Get instructor information if available
+        instructor_name = "Unknown"
+        instructor_id = None
+        
+        if class_obj and class_obj.instructor_id:
+            instructor = User.query.get(class_obj.instructor_id)
+            if instructor:
+                instructor_name = f"{instructor.first_name} {instructor.last_name}"
+                instructor_id = instructor.id
+        
+        # Format the record
+        record = {
+            'id': attendance.id,
+            'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else '',
+            'status': attendance.status or 'Unknown',
+            'comment': attendance.comments,
+            'student_name': f"{student.first_name} {student.last_name}" if student else "Unknown",
+            'student_id': student.id if student else None,
+            'student_profile_img': student.profile_img if student and student.profile_img else 'profile.png',
+            'class_name': class_obj.name if class_obj else "Unknown",
+            'class_id': class_obj.id if class_obj else None,
+            'instructor_name': instructor_name,
+            'instructor_id': instructor_id
+        }
+        
+        return jsonify({'success': True, 'record': record})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @api_bp.route('/attendance/<int:record_id>', methods=['PUT'])
 @login_required
 def update_attendance(record_id):
@@ -1025,9 +1079,11 @@ def update_attendance(record_id):
                 
             attendance.status = status
             
-        # Update comment if provided
+        # Update comment if provided (check both comment and comments field names)
         if 'comment' in data:
             attendance.comments = data['comment']
+        elif 'comments' in data:
+            attendance.comments = data['comments']
             
         # Update timestamp
         attendance.updated_at = datetime.utcnow()
@@ -1035,6 +1091,7 @@ def update_attendance(record_id):
         # Save changes
         db.session.commit()
         
+        # Return updated record
         return jsonify({
             'success': True,
             'message': 'Attendance record updated successfully',
@@ -1050,7 +1107,7 @@ def update_attendance(record_id):
     except Exception as e:
         db.session.rollback()
         print(f"Error updating attendance: {str(e)}")
-        return jsonify({'success': False, 'message': f'Error updating attendance: {str(e)}'}), 500 
+        return jsonify({'success': False, 'message': f'Error updating attendance: {str(e)}'}), 500
 
 @api_bp.route('/classes/export-csv', methods=['GET'])
 @login_required
@@ -1803,6 +1860,13 @@ def get_archive_counts():
         except Exception as e:
             print(f"Error counting instructors: {str(e)}")
             result['counts']['instructor'] = 0
+            
+        # Count attendance records
+        try:
+            result['counts']['attendance'] = Attendance.query.filter_by(is_archived=True).count()
+        except Exception as e:
+            print(f"Error counting attendance: {str(e)}")
+            result['counts']['attendance'] = 0
         
         return jsonify(result)
         
@@ -1812,7 +1876,8 @@ def get_archive_counts():
             'student': 0,
             'class': 0,
             'company': 0,
-            'instructor': 0
+            'instructor': 0,
+            'attendance': 0
         }}), 200  # Return zeros with 200 status to prevent breaking the UI 
 
 @api_bp.route('/students/<string:student_id>/enrollment', methods=['GET'])
@@ -2325,3 +2390,423 @@ def export_enrollments_csv():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance', methods=['GET'])
+def get_attendance():
+    """API endpoint to get attendance records with filters."""
+    try:
+        # Get filter parameters
+        class_id = request.args.get('class_id', '')
+        instructor_id = request.args.get('instructor_id', '')
+        student_name = request.args.get('student_name', '')
+        status = request.args.get('status', '')
+        date_start = request.args.get('date_start', '')
+        date_end = request.args.get('date_end', '')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
+        exclude_archived = request.args.get('exclude_archived', 'false').lower() == 'true'
+        
+        # Build the base query with direct SQL filtering
+        query = db.session.query(
+            Attendance, User, Class
+        ).outerjoin(
+            User, User.id == Attendance.student_id
+        ).outerjoin(
+            Class, Class.id == Attendance.class_id
+        )
+        
+        # Apply filters
+        if class_id:
+            query = query.filter(Class.id == class_id)
+        
+        if status:
+            query = query.filter(Attendance.status == status)
+        
+        if student_name:
+            query = query.filter(or_(
+                User.first_name.ilike(f'%{student_name}%'),
+                User.last_name.ilike(f'%{student_name}%')
+            ))
+        
+        if instructor_id:
+            query = query.filter(Class.instructor_id == instructor_id)
+        
+        # Filter out archived records if requested
+        if exclude_archived:
+            query = query.filter(or_(Attendance.is_archived == False, Attendance.is_archived == None))
+        
+        # Apply date filters
+        if date_start:
+            try:
+                date_start_obj = datetime.strptime(date_start, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= date_start_obj)
+            except Exception as e:
+                print(f"Invalid date_start format: {date_start}")
+        
+        if date_end:
+            try:
+                date_end_obj = datetime.strptime(date_end, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= date_end_obj)
+            except Exception as e:
+                print(f"Invalid date_end format: {date_end}")
+        
+        # Count total records first
+        total_count = query.count()
+        
+        # Get status counts
+        present_count = query.filter(Attendance.status == 'Present').count()
+        absent_count = query.filter(Attendance.status == 'Absent').count()
+        late_count = query.filter(Attendance.status == 'Late').count()
+        
+        # Apply pagination
+        query = query.order_by(Attendance.date.desc())
+        results = query.offset((page - 1) * per_page).limit(per_page).all()
+        
+        # Format records for response
+        records = []
+        for attendance, student, class_obj in results:
+            instructor_name = "Unknown"
+            instructor_id = None
+            
+            if class_obj and class_obj.instructor_id:
+                instructor = User.query.get(class_obj.instructor_id)
+                if instructor:
+                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
+                    instructor_id = instructor.id
+            
+            records.append({
+                'id': attendance.id,
+                'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else '',
+                'status': attendance.status or 'Unknown',
+                'comment': attendance.comments,
+                'student_name': f"{student.first_name} {student.last_name}" if student else "Unknown",
+                'student_id': student.id if student else None,
+                'student_profile_img': student.profile_img if student and student.profile_img else 'profile.png',
+                'class_name': class_obj.name if class_obj else "Unknown",
+                'class_id': class_obj.id if class_obj else None,
+                'instructor_name': instructor_name,
+                'instructor_id': instructor_id
+            })
+        
+        # Calculate total pages
+        total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
+        
+        # Prepare response
+        return jsonify({
+            'records': records,
+            'total_records': total_count,
+            'stats': {
+                'total': total_count,
+                'present': present_count,
+                'absent': absent_count,
+                'late': late_count
+            },
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages
+            }
+        })
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to fetch attendance data: {str(e)}',
+            'records': []
+        }), 500
+
+@api_bp.route('/attendance/<int:record_id>/archive', methods=['POST'])
+@login_required
+def archive_attendance_record(record_id):
+    """Archive an attendance record"""
+    try:
+        data = request.json or {}
+        
+        # Get the attendance record
+        attendance = Attendance.query.get_or_404(record_id)
+        
+        # Check if already archived
+        if attendance.is_archived:
+            return jsonify({
+                'success': False,
+                'message': 'This attendance record is already archived'
+            }), 400
+        
+        # Mark as archived
+        attendance.is_archived = True
+        attendance.archive_date = datetime.utcnow().date()
+        
+        # Add archive note to comments
+        reason = data.get('reason', 'User requested archive')
+        comment = data.get('comment', '')
+        archive_note = f"ARCHIVE NOTE ({datetime.now().strftime('%Y-%m-%d')}): {reason}"
+        
+        if comment:
+            archive_note += f" - {comment}"
+        
+        # Preserve original comment if it exists
+        if attendance.comments:
+            attendance.comments = f"{archive_note}\n\nOriginal comment: {attendance.comments}"
+        else:
+            attendance.comments = archive_note
+        
+        # Save changes
+        db.session.commit()
+        
+        # Get updated stats
+        try:
+            attendance_count = Attendance.query.filter_by(is_archived=True).count()
+            student_count = User.query.filter_by(is_archived=True, role='Student').count()
+            instructor_count = User.query.filter_by(is_archived=True, role='Instructor').count()
+            class_count = Class.query.filter_by(is_archived=True).count()
+            company_count = Company.query.filter_by(is_archived=True).count()
+        except:
+            # Default values if count fails
+            attendance_count = 0
+            student_count = 0
+            instructor_count = 0
+            class_count = 0
+            company_count = 0
+        
+        return jsonify({
+            'success': True,
+            'message': 'Attendance record archived successfully',
+            'stats': {
+                'attendance': attendance_count,
+                'student': student_count,
+                'instructor': instructor_count,
+                'class': class_count,
+                'company': company_count
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@api_bp.route('/archives/attendance', methods=['GET'])
+def get_archived_attendance():
+    """Get archived attendance records"""
+    try:
+        # Get query parameters
+        search = request.args.get('search', '')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 5))
+        
+        # Start with base query for archived attendance records
+        query = db.session.query(
+            Attendance, User, Class
+        ).outerjoin(  # Change to outerjoin to handle null relationships
+            User, Attendance.student_id == User.id
+        ).outerjoin(  # Change to outerjoin to handle null relationships
+            Class, Attendance.class_id == Class.id
+        ).filter(
+            Attendance.is_archived == True
+        )
+        
+        # Apply search filter if provided
+        if search:
+            query = query.filter(
+                or_(
+                    User.first_name.ilike(f'%{search}%'),
+                    User.last_name.ilike(f'%{search}%'),
+                    Class.name.ilike(f'%{search}%')
+                )
+            )
+        
+        # Get total count
+        total_records = query.count()
+        
+        # Apply pagination
+        start_idx = (page - 1) * per_page
+        records = query.order_by(Attendance.archive_date.desc()).offset(start_idx).limit(per_page).all()
+        
+        # Format records for response
+        formatted_records = []
+        for record in records:
+            try:
+                attendance = record[0] if record[0] else None
+                student = record[1] if len(record) > 1 else None
+                class_obj = record[2] if len(record) > 2 else None
+                
+                if not attendance:
+                    continue  # Skip this record if attendance is None
+                
+                instructor_name = "Unknown"
+                
+                if class_obj and class_obj.instructor_id:
+                    try:
+                        instructor = User.query.get(class_obj.instructor_id)
+                        if instructor:
+                            instructor_name = f"{instructor.first_name} {instructor.last_name}"
+                    except:
+                        pass  # If instructor fetch fails, use the default "Unknown"
+                
+                # Extract archive reason if available
+                archive_reason = "Archived"
+                if attendance.comments and isinstance(attendance.comments, str) and "ARCHIVE NOTE" in attendance.comments:
+                    try:
+                        import re
+                        match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)', attendance.comments)
+                        if match and match.group(1):
+                            archive_reason = match.group(1).strip()
+                    except:
+                        pass  # If regex fails, use the default "Archived"
+                
+                # Create a safe record that handles null values
+                student_name = "Unknown"
+                if student:
+                    first_name = getattr(student, 'first_name', '')
+                    last_name = getattr(student, 'last_name', '')
+                    student_name = f"{first_name} {last_name}".strip() or "Unknown"
+                
+                formatted_records.append({
+                    'id': getattr(attendance, 'id', None),
+                    'student_id': getattr(attendance, 'student_id', None),
+                    'student_name': student_name,
+                    'student_profile_img': getattr(student, 'profile_img', 'profile.png') if student else 'profile.png',
+                    'class_id': getattr(attendance, 'class_id', None),
+                    'class_name': getattr(class_obj, 'name', "Unknown") if class_obj else "Unknown",
+                    'instructor_name': instructor_name,
+                    'date': attendance.date.strftime('%Y-%m-%d') if hasattr(attendance, 'date') and attendance.date else 'Unknown',
+                    'status': getattr(attendance, 'status', "Unknown"),
+                    'archive_date': attendance.archive_date.strftime('%Y-%m-%d') if hasattr(attendance, 'archive_date') and attendance.archive_date else 'Unknown',
+                    'archive_reason': archive_reason,
+                    'comments': getattr(attendance, 'comments', ""),
+                })
+            except Exception as record_error:
+                print(f"Error processing record: {record_error}")
+                continue  # Skip this record and continue with others
+        
+        # Count all archive types for stats - with error handling
+        try:
+            student_count = User.query.filter_by(is_archived=True, role='Student').count()
+        except:
+            student_count = 0
+            
+        try:
+            instructor_count = User.query.filter_by(is_archived=True, role='Instructor').count()
+        except:
+            instructor_count = 0
+            
+        try:
+            class_count = Class.query.filter_by(is_archived=True).count()
+        except:
+            class_count = 0
+            
+        try:
+            company_count = Company.query.filter_by(is_archived=True).count()
+        except:
+            company_count = 0
+            
+        try:
+            attendance_count = Attendance.query.filter_by(is_archived=True).count()
+        except:
+            attendance_count = 0
+        
+        # Prepare response
+        response = {
+            'records': formatted_records,
+            'total': total_records,
+            'counts': {
+                'student': student_count,
+                'instructor': instructor_count,
+                'class': class_count,
+                'company': company_count,
+                'attendance': attendance_count
+            }
+        }
+        
+        return jsonify(response)
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Error in get_archived_attendance: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'records': [],
+            'total': 0,
+            'counts': {
+                'student': 0,
+                'instructor': 0,
+                'class': 0,
+                'company': 0,
+                'attendance': 0
+            }
+        }), 500
+
+@api_bp.route('/restore-archived/attendance/<int:record_id>', methods=['POST'])
+@login_required
+def restore_archived_attendance(record_id):
+    """Restore an archived attendance record"""
+    try:
+        # Get the attendance record
+        attendance = Attendance.query.get_or_404(record_id)
+        
+        # Check if it's actually archived
+        if not attendance.is_archived:
+            return jsonify({
+                'success': False,
+                'message': 'Record is not archived'
+            }), 400
+        
+        # Restore the record
+        attendance.is_archived = False
+        attendance.archive_date = None
+        
+        # Update comments to indicate restoration
+        if attendance.comments:
+            attendance.comments += f"\n\nRESTORED ({datetime.now().strftime('%Y-%m-%d')})"
+        else:
+            attendance.comments = f"RESTORED ({datetime.now().strftime('%Y-%m-%d')})"
+        
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Attendance record restored successfully'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@api_bp.route('/archives/delete/attendance/<int:record_id>', methods=['DELETE'])
+@login_required
+def delete_archived_attendance(record_id):
+    """Permanently delete an archived attendance record"""
+    try:
+        # Get the attendance record
+        attendance = Attendance.query.get_or_404(record_id)
+        
+        # Check if it's archived
+        if not attendance.is_archived:
+            return jsonify({
+                'success': False,
+                'message': 'Cannot delete non-archived records'
+            }), 400
+        
+        # Delete the record
+        db.session.delete(attendance)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Attendance record deleted permanently'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

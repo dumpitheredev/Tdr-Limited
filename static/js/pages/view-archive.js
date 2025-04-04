@@ -16,45 +16,111 @@ let restoredRecord = null;
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Archive page loaded');
     
-    // Check URL params for archive type
-    const params = new URLSearchParams(window.location.search);
-    const archiveType = params.get('type');
+    // Set up event listeners
+    setupEventListeners();
     
-    if (archiveType && ['class', 'student', 'company', 'instructor'].includes(archiveType)) {
-        currentState.folder = archiveType;
-        
-        // Set dropdown value
+    // Load initial counts separately from any specific archive data
+    fetchArchiveCounts();
+    
+    // Check URL parameters for folder selection
+    const urlParams = new URLSearchParams(window.location.search);
+    const folderParam = urlParams.get('type');
+    
+    // Update state properties instead of reassigning the object
+    currentState.folder = folderParam || '';
+    currentState.page = 1;
+    currentState.perPage = 5;
+    currentState.search = '';
+    
+    // If we have a folder parameter, update UI and load data
+    if (folderParam) {
+        // Update the dropdown to match the selected folder
         const archiveTypeFilter = document.getElementById('archiveTypeFilter');
         if (archiveTypeFilter) {
-            archiveTypeFilter.value = archiveType;
+            archiveTypeFilter.value = folderParam;
         }
         
-        // Show the correct archive table and load data
-        showArchiveTable(currentState.folder);
-        loadArchiveData(currentState.folder);
+        // Show the table for this folder
+        showArchiveTable(folderParam);
         
-        // Update UI to show selected archive type
-        updateDropdownAppearance(currentState.folder);
+        // Load data for this folder
+        loadArchiveData(folderParam);
         
         // Highlight the selected card
-        highlightSelectedCard(currentState.folder);
+        highlightSelectedCard(folderParam);
     } else {
-        // No type selected, show default message
+        // No folder parameter, show default view
         hideAllArchiveTables();
         document.getElementById('defaultMessage').classList.remove('d-none');
-        
-        // Reset dropdown to placeholder
-        const archiveTypeFilter = document.getElementById('archiveTypeFilter');
-        if (archiveTypeFilter) {
-            archiveTypeFilter.value = '';
-        }
-        
-        // Load initial counts
-        loadInitialCounts();
+    }
+
+    // Set up the restore confirmation button
+    const confirmRestoreBtn = document.getElementById('confirmRestoreBtn');
+    if (confirmRestoreBtn) {
+        confirmRestoreBtn.addEventListener('click', function() {
+            if (recordToRestore) {
+                performRestore(recordToRestore.id, recordToRestore.type);
+                
+                // Hide the modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('confirmRestoreModal'));
+                if (modal) modal.hide();
+            }
+        });
     }
     
-    // Setup event listeners
-    setupEventListeners();
+    // Set up the class navigation confirmation button
+    const goToClassBtn = document.getElementById('goToClassBtn');
+    if (goToClassBtn) {
+        goToClassBtn.addEventListener('click', function() {
+            if (restoredRecord) {
+                // Navigate to class management page
+                window.location.href = '/admin/class-management?restored=' + restoredRecord.id + '&t=' + Date.now();
+            }
+        });
+    }
+    
+    // Set up event listener for when class navigation modal is closed
+    const classNavigationModal = document.getElementById('classNavigationModal');
+    if (classNavigationModal) {
+        classNavigationModal.addEventListener('hidden.bs.modal', function() {
+            // Reload the current archive data when modal is closed without navigation
+            if (currentState.folder) {
+                loadArchiveData(currentState.folder);
+            }
+        });
+    }
+    
+    // Set up event listener for when restore confirmation modal is closed
+    const restoreConfirmModal = document.getElementById('confirmRestoreModal');
+    if (restoreConfirmModal) {
+        restoreConfirmModal.addEventListener('hidden.bs.modal', function() {
+            // Reset recordToRestore to prevent issues with stale data
+            recordToRestore = null;
+        });
+    }
+    
+    // Set up the delete confirmation button
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', function() {
+            if (recordToDelete) {
+                performDelete(recordToDelete.id, recordToDelete.type);
+                
+                // Hide the modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
+                if (modal) modal.hide();
+            }
+        });
+    }
+    
+    // Set up event listener for when delete confirmation modal is closed
+    const deleteConfirmModal = document.getElementById('confirmDeleteModal');
+    if (deleteConfirmModal) {
+        deleteConfirmModal.addEventListener('hidden.bs.modal', function() {
+            // Reset recordToDelete to prevent issues with stale data
+            recordToDelete = null;
+        });
+    }
 });
 
 function setupEventListeners() {
@@ -81,7 +147,7 @@ function setupEventListeners() {
                 
                 // Clear the selected highlight in UI
                 currentState.folder = '';
-                updateArchiveCounts({ student: 0, class: 0, company: 0, instructor: 0 });
+                updateArchiveCounts({ student: 0, class: 0, company: 0, instructor: 0, attendance: 0 });
                 loadInitialCounts();
             }
         });
@@ -125,7 +191,7 @@ function setupEventListeners() {
                     if (currentState.folder) {
                         // Reload current folder data
                         loadArchiveData(currentState.folder);
-    } else {
+                    } else {
                         // Show default message and load initial counts
                         hideAllArchiveTables();
                         document.getElementById('defaultMessage').classList.remove('d-none');
@@ -198,27 +264,48 @@ function hideAllArchiveTables() {
 }
 
 async function loadArchiveData(folder) {
-    try {
-        // Show loading state
-        const tbody = document.querySelector(`#${folder}ArchiveBody`);
-        if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div><span>Loading archives...</span></td></tr>';
-        }
-        
-        // Hide tables but keep selected one visible
-        document.querySelectorAll('.archive-table').forEach(table => {
-            if (table.id === `${folder}ArchiveTable`) {
+    const currentFolder = folder || currentState.folder;
+    
+    if (!currentFolder) {
+        // No folder selected, just show the default message
+        document.getElementById('defaultMessage').classList.remove('d-none');
+        return;
+    }
+    
+    // Always load all archive counts to keep stats consistent
+    fetchArchiveCounts();
+    
+    // Hide all tables and show loading state
+    hideAllArchiveTables();
+    document.getElementById('defaultMessage').classList.add('d-none');
+    
+    // Show the folder-specific table with loading state
+    const table = document.getElementById(`${currentFolder}ArchiveTable`);
+    if (table) {
                 table.classList.remove('d-none');
-            } else {
-                table.classList.add('d-none');
-            }
-        });
+    }
+    
+    // Update the title
+    document.getElementById('archiveTableTitle').textContent = 
+        currentFolder.charAt(0).toUpperCase() + currentFolder.slice(1) + ' Archive Records';
+    
+    // Get the appropriate tbody
+    const tbody = document.querySelector(`#${currentFolder}ArchiveBody`);
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-4">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    <span>Loading archives...</span>
+                </td>
+            </tr>
+        `;
+    }
+    
+    try {
+        // Build API URL
+        let url = `/api/archives/${currentFolder}`;
         
-        // Hide default message
-        document.getElementById('defaultMessage').classList.add('d-none');
-        
-        // Build URL with query parameters
-        let url = `/api/archives/${folder}`;
         const params = new URLSearchParams();
         
         if (currentState.search) {
@@ -234,18 +321,24 @@ async function loadArchiveData(folder) {
         
         // Fetch data from API
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch archive data: ${response.status}`);
+        
+        // Handle HTTP errors
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP error: ${response.status}` }));
+            throw new Error(errorData.error || `Failed to fetch archive data: ${response.status}`);
+        }
+        
         const data = await response.json();
 
-        // Update stats counts
-        updateArchiveCounts(data.counts || { student: 0, class: 0, company: 0, instructor: 0 });
+        // Note: We don't update counts here anymore since we're getting them separately
+        // to avoid the issue of counts being reset when viewing a specific archive type
 
         // Update table body
         if (tbody) {
             if (!data.records || data.records.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="bi bi-info-circle me-2"></i>No archived records found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="bi bi-info-circle me-2"></i>No archived records found</td></tr>';
             } else {
-                tbody.innerHTML = data.records.map(record => generateTableRow(record, folder)).join('');
+                tbody.innerHTML = data.records.map(record => generateTableRow(record, currentFolder)).join('');
             }
         }
 
@@ -254,16 +347,46 @@ async function loadArchiveData(folder) {
 
     } catch (error) {
         console.error('Error loading archive data:', error);
+        
         // Show error message in table
-        const tbody = document.querySelector(`#${folder}ArchiveBody`);
+        const tbody = document.querySelector(`#${currentFolder}ArchiveBody`);
+        const colspan = currentFolder === 'attendance' ? 7 : 6;
+        
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4"><i class="bi bi-exclamation-triangle me-2"></i>${error.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-center text-danger py-4"><i class="bi bi-exclamation-triangle me-2"></i>${error.message}</td></tr>`;
         }
+        
+        // Show toast with error message
+        showToast('Error', `Failed to load archive data: ${error.message}`, 'error');
         
         // Reset pagination if there's an error
         document.getElementById('pageInfo').textContent = '0-0 of 0';
         document.getElementById('prevPage').disabled = true;
         document.getElementById('nextPage').disabled = true;
+    }
+}
+
+// New function to fetch all archive counts separately
+async function fetchArchiveCounts() {
+    try {
+        const response = await fetch('/api/archives/counts');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch archive counts: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Update all counts with the fetched data
+        updateArchiveCounts(data.counts || {
+            student: 0,
+            class: 0,
+            company: 0,
+            instructor: 0,
+            attendance: 0
+        });
+    } catch (error) {
+        console.error('Error fetching archive counts:', error);
+        // Don't reset counts on error - keep the existing values
     }
 }
 
@@ -274,7 +397,8 @@ function updateArchiveCounts(counts) {
         'student': document.getElementById('studentCount'),
         'class': document.getElementById('classCount'),
         'company': document.getElementById('companyCount'),
-        'instructor': document.getElementById('instructorCount')
+        'instructor': document.getElementById('instructorCount'),
+        'attendance': document.getElementById('attendanceCount')
     };
     
     // Update count values with 0 or the actual count
@@ -291,7 +415,7 @@ function updateArchiveCounts(counts) {
         highlightSelectedCard(currentState.folder);
     } else {
         // Otherwise, remove highlight from all cards
-        const allCards = ['student', 'class', 'company', 'instructor'];
+        const allCards = ['student', 'class', 'company', 'instructor', 'attendance'];
         allCards.forEach(cardType => {
             const card = document.getElementById(`${cardType}ArchiveCard`);
             if (card) {
@@ -325,7 +449,7 @@ function switchArchiveType(type) {
 // Function to highlight the selected card
 function highlightSelectedCard(type) {
     // Remove highlight from all cards
-    const allCards = ['student', 'class', 'company', 'instructor'];
+    const allCards = ['student', 'class', 'company', 'instructor', 'attendance'];
     allCards.forEach(cardType => {
         const card = document.getElementById(`${cardType}ArchiveCard`);
         if (card) {
@@ -538,10 +662,63 @@ function generateTableRow(record, type) {
                         </div>
                     </td>
                 </tr>
+                `;
+        case 'attendance':
+            return `
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <img src="/static/images/${record.student_profile_img || 'profile.png'}" 
+                                 alt="Profile" 
+                                 class="rounded-circle me-2" 
+                                 width="32" 
+                                 height="32">
+                            <div>
+                                <div class="fw-semibold">${record.student_name || 'Unknown'}</div>
+                                <div class="small text-muted">${record.student_id || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${record.class_name || 'Unknown'}</td>
+                    <td>${record.date || 'Unknown'}</td>
+                    <td>
+                        <span class="badge ${getBadgeClassForStatus(record.status)}">${record.status || 'Unknown'}</span>
+                    </td>
+                    <td>${record.archive_date || 'Unknown'}</td>
+                    <td>
+                        <span class="badge bg-secondary-subtle text-secondary">${record.archive_reason || 'Archived'}</span>
+                    </td>
+                    <td class="text-end">
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button class="btn btn-link text-success p-0" onclick="restoreRecord('${record.id}', 'attendance')" title="Restore">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            <button class="btn btn-link text-danger p-0" onclick="deleteRecord('${record.id}', 'attendance')" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
             `;
         default:
             return `<tr><td colspan="6" class="text-center">Unsupported archive type: ${type}</td></tr>`;
-    }
+    }   
+}
+
+// Function to get badge class for status
+function getBadgeClassForStatus(status) {
+    if (!status) return 'bg-secondary-subtle text-secondary';
+    
+    switch (status.toLowerCase()) {
+        case 'present':
+            return 'bg-success-subtle text-success';
+        case 'absent':
+            return 'bg-danger-subtle text-danger';
+        case 'late':
+            return 'bg-warning-subtle text-warning';
+        default:
+            return 'bg-secondary-subtle text-secondary';
+    }   
 }
 
 // Add showToast function for consistent notifications
@@ -621,87 +798,6 @@ function showDeleteConfirmation(id, type) {
     const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
     modal.show();
 }
-
-// Initialize the modal confirm buttons once the DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Set up the restore confirmation button
-    const confirmRestoreBtn = document.getElementById('confirmRestoreBtn');
-    if (confirmRestoreBtn) {
-        confirmRestoreBtn.addEventListener('click', function() {
-            if (recordToRestore) {
-                performRestore(recordToRestore.id, recordToRestore.type);
-                
-                // Hide the modal
-                const modal = bootstrap.Modal.getInstance(document.getElementById('confirmRestoreModal'));
-                if (modal) modal.hide();
-            }
-        });
-    }
-    
-    // Set up the class navigation confirmation button
-    const goToClassBtn = document.getElementById('goToClassBtn');
-    if (goToClassBtn) {
-        goToClassBtn.addEventListener('click', function() {
-            if (restoredRecord) {
-                // Navigate to class management page
-                window.location.href = '/admin/class-management?restored=' + restoredRecord.id + '&t=' + Date.now();
-            }
-        });
-    }
-    
-    // Set up event listener for when class navigation modal is closed
-    const classNavigationModal = document.getElementById('classNavigationModal');
-    if (classNavigationModal) {
-        classNavigationModal.addEventListener('hidden.bs.modal', function() {
-            // Reload the current archive data when modal is closed without navigation
-            if (currentState.folder) {
-                loadArchiveData(currentState.folder);
-            }
-        });
-    }
-    
-    // Set up event listener for when restore confirmation modal is closed
-    const restoreConfirmModal = document.getElementById('confirmRestoreModal');
-    if (restoreConfirmModal) {
-        restoreConfirmModal.addEventListener('hidden.bs.modal', function() {
-            // Reset recordToRestore to prevent issues with stale data
-            recordToRestore = null;
-        });
-    }
-    
-    // Set up the delete confirmation button
-    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-    if (confirmDeleteBtn) {
-        confirmDeleteBtn.addEventListener('click', function() {
-            if (recordToDelete) {
-                performDelete(recordToDelete.id, recordToDelete.type);
-                
-                // Hide the modal
-                const modal = bootstrap.Modal.getInstance(document.getElementById('confirmDeleteModal'));
-                if (modal) modal.hide();
-            }
-        });
-    }
-    
-    // Set up event listener for when delete confirmation modal is closed
-    const deleteConfirmModal = document.getElementById('confirmDeleteModal');
-    if (deleteConfirmModal) {
-        deleteConfirmModal.addEventListener('hidden.bs.modal', function() {
-            // Reset recordToDelete to prevent issues with stale data
-            recordToDelete = null;
-        });
-    }
-});
-
-// Function exposed to onClick in HTML
-window.restoreRecord = function(id, type) {
-    showRestoreConfirmation(id, type);
-};
-
-// Function exposed to onClick in HTML
-window.deleteRecord = function(id, type) {
-    showDeleteConfirmation(id, type);
-};
 
 // Function that actually performs the restore
 async function performRestore(id, type) {
@@ -926,13 +1022,25 @@ async function loadInitialCounts() {
         if (!response.ok) throw new Error(`Failed to fetch archive counts: ${response.status}`);
         const data = await response.json();
 
-        // Update stats counts
-        updateArchiveCounts(data.counts || { student: 0, class: 0, company: 0, instructor: 0 });
+        // Update stats counts - ensure attendance is included
+        updateArchiveCounts(data.counts || { 
+            student: 0, 
+            class: 0, 
+            company: 0, 
+            instructor: 0, 
+            attendance: 0 
+        });
         
     } catch (error) {
         console.error('Error loading archive counts:', error);
-        // If there's an error, set all counts to 0
-        updateArchiveCounts({ student: 0, class: 0, company: 0, instructor: 0 });
+        // If there's an error, set all counts to 0 - include attendance
+        updateArchiveCounts({ 
+            student: 0, 
+            class: 0, 
+            company: 0, 
+            instructor: 0, 
+            attendance: 0 
+        });
     }
 }
 
@@ -953,8 +1061,14 @@ async function searchAllArchiveTypes(searchTerm) {
         
         // Initialize results object
         let resultsFound = false;
-        const archiveTypes = ['student', 'class', 'company', 'instructor'];
-        const resultCounts = {};
+        const archiveTypes = ['student', 'class', 'company', 'instructor', 'attendance'];
+        const resultCounts = {
+            student: 0,
+            class: 0,
+            company: 0,
+            instructor: 0,
+            attendance: 0
+        };
         
         // Search each archive type in parallel
         const searchPromises = archiveTypes.map(async (type) => {
@@ -987,7 +1101,7 @@ async function searchAllArchiveTypes(searchTerm) {
         });
         
         // Update the archive counts
-        updateArchiveCounts(resultCounts);
+        fetchArchiveCounts(); // Fetch actual counts instead of using search results
         
         if (totalResults === 0) {
             // No results found
@@ -1104,4 +1218,78 @@ function clearSearch() {
 
 // Expose the new helper functions to the window object
 window.clearSearch = clearSearch;
-window.selectArchiveType = selectArchiveType; 
+window.selectArchiveType = selectArchiveType;
+window.restoreRecord = function(id, type) {
+    showRestoreConfirmation(id, type);
+};
+window.deleteRecord = function(id, type) {
+    showDeleteConfirmation(id, type);
+};
+
+// Optimize the state update to prevent unnecessary reloads
+function updateState(newState) {
+    let shouldReload = false;
+    
+    // Only reload data if state actually changed
+    if (currentState.page !== newState.page ||
+        currentState.perPage !== newState.perPage ||
+        currentState.folder !== newState.folder ||
+        currentState.search !== newState.search) {
+        shouldReload = true;
+    }
+    
+    // Update state
+    Object.assign(currentState, newState);
+    
+    // Update URL parameters
+    updateURLParams();
+    
+    // Only reload if needed
+    if (shouldReload) {
+        loadArchiveData(currentState.folder);
+    }
+}
+
+// Function to update URL parameters based on current state
+function updateURLParams() {
+    const params = new URLSearchParams();
+    
+    if (currentState.folder) {
+        params.set('type', currentState.folder);
+    }
+    
+    if (currentState.search) {
+        params.set('search', currentState.search);
+    }
+    
+    if (currentState.page > 1) {
+        params.set('page', currentState.page.toString());
+    }
+    
+    // Update URL without reloading the page
+    const paramsString = params.toString();
+    const newURL = paramsString ? `${window.location.pathname}?${paramsString}` : window.location.pathname;
+    window.history.replaceState({}, '', newURL);
+}
+
+// Use a debounce function for search input to prevent excessive API calls
+const debounce = (func, wait) => {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+};
+
+// Optimize search handler with debounce
+const handleSearchInput = debounce(() => {
+    const searchQuery = document.getElementById('searchInput').value.trim();
+    updateState({ search: searchQuery, page: 1 });
+}, 300);
+
+// Add event listener using the debounced function
+document.getElementById('searchInput').addEventListener('input', handleSearchInput); 
