@@ -1,66 +1,156 @@
-// Initialize state
-let currentPageState = {
+/**
+ * User Management Module
+ * 
+ * This module handles all functionality for the user management page including:
+ * - Fetching and displaying users with pagination
+ * - Filtering by role, status and search
+ * - User actions (view, edit, archive)
+ * - Managing user statistics
+ */
+
+// ------------------- State Management -------------------
+let state = {
+    // Pagination
     page: 1,
     perPage: 5,
     totalItems: 0,
-    currentData: [],
+    
+    // Filters
     searchTerm: '',
-    roleFilter: '' // Add role filter state
+    roleFilter: '',
+    statusFilter: '',
+    
+    // Data
+    currentData: [],
+    
+    // Currently selected user
+    currentEditingUser: null
 };
 
-// Add these at the top with your other state
-let currentEditingUser = null;
+// ------------------- Core Functions -------------------
 
-// Load and initialize data
-document.addEventListener('DOMContentLoaded', async function() {
+/**
+ * Initializes the user management page
+ */
+async function initUserManagement() {
+    console.log('User management page loaded');
     try {
-        const response = await fetch('/api/users');
+        // Load initial user data
+        await loadUsers();
+        
+        // Set up event listeners
+        setupEventListeners();
+        
+        // Initial render
+        updateTable();
+        updateCardStatistics();
+        
+        console.log('User management initialized successfully');
+    } catch (error) {
+        console.error('Error initializing user management:', error);
+        showToast('Failed to initialize user management', 'error');
+    }
+}
+
+/**
+ * Load users from the API with optional filters
+ */
+async function loadUsers() {
+    try {
+        // Build query params for filters
+        const params = new URLSearchParams();
+        if (state.roleFilter) params.append('role', state.roleFilter);
+        if (state.statusFilter) params.append('status', state.statusFilter);
+        if (state.searchTerm) params.append('search', state.searchTerm);
+        
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        const response = await fetch(`/api/users${queryString}`);
+        
         if (!response.ok) throw new Error('Failed to fetch users');
+        
         const data = await response.json();
         
-        // Initialize data
-        currentPageState.currentData = Array.isArray(data) ? data : [];
-        currentPageState.totalItems = currentPageState.currentData.length;
+        // Normalize data format
+        state.currentData = Array.isArray(data) ? data.map(formatUserData) : [];
+        state.totalItems = state.currentData.length;
         
-        // Initial table render
-        updateTable();
-        
-        // Add search functionality
+        return state.currentData;
+    } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Failed to load users', 'error');
+        return [];
+    }
+}
+
+/**
+ * Format raw user data into a consistent structure
+ */
+function formatUserData(user) {
+    // Map lowercase role names to properly formatted role names
+    let formattedRole = user.role;
+    if (typeof formattedRole === 'string') {
+        const roleLower = formattedRole.toLowerCase();
+        if (roleLower === 'admin' || roleLower === 'administrator') {
+            formattedRole = 'Administrator';
+        } else if (roleLower === 'instructor') {
+            formattedRole = 'Instructor';
+        } else if (roleLower === 'student') {
+            formattedRole = 'Student';
+        }
+    }
+
+    return {
+        user_id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        name: `${user.first_name} ${user.last_name}`,
+        email: user.email,
+        role: formattedRole,
+        status: user.is_active ? 'Active' : 'Inactive',
+        profile_img: user.profile_img || 'profile.png'
+    };
+}
+
+/**
+ * Setup all event listeners for the page
+ */
+function setupEventListeners() {
+    // Search input
         const searchInput = document.getElementById('searchInput');
         if (searchInput) {
             searchInput.addEventListener('input', function() {
-                currentPageState.searchTerm = this.value;
-                currentPageState.page = 1;
-                updateTable();
-            });
-        }
+            state.searchTerm = this.value;
+            state.page = 1;
+            handleFiltersChanged();
+        });
+    }
 
-        // Add role filter functionality
+    // Role filter
         const roleFilter = document.getElementById('roleFilter');
         if (roleFilter) {
             roleFilter.addEventListener('change', function() {
-                currentPageState.roleFilter = this.value;
-                currentPageState.page = 1;
-                updateTable();
-            });
-        }
+            state.roleFilter = this.value;
+            state.page = 1;
+            handleFiltersChanged();
+        });
+    }
 
-        // Add rows per page functionality
+    // Rows per page
         const rowsPerPage = document.getElementById('rowsPerPage');
         if (rowsPerPage) {
             rowsPerPage.addEventListener('change', function() {
-                currentPageState.perPage = parseInt(this.value);
-                currentPageState.page = 1;
+            state.perPage = parseInt(this.value);
+            state.page = 1;
                 updateTable();
             });
         }
 
-        // Add pagination event listeners
+    // Pagination buttons
         const prevButton = document.getElementById('prevPage');
         if (prevButton) {
             prevButton.addEventListener('click', function() {
-                if (currentPageState.page > 1) {
-                    currentPageState.page--;
+            if (state.page > 1) {
+                state.page--;
                     updateTable();
                 }
             });
@@ -69,82 +159,169 @@ document.addEventListener('DOMContentLoaded', async function() {
         const nextButton = document.getElementById('nextPage');
         if (nextButton) {
             nextButton.addEventListener('click', function() {
-                const maxPage = Math.ceil(currentPageState.totalItems / currentPageState.perPage);
-                if (currentPageState.page < maxPage) {
-                    currentPageState.page++;
+            const maxPage = Math.ceil(state.totalItems / state.perPage);
+            if (state.page < maxPage) {
+                state.page++;
                     updateTable();
                 }
             });
         }
 
-    } catch (error) {
-        console.error('Error initializing user data:', error);
-    }
-});
+    // Set up delegation for user action buttons (edit, view, toggle status)
+    // Use document level delegation to catch all buttons regardless of container
+    document.addEventListener('click', function(event) {
+        // Handle toggle status buttons
+        const toggleButton = event.target.closest('.toggle-status-btn');
+        if (toggleButton) {
+            event.preventDefault();
+            const userId = toggleButton.getAttribute('data-user-id');
+            const isCurrentlyActive = toggleButton.getAttribute('data-is-active') === 'true';
+            
+            // Call status toggle function with the opposite of current status
+            saveUserStatus(userId, !isCurrentlyActive);
+            return;
+        }
+        
+        // Handle edit buttons
+        const editButton = event.target.closest('button[data-user-id]');
+        if (editButton && editButton.querySelector('.bi-pencil')) {
+            const userId = editButton.getAttribute('data-user-id');
+            handleEditUser(userId);
+            return;
+        }
+        
+        // Handle view buttons
+        const viewButton = event.target.closest('.view-user-btn');
+        if (viewButton) {
+            const userId = viewButton.getAttribute('data-user-id');
+            handleViewUser(userId);
+            return;
+        }
+        
+        // Handle delete buttons
+        const deleteButton = event.target.closest('.delete-user-btn');
+        if (deleteButton) {
+            const userId = deleteButton.getAttribute('data-user-id');
+            handleArchiveUser(userId);
+            return;
+        }
+        
+        // Handle save status button in edit modal
+        const saveStatusButton = event.target.closest('#saveUserStatusBtn');
+        if (saveStatusButton) {
+            handleSaveUserStatus();
+            return;
+        }
+    });
 
+    // Export button dynamically update href
+    updateExportButton();
+    
+    // Initialize tooltips
+    initializeTooltips();
+
+    // Set up the show/hide of the custom reason field when "other" is selected
+    const archiveReasonSelect = document.getElementById('archiveReason');
+    const customReasonContainer = document.getElementById('customReasonContainer');
+    
+    if (archiveReasonSelect && customReasonContainer) {
+        archiveReasonSelect.addEventListener('change', function() {
+            if (this.value === 'other') {
+                customReasonContainer.classList.remove('d-none');
+            } else {
+                customReasonContainer.classList.add('d-none');
+            }
+        });
+    }
+}
+
+/**
+ * Initialize Bootstrap tooltips
+ */
+function initializeTooltips() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
+/**
+ * Handle filters changed - reload data and update UI
+ */
+async function handleFiltersChanged() {
+    await loadUsers();
+    updateTable();
+    updateCardStatistics();
+    updateExportButton();
+}
+
+/**
+ * Update the export button's href based on current filters
+ */
+function updateExportButton() {
+    const exportBtn = document.getElementById('exportCSV');
+    if (exportBtn) {
+        const params = new URLSearchParams();
+        if (state.roleFilter) params.append('role', state.roleFilter);
+        if (state.statusFilter) params.append('status', state.statusFilter);
+        if (state.searchTerm) params.append('search', state.searchTerm);
+        
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        exportBtn.href = `/admin/export-users-csv${queryString}`;
+    }
+}
+
+// ------------------- UI Update Functions -------------------
+
+/**
+ * Update the user table with current data and filters
+ */
 function updateTable() {
     try {
-        // Get all data
-        let filteredData = [...currentPageState.currentData];
-
-        // Apply role filter
-        if (currentPageState.roleFilter) {
-            filteredData = filteredData.filter(user => 
-                user.role === currentPageState.roleFilter
-            );
-        }
-
-        // Apply search filter
-        if (currentPageState.searchTerm) {
-            const searchTerm = currentPageState.searchTerm.toLowerCase();
-            filteredData = filteredData.filter(user =>
-                (user.name?.toLowerCase() || '').includes(searchTerm) ||
-                (user.user_id?.toLowerCase() || '').includes(searchTerm) ||
-                (user.role?.toLowerCase() || '').includes(searchTerm)
-            );
-        }
-
-        // Update total items after filtering
-        currentPageState.totalItems = filteredData.length;
-
-        // Calculate pagination
-        const startIndex = (currentPageState.page - 1) * currentPageState.perPage;
-        const endIndex = Math.min(startIndex + currentPageState.perPage, filteredData.length);
-        const paginatedData = filteredData.slice(startIndex, endIndex);
+        // Apply pagination
+        const startIndex = (state.page - 1) * state.perPage;
+        const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
+        const paginatedData = state.currentData.slice(startIndex, endIndex);
 
         // Update table content
         const tbody = document.querySelector('tbody');
-        if (tbody) {
+        if (!tbody) return;
+        
             if (paginatedData.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="text-center">No users found</td>
-                    </tr>`;
+                    <td colspan="4" class="text-center py-5">
+                        <div class="text-muted">
+                            <i class="bi bi-inbox fs-2"></i>
+                            <p class="mt-2">No users found</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
             } else {
+            // Generate table rows
                 tbody.innerHTML = paginatedData.map(user => `
-                    <tr>
+                <tr data-user-role="${user.role}">
                         <td>
                             <div class="d-flex align-items-center">
-                                <img src="/static/images/${user.profile_img || 'default.png'}" 
-                                     alt="Profile" 
-                                     class="rounded-circle me-2" 
-                                     width="32" 
-                                     height="32">
+                            <img src="${user.profile_img ? `/static/images/${user.profile_img}` : '/static/images/profile.png'}" 
+                                class="rounded-circle me-3" 
+                                width="40" 
+                                height="40"
+                                alt="${user.name}">
                                 <div>
-                                    <div class="fw-semibold">${user.name}</div>
-                                    <div class="small text-muted">${user.user_id}</div>
+                                <div class="fw-medium">${user.name}</div>
+                                <div class="text-muted small">${user.user_id}</div>
                                 </div>
                             </div>
                         </td>
-                        <td>${user.role}</td>
-                        <td>
-                            <span class="badge ${user.status === 'Active' ? 
-                                'bg-success-subtle text-success' : 
-                                'bg-danger-subtle text-danger'}">
+                    <td class="align-middle">${user.role}</td>
+                    <td class="align-middle">
+                        <span class="badge ${user.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}">
                                 ${user.status}
                             </span>
                         </td>
-                        <td class="text-end">
+                    <td class="align-middle text-end">
                             <div class="d-flex gap-2 justify-content-end">
                                 <button class="btn btn-link p-0" onclick="handleUserAction('edit', '${user.user_id}')">
                                     <i class="bi bi-pencil" style="color: #191970;"></i>
@@ -152,566 +329,650 @@ function updateTable() {
                                 <button class="btn btn-link p-0" onclick="handleUserAction('view', '${user.user_id}')">
                                     <i class="bi bi-eye" style="color: #191970;"></i>
                                 </button>
-                                <button class="btn btn-link p-0">
+                            <button class="btn btn-link p-0" onclick="handleUserAction('archive', '${user.user_id}')">
                                     <i class="bi bi-archive" style="color: #191970;"></i>
                                 </button>
                             </div>
                         </td>
                     </tr>
                 `).join('');
-            }
         }
 
         // Update pagination info
         const paginationInfo = document.getElementById('paginationInfo');
         if (paginationInfo) {
-            paginationInfo.textContent = filteredData.length > 0 ? 
-                `${startIndex + 1}-${endIndex} of ${filteredData.length}` :
-                'No users found';
+            if (state.totalItems === 0) {
+                paginationInfo.textContent = '0 items';
+            } else {
+                paginationInfo.textContent = `${startIndex + 1}-${endIndex} of ${state.totalItems}`;
+            }
         }
 
-        // Update pagination buttons state
+        // Update pagination buttons
         const prevButton = document.getElementById('prevPage');
-        const nextButton = document.getElementById('nextPage');
-        if (prevButton) prevButton.disabled = currentPageState.page === 1;
-        if (nextButton) nextButton.disabled = endIndex >= filteredData.length;
+        if (prevButton) {
+            prevButton.disabled = state.page <= 1;
+        }
 
+        const nextButton = document.getElementById('nextPage');
+        if (nextButton) {
+            nextButton.disabled = endIndex >= state.totalItems;
+        }
     } catch (error) {
         console.error('Error updating table:', error);
     }
 }
 
-// Helper Functions
-function handleUserSubmit(formData) {
-    const newUserRow = createUserRow(formData);
-    table.addItem(newUserRow);
-    Notification.success('User created successfully');
-}
-
-function handleModalReset() {
-    const userIdField = document.getElementById('userIdField');
-    if (userIdField) {
-        userIdField.value = 'Auto-generated, please select a role';
-    }
-}
-
-function generateUserId(role) {
-    const prefix = {
-        'Administrator': 'bh',
-        'Instructor': 'ak',
-        'Student': 'st'
-    }[role];
-
-    return prefix + Array.from(
-        { length: 4 }, 
-        () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]
-    ).join('');
-}
-
-function createUserRow(data) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-        <td>
-            <div class="d-flex align-items-center">
-                <img src="/static/images/profile.png" 
-                     class="rounded-circle me-3" 
-                     width="40" 
-                     height="40"
-                     alt="${data.firstName} ${data.lastName}">
-                <div>
-                    <div class="fw-medium">${data.firstName} ${data.lastName}</div>
-                    <div class="text-muted small">${data.userId}</div>
-                </div>
-            </div>
-        </td>
-        <td class="align-middle">${data.role}</td>
-        <td class="align-middle">
-            <span class="badge bg-success-subtle">Active</span>
-        </td>
-        <td class="align-middle text-end">
-            <div class="d-flex gap-2 justify-content-end">
-                <button class="btn btn-link p-0" onclick="handleUserAction('edit', '${data.userId}')">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-link p-0" onclick="handleUserAction('view', '${data.userId}')">
-                    <i class="bi bi-eye"></i>
-                </button>
-                <button class="btn btn-link p-0 text-danger" onclick="handleUserAction('archive', '${data.userId}')">
-                    <i class="bi bi-archive"></i>
-                </button>
-            </div>
-        </td>
-    `;
-    return tr;
-}
-
-function downloadCSV(data, filename) {
-    if (data.length === 0) return;
-    
-    const headers = Object.keys(data[0]);
-    const csvContent = [
-        headers.join(','),
-        ...data.map(row => 
-            headers.map(header => 
-                `"${(row[header] || '').replace(/"/g, '""')}"`
-            ).join(',')
-        )
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-// Global function for row actions
-window.handleUserAction = async function(action, userId) {
-    switch(action) {
-        case 'edit':
-            try {
-                const response = await fetch(`/api/users/${userId}`);
-                if (!response.ok) throw new Error('Failed to fetch user details');
-                const userData = await response.json();
-                
-                currentEditingUser = userData;
-                
-                const statusSelect = document.getElementById('userStatusSelect');
-                if (statusSelect) {
-                    statusSelect.value = userData.status;
-                }
-                
-                const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
-                editModal.show();
-            } catch (error) {
-                console.error('Error editing user:', error);
-            }
-            break;
-            
-        case 'view':
-            try {
-                const response = await fetch(`/api/users/${userId}`);
-                if (!response.ok) throw new Error('Failed to fetch user details');
-                const userData = await response.json();
-                
-                // Show different modal based on user role
-                switch(userData.role.toLowerCase()) {
-                    case 'student':
-                        await showStudentModal(userData);
-                        break;
-                    case 'instructor':
-                        await showInstructorModal(userData);
-                        break;
-                    case 'admin':
-                        await showAdminModal(userData);
-                        break;
-                }
-            } catch (error) {
-                console.error('Error viewing user:', error);
-                showToast('Error', 'Failed to load user details', 'error');
-            }
-            break;
-    }
-};
-
-// Add save status function
-window.saveUserStatus = async function() {
-    if (!currentEditingUser) return;
-    
+/**
+ * Update card statistics based on filtered data
+ */
+function updateCardStatistics() {
     try {
-        const newStatus = document.getElementById('userStatusSelect').value;
+        // Calculate total counts
+        const totalUsers = state.currentData.length;
+        const activeUsers = state.currentData.filter(user => user.status === 'Active').length;
+        const inactiveUsers = totalUsers - activeUsers;
+
+        // Update DOM elements
+        document.getElementById('totalUsers').textContent = totalUsers;
+        document.getElementById('activeUsers').textContent = activeUsers;
+        document.getElementById('inactiveUsers').textContent = inactiveUsers;
         
-        const response = await fetch(`/api/users/${currentEditingUser.user_id}/status`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ status: newStatus })
-        });
-
-        if (!response.ok) throw new Error('Failed to update user status');
-
-        // Update local data
-        if (Array.isArray(currentPageState.currentData)) {
-            currentPageState.currentData = currentPageState.currentData.map(user => {
-                if (user.user_id === currentEditingUser.user_id) {
-                    return { ...user, status: newStatus };
-                }
-                return user;
-            });
-        }
-
-        // Close modal
-        const editModal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
-        if (editModal) {
-            editModal.hide();
-        }
-
-        // Update table
-        updateTable();
-
-        // Show success message
-        showToast('Success', 'User status updated successfully', 'success');
-
-    } catch (error) {
-        console.error('Error saving user status:', error);
-        showToast('Error', 'Failed to update user status', 'error');
-    }
-};
-
-function updateStats(stats) {
-    document.getElementById('totalUsers').textContent = stats.total_users;
-    document.getElementById('activeUsers').textContent = stats.active_users;
-    document.getElementById('inactiveUsers').textContent = stats.inactive_users;
-}
-
-// Add the showToast function
-function showToast(title, message, type = 'success') {
-    const toast = document.getElementById('statusToast');
-    const toastTitle = document.getElementById('toastTitle');
-    const toastMessage = document.getElementById('toastMessage');
-    const iconElement = toast.querySelector('.toast-header i');
-    
-    toastTitle.textContent = title;
-    toastMessage.textContent = message;
-    
-    // Update icon and color based on type
-    iconElement.className = type === 'success' 
-        ? 'bi bi-check-circle-fill text-success me-2'
-        : 'bi bi-exclamation-circle-fill text-danger me-2';
-    
-    const bsToast = new bootstrap.Toast(toast, {
-        delay: 3000
-    });
-    bsToast.show();
-}
-
-// Add toast HTML to your user management page
-const toastHTML = `
-<!-- Toast Notification -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div id="statusToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="toast-header">
-            <i class="bi bi-check-circle-fill text-success me-2"></i>
-            <strong class="me-auto" id="toastTitle">Success</strong>
-            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body" id="toastMessage">
-            Operation completed successfully
-        </div>
-    </div>
-</div>
-`;
-
-// Add toast to the document when loaded
-document.addEventListener('DOMContentLoaded', function() {
-    // Add toast container to body
-    document.body.insertAdjacentHTML('beforeend', toastHTML);
-    
-    // ... rest of your existing DOMContentLoaded code ...
-});
-
-async function showStudentModal(userData) {
-    try {
-        // Fetch additional student data
-        const studentResponse = await fetch(`/api/students/${userData.user_id}`);
-        if (!studentResponse.ok) throw new Error('Failed to fetch student details');
-        const studentData = await studentResponse.json();
-
-        // Update student modal elements
-        document.getElementById('studentImage').src = `/static/images/${userData.profile_img || 'default.png'}`;
-        document.getElementById('studentName').textContent = userData.name;
-        document.getElementById('studentId').textContent = userData.user_id;
-        document.getElementById('studentStatus').textContent = userData.status;
-        document.getElementById('studentCompany').textContent = studentData.company || 'N/A';
-        document.getElementById('studentGroup').textContent = studentData.group || 'N/A';
-
-        // Update status badge class
-        const statusBadge = document.getElementById('studentStatus');
-        statusBadge.className = `badge ${
-            userData.status === 'Active' ? 'bg-success' : 
-            userData.status === 'Inactive' ? 'bg-danger' : 
-            'bg-secondary'
-        }`;
-
-        // Update enrolled classes section
-        const enrolledClassesDiv = document.getElementById('enrolledClasses');
-        if (enrolledClassesDiv && studentData.enrolled_classes) {
-            const classesHtml = studentData.enrolled_classes.map(cls => `
-                <div class="mb-4">
-                    <h6 class="mb-1" style="color: #191970;">${cls.class_name}</h6>
-                    <div class="text-muted">${cls.schedule}</div>
-                    <div class="text-muted">Instructor: ${cls.instructor}</div>
-                </div>
-            `).join('');
-            
-            enrolledClassesDiv.innerHTML = classesHtml || '<p class="text-muted mb-0">No lecture details available</p>';
-        }
-
-        // Change header to "Lecture Details"
-        const studentHeader = document.querySelector('.student-header');
-        if (studentHeader) {
-            studentHeader.textContent = 'Lecture Details';
-        }
-
-        // Mock attendance data structure (similar to student-management.js)
-        const lectureData = studentData.enrolled_classes.map(cls => ({
-            name: cls.class_name,
-            time: cls.schedule,
-            attendance: [
-                { status: 'present', time: '9:00 AM' },
-                { status: 'late', time: '9:15 AM' },
-                { status: 'present', time: '9:00 AM' },
-                { status: 'absent', time: '-' },
-                { status: 'present', time: '9:00 AM' }
-            ]
-        }));
-
-        // Update the attendance table
-        const studentNameColumn = document.getElementById('studentNameColumn');
-        const attendanceBody = document.getElementById('attendanceTableBody');
-
-        // Clear existing content
-        studentNameColumn.innerHTML = '';
-        attendanceBody.innerHTML = '';
-
-        // Populate lecture details
-        lectureData.forEach(lecture => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td class="student-cell">
-                    <div class="student-name">${lecture.name}</div>
-                    <div class="student-info">${lecture.time}</div>
-                </td>
-            `;
-            studentNameColumn.appendChild(row);
-
-            // Create attendance row
-            const attendanceRow = document.createElement('tr');
-            lecture.attendance.forEach(day => {
-                let badgeClasses = '';
-                switch(day.status) {
-                    case 'present':
-                        badgeClasses = 'bg-success-subtle text-success';
-                        break;
-                    case 'absent':
-                        badgeClasses = 'bg-danger-subtle text-danger';
-                        break;
-                    case 'late':
-                        badgeClasses = 'bg-warning-subtle text-warning';
-                        break;
-                }
-                
-                attendanceRow.innerHTML += `
-                    <td class="attendance-cell">
-                        <div class="attendance-content">
-                            <span class="badge ${badgeClasses}" style="padding: 8px 16px; font-size: 14px;">
-                                ${day.status.charAt(0).toUpperCase() + day.status.slice(1)}
-                            </span>
-                            <span class="attendance-time">${day.time}</span>
-                        </div>
-                    </td>
-                `;
-            });
-            attendanceBody.appendChild(attendanceRow);
-        });
-
-        // Calculate and update statistics
-        const totalPresent = lectureData.reduce((sum, lecture) => 
-            sum + lecture.attendance.filter(day => 
-                day.status === 'present' || day.status === 'late'
-            ).length, 0);
-        
-        const totalAbsent = lectureData.reduce((sum, lecture) => 
-            sum + lecture.attendance.filter(day => day.status === 'absent').length, 0);
-        
-        const totalDays = lectureData.reduce((sum, lecture) => 
-            sum + lecture.attendance.length, 0);
-        
-        const attendancePercentage = ((totalPresent / totalDays) * 100).toFixed(2);
-
-        // Update statistics
-        document.getElementById('totalPresent').textContent = totalPresent;
-        document.getElementById('totalAbsence').textContent = totalAbsent;
-        document.getElementById('attendancePercentage').textContent = `${attendancePercentage}%`;
-
-        // Show the modal
-        const viewModal = new bootstrap.Modal(document.getElementById('viewStudentModal'));
-        viewModal.show();
-
-    } catch (error) {
-        console.error('Error showing student modal:', error);
-        console.error('Error details:', error.message);
-        showToast('Error', 'Failed to load student details', 'error');
-    }
-}
-
-async function showInstructorModal(userData) {
-    try {
-        // Fetch additional instructor data
-        const instructorResponse = await fetch(`/api/instructors/${userData.user_id}`);
-        if (!instructorResponse.ok) throw new Error('Failed to fetch instructor details');
-        const instructorData = await instructorResponse.json();
-
-        // Update instructor modal elements
-        document.getElementById('instructorImage').src = instructorData.profile_img || `/static/images/${userData.profile_img || 'default.png'}`;
-        document.getElementById('instructorName').textContent = instructorData.name;
-        document.getElementById('instructorId').textContent = instructorData.user_id;
-        document.getElementById('instructorStatus').textContent = instructorData.status;
-        document.getElementById('instructorDepartment').textContent = instructorData.department || 'N/A';
-        document.getElementById('totalClasses').textContent = instructorData.total_classes || 0;
-
-        // Update status badge class
-        const statusBadge = document.getElementById('instructorStatus');
-        statusBadge.className = `badge ${
-            instructorData.status === 'Active' ? 'bg-success' : 
-            instructorData.status === 'Inactive' ? 'bg-danger' : 
-            'bg-secondary'
-        }`;
-
-        // Update assigned classes - removed status badge
-        if (instructorData.assigned_classes) {
-            document.getElementById('assignedClasses').innerHTML = instructorData.assigned_classes
-                .map(cls => `
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-0">${cls.name}</h6>
-                                <small class="text-muted">${cls.schedule}</small>
-                            </div>
-                        </div>
-                    </div>
-                `).join('') || '<p class="text-muted mb-0">No classes assigned</p>';
-        }
-
-        // Show the modal
-        const viewModal = new bootstrap.Modal(document.getElementById('viewInstructorModal'));
-        viewModal.show();
-
-    } catch (error) {
-        console.error('Error showing instructor modal:', error);
-        showToast('Error', 'Failed to load instructor details', 'error');
-    }
-}
-
-async function showAdminModal(userData) {
-    try {
-        // For admin, we'll just use the basic user data since there's no additional endpoint
-        const modalContent = `
-            <div class="modal-header">
-                <h5 class="modal-title">Administrator Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="d-flex align-items-center gap-4 mb-4">
-                    <img src="/static/images/${userData.profile_img || 'default.png'}" 
-                         alt="Admin Photo" 
-                         class="rounded-circle"
-                         style="width: 120px; height: 120px; object-fit: cover;">
-                    <div>
-                        <div class="d-flex align-items-center gap-3 mb-2">
-                            <h2 class="mb-0 fw-semibold" style="color: #191970;">${userData.name}</h2>
-                            <span class="badge ${userData.status === 'Active' ? 'bg-success' : 'bg-danger'}">
-                                ${userData.status}
-                            </span>
-                        </div>
-                        <p class="mb-1">Admin ID: ${userData.user_id}</p>
-                        <p class="mb-0">Role: ${userData.role}</p>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        `;
-
-        // Update the admin modal content
-        const modalElement = document.getElementById('viewAdminModal');
-        modalElement.querySelector('.modal-content').innerHTML = modalContent;
-
-        // Show the modal
-        const viewModal = new bootstrap.Modal(modalElement);
-        viewModal.show();
-
-    } catch (error) {
-        console.error('Error showing admin modal:', error);
-        showToast('Error', 'Failed to load admin details', 'error');
-    }
-}
-
-// Add this function to calculate card statistics
-function updateCardStatistics(selectedRole = '') {
-    try {
-        // Get all users from the current data state
-        const allUsers = currentPageState.currentData;
-        
-        // Initialize counters
-        let totalUsers = 0;
-        let activeUsers = 0;
-        let inactiveUsers = 0;
-
-        if (selectedRole === '') {
-            // Count all users when no role is selected
-            totalUsers = allUsers.length;
-            activeUsers = allUsers.filter(user => user.status === 'Active').length;
-            inactiveUsers = allUsers.filter(user => user.status === 'Inactive').length;
-        } else {
-            // Count users of selected role only
-            const roleUsers = allUsers.filter(user => user.role === selectedRole);
-            totalUsers = roleUsers.length;
-            activeUsers = roleUsers.filter(user => user.status === 'Active').length;
-            inactiveUsers = roleUsers.filter(user => user.status === 'Inactive').length;
-        }
-
-        // Update the cards
-        const totalElement = document.getElementById('totalUsers');
-        const activeElement = document.getElementById('activeUsers');
-        const inactiveElement = document.getElementById('inactiveUsers');
-
-        if (totalElement) totalElement.textContent = totalUsers;
-        if (activeElement) activeElement.textContent = activeUsers;
-        if (inactiveElement) inactiveElement.textContent = inactiveUsers;
-
     } catch (error) {
         console.error('Error updating card statistics:', error);
     }
 }
 
-// Add event listener for role selector
-const roleFilter = document.getElementById('roleFilter');
-if (roleFilter) {
-    roleFilter.addEventListener('change', function(e) {
-        const selectedRole = e.target.value;
-        updateCardStatistics(selectedRole);
+/**
+ * Show a toast notification
+ * @param {string} message - The message to display
+ * @param {string} type - The toast type (success, error, info, warning)
+ */
+function showToast(message, type = 'success') {
+    // Get the existing toast element
+    const toast = document.getElementById('statusToast');
+    if (!toast) {
+        console.error('Toast element not found in the DOM');
+        return;
+    }
+    
+    // Set the toast title based on type
+    const toastTitle = document.getElementById('toastTitle');
+    if (toastTitle) {
+        // Convert type to title case
+        if (type === 'error') {
+            toastTitle.textContent = 'Error';
+            // Update icon to error
+            const iconElement = toastTitle.previousElementSibling;
+            if (iconElement && iconElement.classList.contains('bi')) {
+                iconElement.className = 'bi bi-exclamation-circle-fill text-danger me-2';
+            }
+        } else if (type === 'info') {
+            toastTitle.textContent = 'Information';
+            // Update icon to info
+            const iconElement = toastTitle.previousElementSibling;
+            if (iconElement && iconElement.classList.contains('bi')) {
+                iconElement.className = 'bi bi-info-circle-fill text-primary me-2';
+            }
+        } else if (type === 'warning') {
+            toastTitle.textContent = 'Warning';
+            // Update icon to warning
+            const iconElement = toastTitle.previousElementSibling;
+            if (iconElement && iconElement.classList.contains('bi')) {
+                iconElement.className = 'bi bi-exclamation-triangle-fill text-warning me-2';
+            }
+        } else {
+            toastTitle.textContent = 'Success';
+            // Update icon to success
+            const iconElement = toastTitle.previousElementSibling;
+            if (iconElement && iconElement.classList.contains('bi')) {
+                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
+            }
+        }
+    }
+    
+    // Set the toast message
+    const toastMessage = document.getElementById('toastMessage');
+    if (toastMessage) {
+        toastMessage.innerHTML = message;
+    }
+    
+    // Initialize and show Bootstrap toast
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+}
+
+// ------------------- User Action Handlers -------------------
+
+/**
+ * Handle user actions (edit, view, archive)
+ */
+function handleUserAction(action, userId) {
+    switch (action) {
+        case 'edit':
+            handleEditUser(userId);
+            break;
+        case 'view':
+            handleViewUser(userId);
+            break;
+        case 'archive':
+            handleArchiveUser(userId);
+            break;
+        default:
+            console.error('Unknown action:', action);
+    }
+}
+
+/**
+ * Handle edit user action
+ */
+async function handleEditUser(userId) {
+    console.log('Initiating edit for user:', userId);
+    try {
+        // Disable form while loading data
+        const form = document.getElementById('editUserForm');
+        if (form) {
+            form.classList.add('loading');
+        }
+        
+        // Get the user from current data first for immediate display
+        const cachedUser = state.currentData.find(user => user.user_id == userId);
+        if (cachedUser) {
+            console.log('Using cached user data for initial display');
+            state.currentEditingUser = cachedUser;
+            populateEditForm(cachedUser);
+        }
+        
+        // Then fetch fresh data from API
+        const response = await fetch(`/api/users/${userId}`);
+        
+        if (!response.ok) {
+            console.error('Failed to fetch user details from API');
+            throw new Error('Failed to fetch user details');
+        }
+        
+        const userData = await response.json();
+        console.log('User details fetched successfully from API');
+        
+        // Update with fresh data
+        state.currentEditingUser = userData;
+        populateEditForm(userData);
+        
+        // Show the modal
+        const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+        editModal.show();
+    } catch (error) {
+        console.error('Error in handleEditUser:', error);
+        showToast('Error loading user data', 'error');
+    } finally {
+        // Re-enable form
+        const form = document.getElementById('editUserForm');
+        if (form) {
+            form.classList.remove('loading');
+        }
+    }
+}
+
+/**
+ * Handle view user action
+ */
+async function handleViewUser(userId) {
+    console.log('Viewing user details for:', userId);
+    try {
+        // Try finding user in current data first
+        const cachedUser = state.currentData.find(user => user.user_id == userId);
+        
+        if (cachedUser) {
+            console.log('Using cached user data for view modal');
+            showUserModal(cachedUser);
+        }
+        
+        // Then fetch fresh data from API
+        const response = await fetch(`/api/users/${userId}`);
+        
+        if (!response.ok) {
+            console.error('Failed to fetch user details from API');
+            throw new Error('Failed to fetch user details');
+        }
+        
+        const userData = await response.json();
+        console.log('User details fetched successfully for view modal');
+        
+        // Update the modal with fresh data
+        showUserModal(userData);
+    } catch (error) {
+        console.error('Error in handleViewUser:', error);
+        showToast('Error loading user data', 'error');
+    }
+}
+
+/**
+ * Show the appropriate modal for a user
+ * @param {Object} userData - The user data
+ */
+function showUserModal(userData) {
+    // Determine user role
+    const roleLower = (userData.role || '').toLowerCase();
+    
+    // Calculate user type for modal function
+    let userType;
+    if (roleLower.includes('student')) {
+        userType = 'student';
+    } else if (roleLower.includes('instructor') || roleLower.includes('teacher')) {
+        userType = 'instructor';
+    } else if (roleLower.includes('admin') || roleLower.includes('administrator')) {
+        userType = 'admin';
+    } else {
+        console.error('Unknown user role:', userData.role);
+        showToast('Unknown user role', 'error');
+        return;
+    }
+    
+    // Prepare data for modal - ensure all required fields
+    const preparedData = {
+        ...userData,
+        id: userData.id || userData.user_id,
+        user_id: userData.user_id || userData.id,
+        user_type: userType,
+        is_active: userData.is_active || userData.status === 'Active'
+    };
+    
+    // Show appropriate modal based on user type
+    switch (userType) {
+        case 'student':
+            if (typeof window.showStudentModalView === 'function') {
+                window.showStudentModalView(preparedData);
+            } else {
+                showToast('Student modal view not available', 'error');
+            }
+            break;
+            
+                    case 'instructor':
+            if (typeof window.showInstructorModalView === 'function') {
+                window.showInstructorModalView(preparedData);
+            } else {
+                showToast('Instructor modal view not available', 'error');
+            }
+                        break;
+            
+                    case 'admin':
+            if (typeof window.showAdminModalView === 'function') {
+                window.showAdminModalView(preparedData);
+            } else {
+                showToast('Admin modal view not available', 'error');
+            }
+            break;
+            
+        default:
+            showToast('Unknown user type', 'error');
+    }
+}
+
+/**
+ * Handle archive user action
+ */
+function handleArchiveUser(userId) {
+    // Find user in current data
+    const user = state.currentData.find(user => user.user_id === userId);
+    
+    if (!user) {
+        showToast('Error', 'User not found', 'danger');
+        return;
+    }
+    
+    // Populate confirmation modal
+    document.getElementById('archiveUserId').value = userId;
+    document.getElementById('archiveUserName').textContent = user.name;
+    document.getElementById('archiveUserIdDisplay').textContent = userId;
+    
+    // Show confirmation modal
+    const confirmModal = new bootstrap.Modal(document.getElementById('confirmArchiveModal'));
+    confirmModal.show();
+}
+
+/**
+ * Archive a user (called from confirmation modal)
+ */
+function archiveUser() {
+    // Get the user ID from the modal
+    const modal = document.getElementById('confirmArchiveModal');
+    const userId = document.getElementById('archiveUserId').value;
+    const userName = document.getElementById('archiveUserName').textContent;
+    const userRole = document.querySelector('tr[data-user-id="' + userId + '"]')?.getAttribute('data-user-role') || 'User';
+    
+    // Get the archive reason
+    const reasonSelect = document.getElementById('archiveReason');
+    const customReasonInput = document.getElementById('customReason');
+    
+    if (!reasonSelect || !reasonSelect.value) {
+        showToast('Please select an archive reason', 'error');
+        return;
+    }
+    
+    // Determine the final reason text
+    let archiveReason = reasonSelect.value;
+    if (archiveReason === 'other' && customReasonInput) {
+        if (!customReasonInput.value.trim()) {
+            showToast('Please specify a custom reason', 'error');
+            return;
+        }
+        archiveReason = customReasonInput.value.trim();
+    }
+    
+    console.log('Archiving user:', { userId, userName, userRole, reason: archiveReason });
+    
+    // Disable archive button to prevent multiple submissions
+    const archiveBtn = document.getElementById('confirmArchiveBtn');
+    if (archiveBtn) {
+        archiveBtn.disabled = true;
+        archiveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+    }
+    
+    // Send the archive request
+    fetch(`/api/users/${userId}/archive`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            reason: archiveReason
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to archive user');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('User archived successfully:', data);
+        
+        // Hide the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('confirmArchiveModal'));
+        if (modal) modal.hide();
+        
+        // Show original success message
+        showToast(data.message || 'User has been archived successfully.', 'success');
+        
+        // Remove from the table
+        removeUserFromTable(userId);
+        
+        // Update statistics
+        loadUsers().then(() => {
+            updateCardStatistics();
+        });
+    })
+    .catch(error => {
+        console.error('Error archiving user:', error);
+        showToast('Failed to archive user', 'error');
+    })
+    .finally(() => {
+        // Re-enable archive button
+        if (archiveBtn) {
+            archiveBtn.disabled = false;
+            archiveBtn.innerHTML = 'Confirm Archive';
+        }
     });
 }
 
-// Initial card update when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    updateCardStatistics('');
-});
-
-// Update statistics when search is performed
-const searchInput = document.getElementById('searchInput');
-if (searchInput) {
-    searchInput.addEventListener('input', function() {
-        updateCardStatistics(roleFilter ? roleFilter.value : '');
-    });
+/**
+ * Update a user's status in the UI
+ * @param {string} userId - The user ID
+ * @param {boolean} isActive - Whether the user is active
+ */
+function updateUserStatusInUI(userId, isActive) {
+    // Find the toggle button for this user
+    const toggleButton = document.querySelector(`.toggle-status-btn[data-user-id="${userId}"]`);
+    if (!toggleButton) return;
+    
+    // Update the data attribute
+    toggleButton.setAttribute('data-is-active', isActive.toString());
+    
+    // Update tooltip
+    toggleButton.setAttribute('title', isActive ? 'Deactivate User' : 'Activate User');
+    
+    // Try to update Bootstrap tooltip if initialized
+    try {
+        const tooltip = bootstrap.Tooltip.getInstance(toggleButton);
+        if (tooltip) {
+            tooltip.dispose();
+        }
+        new bootstrap.Tooltip(toggleButton);
+    } catch (error) {
+        console.warn('Could not update tooltip:', error);
+    }
+    
+    // Update icon
+    const icon = toggleButton.querySelector('i');
+    if (icon) {
+        icon.className = `bi bi-toggle-${isActive ? 'on' : 'off'} ${isActive ? 'text-success' : 'text-muted'}`;
+    }
+    
+    // Update status badge in the row
+    const userRow = toggleButton.closest('tr');
+    if (userRow) {
+        const statusBadge = userRow.querySelector('.badge');
+        if (statusBadge) {
+            statusBadge.textContent = isActive ? 'Active' : 'Inactive';
+            statusBadge.className = `badge ${isActive ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}`;
+        }
+    }
 }
 
-// Update statistics when table content changes
-const observer = new MutationObserver(() => {
-    updateCardStatistics(roleFilter ? roleFilter.value : '');
-});
+// Function to save user status (active/inactive)
+async function saveUserStatus(userId, isActive) {
+    try {
+        // Validate userId more strictly
+        if (!userId || userId === 'undefined' || userId === undefined) {
+            console.error('Invalid user ID:', userId);
+            showToast('Error: Invalid user ID. Please try again or reload the page.', 'error');
+            return;
+        }
+        
+        // Ensure isActive is a boolean
+        isActive = Boolean(isActive === true || isActive === 'true');
+        const statusValue = isActive ? 'Active' : 'Inactive';
+        
+        // Show loading toast
+        showToast('Updating user status...', 'info');
+        
+        // Make API call to update status
+        const response = await fetch(`/api/users/${userId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                status: statusValue,
+                is_active: isActive
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        // Find user in current data and update
+        const userIndex = state.currentData.findIndex(user => 
+            user.user_id === userId || user.id === userId
+        );
+        
+        if (userIndex >= 0) {
+            state.currentData[userIndex].status = statusValue;
+        }
+        
+        // Update UI directly for better performance
+        updateUserStatusInUI(userId, isActive);
 
-// Start observing the table for changes
-const userTable = document.getElementById('userTable');
-if (userTable) {
-    observer.observe(userTable, { 
-        childList: true, 
-        subtree: true 
-    });
+        // Update statistics
+        updateCardStatistics();
+
+        // Refresh the table to ensure UI is consistent
+        updateTable();
+
+        // Show success message
+        showToast(`User status updated to ${statusValue}`, 'success');
+        return result;
+    } catch (error) {
+        console.error('Error updating user status:', error);
+        showToast('Failed to update user status: ' + (error.message || 'Unknown error'), 'error');
+        throw error;
+    }
+}
+
+// Make functions globally available
+window.handleUserAction = handleUserAction;
+window.archiveUser = archiveUser;
+window.saveUserStatus = saveUserStatus;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initUserManagement);
+
+/**
+ * Extract user data from the table row
+ * @param {string} userId - The user ID
+ * @param {string} userType - The user type (student, instructor, admin)
+ * @returns {Object|null} - The user data object or null if not found
+ */
+function getUserDataFromRow(userId, userType) {
+    // Find the table row containing the user data
+    const userRow = document.querySelector(`tr[data-user-id="${userId}"]`);
+    if (!userRow) return null;
+    
+    // Try to find the user in state first (most efficient)
+    const userInState = state.currentData.find(u => u.user_id === userId);
+    if (userInState) {
+        // Add any missing properties for modal display
+        return {
+            ...userInState,
+            user_type: userType,
+            // Make sure these properties are defined
+            id: userInState.id || userId,
+            user_id: userId,
+            // Extract additional data from data attributes
+            enrollments: getAttributeAsJson(userRow, 'data-enrollments', []),
+            attendance: getAttributeAsJson(userRow, 'data-attendance', {present: 0, absent: 0}),
+            company: getAttributeAsJson(userRow, 'data-company', null),
+            classes_taught: getAttributeAsJson(userRow, 'data-classes', []),
+            permissions: getAttributeAsJson(userRow, 'data-permissions', [])
+        };
+    }
+    
+    // Fallback to extracting everything from the row
+    const userData = {
+        id: userId,
+        user_id: userId,
+        user_type: userType.toLowerCase(),
+        is_active: userRow.querySelector('.user-status')?.textContent.trim() === 'Active'
+    };
+    
+    // Add name
+    const nameCell = userRow.querySelector('.user-name');
+    if (nameCell) {
+        // Try to extract first and last name
+        const fullName = nameCell.textContent.trim();
+        const nameParts = fullName.split(' ');
+        
+        if (nameParts.length >= 2) {
+            userData.first_name = nameParts[0];
+            userData.last_name = nameParts.slice(1).join(' ');
+        }
+        
+        userData.name = fullName;
+    }
+    
+    // Add email
+    const emailCell = userRow.querySelector('.user-email');
+    if (emailCell) {
+        userData.email = emailCell.textContent.trim();
+    }
+    
+    // Add profile image
+    const imgElement = userRow.querySelector('.user-avatar img');
+    if (imgElement) {
+        userData.profile_img = imgElement.getAttribute('src');
+    }
+    
+    // Add data attributes
+    userData.enrollments = getAttributeAsJson(userRow, 'data-enrollments', []);
+    userData.attendance = getAttributeAsJson(userRow, 'data-attendance', {present: 0, absent: 0});
+    userData.company = getAttributeAsJson(userRow, 'data-company', null);
+    userData.classes_taught = getAttributeAsJson(userRow, 'data-classes', []);
+    userData.permissions = getAttributeAsJson(userRow, 'data-permissions', []);
+    
+    return userData;
+}
+
+/**
+ * Helper function to get a data attribute as JSON
+ * @param {HTMLElement} element - The element with the attribute
+ * @param {string} attributeName - The attribute name
+ * @param {any} defaultValue - Default value if attribute is missing or invalid
+ * @returns {any} - The parsed JSON value or default value
+ */
+function getAttributeAsJson(element, attributeName, defaultValue) {
+    if (!element) return defaultValue;
+    
+    const attrValue = element.getAttribute(attributeName);
+    if (!attrValue) return defaultValue;
+    
+    try {
+        return JSON.parse(attrValue);
+    } catch (e) {
+        console.warn(`Error parsing ${attributeName}:`, e);
+        return defaultValue;
+    }
+}
+
+/**
+ * Handle the save user status button click from the edit modal
+ */
+function handleSaveUserStatus() {
+    try {
+        // Get the current editing user from state
+        if (!state.currentEditingUser || !state.currentEditingUser.id) {
+            showToast('Error: User data not found', 'error');
+            return;
+        }
+        
+        const userId = state.currentEditingUser.id;
+        const newStatus = document.getElementById('userStatusSelect').value;
+        const isActive = newStatus === 'Active';
+        
+        // Save the user status
+        saveUserStatus(userId, isActive).then(() => {
+            // Close the modal after successful save
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+            if (modal) {
+                modal.hide();
+            }
+        });
+    } catch (error) {
+        console.error('Error handling save user status:', error);
+        showToast('Failed to save user status', 'error');
+    }
+}
+
+/**
+ * Remove a user from the table after archiving
+ * @param {string} userId - The ID of the user to remove
+ */
+function removeUserFromTable(userId) {
+    // Find the user in the current data and remove it
+    const userIndex = state.currentData.findIndex(user => user.user_id === userId);
+    if (userIndex !== -1) {
+        state.currentData.splice(userIndex, 1);
+        state.totalItems--;
+        
+        // Update the table to reflect the change
+        updateTable();
+    }
+    
+    // Also try to remove the row directly from the DOM for immediate feedback
+    const userRow = document.querySelector(`tr[data-user-id="${userId}"]`);
+    if (userRow) {
+        userRow.remove();
+    }
 }
