@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, make_response, render_template, current_app
+from flask import Blueprint, jsonify, request, make_response, render_template, current_app, Response
 from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Company, Attendance
 from datetime import datetime, date, timedelta
@@ -12,9 +12,31 @@ import uuid
 import math
 import os
 import re
+import string
+import random
+from functools import wraps
 
 # Create API blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+# Role-based access control decorators
+def admin_required(f):
+    """Decorator to check if user is an admin"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role.lower() != 'admin':
+            return jsonify({'error': 'Administrator access required'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_or_instructor_required(f):
+    """Decorator to check if user is an admin or instructor"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role.lower() not in ['admin', 'instructor']:
+            return jsonify({'error': 'Administrator or instructor access required'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Helper function to safely map company attributes
 def map_company_to_dict(company):
@@ -47,7 +69,7 @@ def get_users():
     search = request.args.get('search', '')
     
     # Build query
-    query = User.query
+    query = User.query.filter_by(is_archived=False)  # Exclude archived users
     
     if role_filter:
         query = query.filter(User.role == role_filter)
@@ -84,45 +106,159 @@ def get_users():
 @login_required
 def get_user(user_id):
     """API endpoint to get a specific user by ID"""
-    user = User.query.get_or_404(user_id)
-    
-    result = {
-        'id': user.id,
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'email': user.email,
-        'role': user.role,
-        'is_active': user.is_active,
-        'profile_img': user.profile_img
-    }
-    
-    # If user is a student, include additional information
-    if user.role == 'Student':
-        # Get company info
-        company_name = "Not Assigned"
-        if user.company_id:
-            company = Company.query.get(user.company_id)
-            if company:
-                company_name = company.name
+    try:
+        # Get the user with basic info
+        user = User.query.get_or_404(user_id)
         
-        result['student_info'] = {
-            'company': company_name,
-            'company_id': user.company_id,
-            'enrolled_classes': []
+        # Build base result with common fields
+        result = {
+            'id': user.id,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'email': user.email,
+            'role': user.role,
+            'is_active': user.is_active,
+            'status': 'Active' if user.is_active else 'Inactive',
+            'profile_img': user.profile_img
         }
         
-        # Get enrolled classes
-        enrollments = Enrollment.query.filter_by(student_id=user.id).all()
-        for enrollment in enrollments:
+        # Add role-specific data based on user type
+        if user.role and user.role.lower() == 'student':
+            # Get student enrollments and related data
+            result.update(get_student_data(user))
+        elif user.role and user.role.lower() == 'instructor':
+            result.update(get_instructor_data(user))
+        elif user.role and ('admin' in user.role.lower() or 'administrator' in user.role.lower()):
+            result.update(get_admin_data(user))
+        
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        print(f"Error in get_user: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+def get_student_data(user):
+    """Get student-specific data for the student view modal"""
+    # Get company info
+    company_name = "Not Assigned"
+    company_data = None
+    if hasattr(user, 'company_id') and user.company_id:
+        company = Company.query.get(user.company_id)
+        if company:
+            company_name = company.name
+            company_data = {
+                'id': company.id,
+                'name': company.name,
+                'contact': company.contact,
+                'email': company.email
+            }
+
+    # Get enrollments
+    enrollments = []
+    active_enrollments = []
+    enrollment_count = 0
+
+    try:
+        enrollment_records = Enrollment.query.filter_by(student_id=user.id).all()
+        enrollment_count = len(enrollment_records)
+
+        for enrollment in enrollment_records:
             class_obj = Class.query.get(enrollment.class_id)
-            if class_obj:
-                result['student_info']['enrolled_classes'].append({
-                    'class_id': class_obj.id,
-                    'name': class_obj.name,
-                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}"
-                })
+            if not class_obj:
+                continue
+
+            # Get instructor name for class
+            instructor_name = "Not Assigned"
+            if hasattr(class_obj, 'instructor_id') and class_obj.instructor_id:
+                instructor = User.query.get(class_obj.instructor_id)
+                if instructor:
+                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
+
+            enrollment_data = {
+                'id': enrollment.id,
+                'class_id': class_obj.id,
+                'class_name': class_obj.name,
+                'status': enrollment.status,
+                'enrollment_date': enrollment.enrollment_date.strftime('%Y-%m-%d') if enrollment.enrollment_date else None,
+                'instructor': instructor_name,
+                'day': class_obj.day_of_week,
+                'time': f"{class_obj.start_time.strftime('%H:%M') if class_obj.start_time else ''} - {class_obj.end_time.strftime('%H:%M') if class_obj.end_time else ''}"
+            }
+
+            enrollments.append(enrollment_data)
+            if enrollment.status == 'Active':
+                active_enrollments.append(enrollment_data)
+    except Exception as e:
+        print(f"Error getting student enrollments: {str(e)}")
+
+    return {
+        'company': company_name,
+        'company_data': company_data,
+        'enrollments': enrollments,
+        'active_enrollments': active_enrollments,
+        'enrollment_count': enrollment_count
+    }
+
+def get_instructor_data(user):
+    """Get instructor-specific data for the instructor view modal"""
+    # Get instructor department
+    department = user.department if hasattr(user, 'department') else 'N/A'
     
-    return jsonify(result)
+    # Get all classes taught by this instructor
+    classes_taught = []
+    class_records = Class.query.filter_by(instructor_id=user.id).all()
+    
+    for class_obj in class_records:
+        try:
+            # Count enrolled students
+            enrolled_count = Enrollment.query.filter_by(class_id=class_obj.id).count()
+            
+            # Class location not in schema
+            class_location = "Not specified"
+            
+            classes_taught.append({
+                'id': class_obj.id,
+                    'name': class_obj.name,
+                'day_of_week': class_obj.day_of_week,
+                'day': class_obj.day_of_week,
+                'start_time': class_obj.start_time.strftime('%H:%M') if class_obj.start_time else None,
+                'end_time': class_obj.end_time.strftime('%H:%M') if class_obj.end_time else None,
+                'time': f"{class_obj.start_time.strftime('%H:%M') if class_obj.start_time else ''} - {class_obj.end_time.strftime('%H:%M') if class_obj.end_time else ''}",
+                'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M') if class_obj.start_time else ''} - {class_obj.end_time.strftime('%H:%M') if class_obj.end_time else ''}",
+                'location': class_location,
+                'enrolled_count': enrolled_count,
+                'student_count': enrolled_count,
+                'is_active': class_obj.is_active
+            })
+        except Exception as e:
+            print(f"Error processing class {class_obj.id}: {str(e)}")
+            continue
+    
+    return {
+        'department': department,
+        'classes_taught': classes_taught,
+        'classes': classes_taught,  # Alias for compatibility
+        'total_classes': len(classes_taught)
+    }
+
+def get_admin_data(user):
+    """Get admin-specific data for the admin view modal"""
+    # Define standard permissions for an admin
+    permissions = [
+        {'name': 'user_management', 'description': 'Can view, add, edit, and delete user accounts'},
+        {'name': 'class_management', 'description': 'Can create, edit, and manage class schedules'},
+        {'name': 'enrollment_management', 'description': 'Can manage student enrollments in classes'},
+        {'name': 'attendance_tracking', 'description': 'Can record and edit attendance records'},
+        {'name': 'report_generation', 'description': 'Can generate and view system reports'},
+        {'name': 'system_settings', 'description': 'Can configure system-wide settings'}
+    ]
+    
+    return {
+        'admin_role': 'admin',
+        'permissions': permissions,
+        'access_roles': permissions  # Alias for compatibility
+    }
 
 @api_bp.route('/students', methods=['GET'])
 @login_required
@@ -575,6 +711,14 @@ def update_company_direct(company_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
+        # Get the company first to check current status
+        company = Company.query.get(company_id)
+        if not company:
+            return jsonify({'error': 'Company not found'}), 404
+            
+        # Check if we're archiving the company (changing status to Inactive)
+        is_archiving = 'status' in data and data['status'] == 'Inactive' and company.status != 'Inactive'
+        
         # Prepare update fields
         update_fields = []
         params = {"company_id": company_id}
@@ -598,15 +742,48 @@ def update_company_direct(company_id):
         # Add updated_at timestamp
         update_fields.append("updated_at = NOW()")
         
+        # If archiving, add archive information
+        if is_archiving and 'archiveNote' in data and data['archiveNote']:
+            # Format archive note with consistent pattern
+            archive_timestamp = datetime.now().strftime('%Y-%m-%d')
+            reason = data['archiveNote']
+            admin_name = f"{current_user.first_name} {current_user.last_name}"
+            
+            # The main reason that will be shown
+            archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {reason}"
+            
+            # Add admin name in a standardized format that the UI can parse
+            archive_note += f"\nArchived by: {admin_name}"
+            
+            # Update notes field with the archive note
+            if hasattr(company, 'notes') and company.notes:
+                company.notes += f"\n\n{archive_note}"
+            else:
+                company.notes = archive_note
+                
+            # Set archive date if the field exists
+            try:
+                if hasattr(company, 'archive_date'):
+                    company.archive_date = datetime.now().date()
+            except Exception as e:
+                print(f"Warning: Could not set archive_date: {str(e)}")
+        
         # Build and execute update query
         if update_fields:
             query = f"UPDATE company SET {', '.join(update_fields)} WHERE id = :company_id"
             db.session.execute(text(query), params)
+            
+            # If we're also updating notes for archiving, commit all changes
             db.session.commit()
+            
+            # Add a success message
+            message = 'Company updated successfully'
+            if is_archiving:
+                message = 'Company archived successfully'
             
             return jsonify({
                 'success': True,
-                'message': 'Company updated successfully'
+                'message': message
             })
         else:
             return jsonify({
@@ -619,152 +796,65 @@ def update_company_direct(company_id):
         print(f"Error updating company: {str(e)}")
         return jsonify({'error': f'Failed to update company: {str(e)}'}), 500
 
-@api_bp.route('/classes', methods=['GET', 'POST'])
+@api_bp.route('/classes', methods=['GET'])
 @login_required
 def get_classes():
-    """API endpoint to get all classes with optional filtering or create a new class"""
-    # Handle POST request to create a new class
-    if request.method == 'POST':
-        # Get JSON data from request
-        data = request.json
-        
-        # Debug: Log received data
-        print("Received class creation data:", data)
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        # Validate required fields
-        required_fields = ['name', 'day', 'time', 'year']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'error': f'Missing required field: {field}'}), 400
-                
-        print("Instructor ID:", data.get('instructor_id'))
-        
-        try:
-            # Generate a unique class ID
-            import string
-            import random
-            class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
-            
-            # Check if the ID already exists, if so, generate a new one
-            while Class.query.get(class_id) is not None:
-                class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
-            
-            # Parse time format "HH:MM - HH:MM"
-            time_parts = data['time'].split(' - ')
-            if len(time_parts) != 2:
-                return jsonify({'error': 'Invalid time format. Expected format: "HH:MM - HH:MM"'}), 400
-            
-            start_time = datetime.strptime(time_parts[0], '%H:%M').time()
-            end_time = datetime.strptime(time_parts[1], '%H:%M').time()
-            
-            # Create new class
-            new_class = Class(
-                id=class_id,
-                name=data['name'],
-                description=data.get('description'),
-                day_of_week=data['day'],
-                term=data['year'],
-                instructor_id=data.get('instructor_id') if data.get('instructor_id') else None,
-                start_time=start_time,
-                end_time=end_time,
-                is_active=True,
-                created_at=datetime.now(),
-                updated_at=datetime.now()
-            )
-            
-            # Add to database
-            db.session.add(new_class)
-            db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Class created successfully',
-                'class_id': class_id
-            }), 201
-            
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'error': f'Failed to create class: {str(e)}'}), 500
-    
-    # Handle GET request
+    """
+    Get a list of all classes
+    """
     try:
-        # Get filter parameters
-        status_filter = request.args.get('status', '')
-        instructor_id = request.args.get('instructor_id', '')
+        # Get query parameters
+        is_active = request.args.get('is_active')
+        instructor_id = request.args.get('instructor_id')
         
-        # Check if we're looking for a recently restored class
-        restored_id = request.args.get('restored', '')
-        if restored_id:
-            print(f"Looking for recently restored class with ID: {restored_id}")
-            # Check if this class exists and its status
-            restored_class = Class.query.get(restored_id)
-            if restored_class:
-                print(f"Found restored class: {restored_class.name}, active: {restored_class.is_active}")
-                print(f"Description: {restored_class.description}")
+        # Start the query
+        query = db.session.query(Class)
         
-        # Build query
-        query = Class.query
+        # Apply filters
+        if is_active is not None:
+            is_active_bool = is_active.lower() == 'true'
+            query = query.filter(Class.is_active == is_active_bool)
         
-        # Apply status filter if provided
-        if status_filter:
-            is_active = status_filter.lower() == 'active'
-            query = query.filter(Class.is_active == is_active)
-        else:
-            # Default: Only show active classes and restored inactive classes (without ARCHIVE NOTE)
-            query = query.filter(
-                (Class.is_active == True) |  # Active classes
-                (
-                    (Class.is_active == False) &  # Inactive classes
-                    (
-                        (Class.description.is_(None)) |  # with no description
-                        (Class.description == '') |      # or empty description
-                        (~Class.description.like('%ARCHIVE NOTE%'))  # or without ARCHIVE NOTE
-                    )
-                )
-            )
-        
-        # Apply instructor filter if provided
         if instructor_id:
             query = query.filter(Class.instructor_id == instructor_id)
         
-        # Execute query
-        classes = query.all()
-        print(f"Found {len(classes)} classes in get_classes API")
+        # Restrict instructors to only see their classes
+        if current_user.role == 'Instructor':
+            query = query.filter(Class.instructor_id == current_user.id)
         
-        # Debug first 5 classes
-        for i, class_obj in enumerate(classes[:5]):
-            print(f"Class {i+1}: ID={class_obj.id}, Name={class_obj.name}, Active={class_obj.is_active}")
+        # Execute query
+        classes = query.order_by(Class.name).all()
+        
+        # Format results
+        class_list = []
+        for cls in classes:
+            instructor = User.query.get(cls.instructor_id) if cls.instructor_id else None
             
-        # Format response
-        result = []
-        for class_obj in classes:
-            # Get instructor info
-            instructor_name = "Not Assigned"
-            if class_obj.instructor_id:
-                instructor = User.query.get(class_obj.instructor_id)
-                if instructor:
-                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
-            
-            # Format class data
-            result.append({
-                'class_id': class_obj.id,
-                'name': class_obj.name,
-                'day': class_obj.day_of_week,
-                'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
-                'year': class_obj.term,
-                'instructor': instructor_name,
-                'status': 'Active' if class_obj.is_active else 'Inactive'
+            class_list.append({
+                'id': cls.id,
+                'name': cls.name,
+                'description': cls.description,
+                'term': cls.term,
+                'instructorId': cls.instructor_id,
+                'instructorName': f"{instructor.first_name} {instructor.last_name}" if instructor else "Not Assigned",
+                'dayOfWeek': cls.day_of_week,
+                'startTime': cls.start_time.strftime('%H:%M') if cls.start_time else None,
+                'endTime': cls.end_time.strftime('%H:%M') if cls.end_time else None,
+                'isActive': cls.is_active
             })
         
-        return jsonify(result)
+        return jsonify({
+            'classes': class_list,
+            'total': len(class_list)
+        })
+    
     except Exception as e:
-        print(f"Error in get_classes API: {str(e)}")
         import traceback
-        print(traceback.format_exc())
-        return jsonify([]), 200  # Return empty array to prevent UI errors
+        traceback.print_exc()
+        return jsonify({
+            'error': f'Failed to fetch classes: {str(e)}',
+            'classes': []
+        }), 500
 
 @api_bp.route('/classes/<string:class_id>', methods=['GET'])
 @login_required
@@ -1191,14 +1281,32 @@ def update_class_status(class_id):
         
         # If marking as inactive and archive note is provided, this is a true archive operation
         if new_status == 'Inactive' and 'archiveNote' in data and data['archiveNote']:
-            # Add to the description field
+            # Format archive note with consistent pattern
             archive_timestamp = datetime.now().strftime('%Y-%m-%d')
+            reason = data['archiveNote']
+            admin_name = f"{current_user.first_name} {current_user.last_name}"
+            
+            # The main reason that will be shown
+            archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {reason}"
+            
+            # Add admin name in a standardized format that the UI can parse
+            archive_note += f"\nArchived by: {admin_name}"
+            
+            # Add to the description field
             if class_obj.description:
-                class_obj.description += f"\n\nARCHIVE NOTE ({archive_timestamp}): {data['archiveNote']}"
+                class_obj.description += f"\n\n{archive_note}"
             else:
-                class_obj.description = f"ARCHIVE NOTE ({archive_timestamp}): {data['archiveNote']}"
+                class_obj.description = archive_note
                 
-            # This is a proper archive, not just an inactive status change
+            # Mark as archived
+            class_obj.is_archived = True
+            
+            # Set archive date if the field exists
+            try:
+                if hasattr(class_obj, 'archive_date'):
+                    class_obj.archive_date = datetime.now().date()
+            except Exception as e:
+                print(f"Warning: Could not set archive_date: {str(e)}")
             
         # Save changes to database
         db.session.commit()
@@ -1208,7 +1316,6 @@ def update_class_status(class_id):
             'message': f'Class status updated to {new_status}',
             'status': new_status
         })
-        
     except Exception as e:
         db.session.rollback()
         print(f"Error updating class status: {str(e)}")
@@ -1217,158 +1324,334 @@ def update_class_status(class_id):
 @api_bp.route('/archives/<string:folder>', methods=['GET'])
 @login_required
 def get_archives(folder):
-    """API endpoint to get archived records of a specific type (class, student, etc.)"""
+    """Get archives based on folder"""
     try:
-        search_term = request.args.get('search', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-        result = {'records': [], 'counts': {}}
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 5))
+        search = request.args.get('search', '')
         
-        if folder == 'class':
-            # Get inactive classes (archived) that have ARCHIVE NOTE
-            query = Class.query.filter(
-                Class.is_active == False,
-                Class.description.like('%ARCHIVE NOTE%')
-            )
+        # For pagination
+        start = (page - 1) * per_page
+        end = start + per_page
+        
+        result = {'records': [], 'total': 0, 'counts': {}}
+        
+        if folder == 'user':
+            role = request.args.get('role', 'all')
             
-            if search_term:
-                query = query.filter(
-                    (Class.name.like(f'%{search_term}%')) | 
-                    (Class.id.like(f'%{search_term}%'))
-                )
-                
-            archived_classes = query.all()
-            properly_archived = []
+            # Build the base query
+            query = User.query.filter_by(is_archived=True)
             
-            for class_obj in archived_classes:
-                # Get instructor info
-                instructor_name = "Not Assigned"
-                if class_obj.instructor_id:
-                    instructor = User.query.get(class_obj.instructor_id)
-                    if instructor:
-                        instructor_name = f"{instructor.first_name} {instructor.last_name}"
-                
-                # Parse archive date from description
-                archive_date = "Unknown"
+            # Apply role filter if specified
+            if role != 'all':
+                query = query.filter(User.role.ilike(f'%{role}%'))
+            
+            # Apply search filter if provided
+            if search:
+                query = query.filter(or_(
+                    User.first_name.ilike(f'%{search}%'),
+                    User.last_name.ilike(f'%{search}%'),
+                    User.email.ilike(f'%{search}%'),
+                    User.id.ilike(f'%{search}%')
+                ))
+            
+            # Get total count for pagination
+            total = query.count()
+            
+            # Get paginated results
+            archives = query.order_by(User.id).all()
+            
+            # Format the response
+            formatted_archives = []
+            for archive in archives:
+                archive_date = None
                 try:
-                    # Extract date from format: ARCHIVE NOTE (YYYY-MM-DD)
-                    date_start = class_obj.description.find("ARCHIVE NOTE (") + 14
-                    date_end = class_obj.description.find(")", date_start)
-                    if date_start > 0 and date_end > 0:
-                        archive_date = class_obj.description[date_start:date_end]
-                except:
+                    if hasattr(archive, 'archive_date') and archive.archive_date:
+                        archive_date = archive.archive_date.strftime('%Y-%m-%d')
+                except Exception:
                     pass
                 
-                properly_archived.append({
-                    'class_id': class_obj.id,
-                    'name': class_obj.name,
-                    'day': class_obj.day_of_week,
-                    'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
-                    'year': class_obj.term,
-                    'instructor': instructor_name,
-                    'archive_date': archive_date,
-                    'description': class_obj.description
+                formatted_archives.append({
+                    'id': archive.id,
+                    'first_name': archive.first_name,
+                    'last_name': archive.last_name,
+                    'email': archive.email,
+                    'role': archive.role,
+                    'archive_date': archive_date or 'N/A',
+                    'name': f"{archive.first_name} {archive.last_name}",
+                    'status': 'Archived'
                 })
             
-            # Simple pagination for now
-            start = (page - 1) * per_page
-            end = start + per_page
-            result['records'] = properly_archived[start:end]
-            result['total'] = len(properly_archived)
-        
-        # Count all archived records for stats - use try/except for each count to prevent errors
-        result['counts'] = {}
-        
-        # Count students
-        try:
-            result['counts']['student'] = User.query.filter_by(is_active=False, role='Student').count()
-        except Exception as e:
-            print(f"Error counting students: {str(e)}")
-            result['counts']['student'] = 0
+            # Apply pagination
+            result['records'] = formatted_archives[start:end]
+            result['total'] = total
             
-        # Count classes
-        try:
-            result['counts']['class'] = Class.query.filter(Class.is_active==False, Class.description.like('%ARCHIVE NOTE%')).count()
-        except Exception as e:
-            print(f"Error counting classes: {str(e)}")
-            result['counts']['class'] = 0
+            # Count by roles for the UI stats
+            try:
+                result['counts'] = {
+                    'student': User.query.filter(User.is_archived==True, User.role.ilike('%student%')).count(),
+                    'instructor': User.query.filter(User.is_archived==True, User.role.ilike('%instructor%')).count(),
+                    'admin': User.query.filter(User.is_archived==True, User.role.ilike('%admin%')).count()
+                }
+            except Exception as e:
+                print(f"Error counting by roles: {str(e)}")
+                result['counts'] = {'student': 0, 'instructor': 0, 'admin': 0}
+                
+        elif folder == 'instructor':
+            # Build the query for instructors specifically
+            query = User.query.filter(
+                User.is_archived == True,
+                User.role.ilike('%instructor%')
+            )
             
-        # Count companies
-        try:
-            # Use raw SQL to avoid model mapping issues
-            company_count = db.session.execute(text("SELECT COUNT(*) FROM company WHERE status = 'Inactive'")).scalar()
-            result['counts']['company'] = company_count
-        except Exception as e:
-            print(f"Error counting companies: {str(e)}")
-            result['counts']['company'] = 0
+            # Apply search if provided
+            if search:
+                query = query.filter(or_(
+                    User.first_name.ilike(f'%{search}%'),
+                    User.last_name.ilike(f'%{search}%'),
+                    User.email.ilike(f'%{search}%'),
+                    User.id.ilike(f'%{search}%')
+                ))
+                
+            # Count total for pagination
+            total = query.count()
             
-        # Count instructors
-        try:
-            result['counts']['instructor'] = User.query.filter_by(is_active=False, role='Instructor').count()
-        except Exception as e:
-            print(f"Error counting instructors: {str(e)}")
-            result['counts']['instructor'] = 0
+            # Get paginated results
+            instructors = query.order_by(User.id).all()
+            
+            # Format for response
+            instructor_records = []
+            for instructor in instructors:
+                # Format date if available
+                archive_date = "Unknown"
+                try:
+                    if hasattr(instructor, 'archive_date') and instructor.archive_date:
+                        archive_date = instructor.archive_date.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+                    
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(instructor, 'notes') and instructor.notes and 'ARCHIVE NOTE' in instructor.notes:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', instructor.notes)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                    
+                # Add to results
+                instructor_records.append({
+                    'id': instructor.id,
+                    'first_name': instructor.first_name,
+                    'last_name': instructor.last_name,
+                    'name': f"{instructor.first_name} {instructor.last_name}",
+                    'email': instructor.email,
+                    'role': instructor.role,
+                    'archive_date': archive_date,
+                    'status': 'Archived',
+                    'notes': instructor.notes if hasattr(instructor, 'notes') else None,
+                    'description': instructor.description if hasattr(instructor, 'description') else None,
+                    'archive_reason': archive_reason
+                })
+                
+            # Apply pagination
+            result['records'] = instructor_records[start:end]
+            result['total'] = total
+            
+        elif folder == 'student':
+            # Build the query for students specifically
+            query = User.query.filter(
+                User.is_archived == True,
+                User.role.ilike('%student%')
+            )
+            
+            # Apply search if provided
+            if search:
+                query = query.filter(or_(
+                    User.first_name.ilike(f'%{search}%'),
+                    User.last_name.ilike(f'%{search}%'),
+                    User.email.ilike(f'%{search}%'),
+                    User.id.ilike(f'%{search}%')
+                ))
+                
+            # Count total for pagination
+            total = query.count()
+            
+            # Get paginated results
+            students = query.order_by(User.id).all()
+            
+            # Format for response
+            student_records = []
+            for student in students:
+                # Format date if available
+                archive_date = "Unknown"
+                try:
+                    if hasattr(student, 'archive_date') and student.archive_date:
+                        archive_date = student.archive_date.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+                
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(student, 'notes') and student.notes and 'ARCHIVE NOTE' in student.notes:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', student.notes)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                    
+                # Add to results
+                student_records.append({
+                    'id': student.id,
+                    'first_name': student.first_name,
+                    'last_name': student.last_name,
+                    'name': f"{student.first_name} {student.last_name}",
+                    'email': student.email,
+                    'role': student.role,
+                    'archive_date': archive_date,
+                    'status': 'Archived',
+                    'company': get_company_name(student.company_id) if hasattr(student, 'company_id') else 'Not Assigned',
+                    'notes': student.notes if hasattr(student, 'notes') else None,
+                    'description': student.description if hasattr(student, 'description') else None,
+                    'archive_reason': archive_reason
+                })
+                
+            # Apply pagination
+            result['records'] = student_records[start:end]
+            result['total'] = total
+            
+        elif folder == 'admin':
+            # Build the query for admins specifically
+            query = User.query.filter(
+                User.is_archived == True,
+                or_(
+                    User.role.ilike('%admin%'),
+                    User.role.ilike('%administrator%')
+                )
+            )
+            
+            # Apply search if provided
+            if search:
+                query = query.filter(or_(
+                    User.first_name.ilike(f'%{search}%'),
+                    User.last_name.ilike(f'%{search}%'),
+                    User.email.ilike(f'%{search}%'),
+                    User.id.ilike(f'%{search}%')
+                ))
+                
+            # Count total for pagination
+            total = query.count()
+            
+            # Get paginated results
+            admins = query.order_by(User.id).all()
+            
+            # Format for response
+            admin_records = []
+            for admin in admins:
+                # Format date if available
+                archive_date = "Unknown"
+                try:
+                    if hasattr(admin, 'archive_date') and admin.archive_date:
+                        archive_date = admin.archive_date.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+                
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(admin, 'notes') and admin.notes and 'ARCHIVE NOTE' in admin.notes:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', admin.notes)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                    
+                # Add to results
+                admin_records.append({
+                    'id': admin.id,
+                    'first_name': admin.first_name,
+                    'last_name': admin.last_name,
+                    'name': f"{admin.first_name} {admin.last_name}",
+                    'email': admin.email,
+                    'role': admin.role,
+                    'archive_date': archive_date,
+                    'status': 'Administrator',
+                    'notes': admin.notes if hasattr(admin, 'notes') else '',
+                    'archive_reason': archive_reason
+                })
+                
+            # Apply pagination
+            result['records'] = admin_records[start:end]
+            result['total'] = total
         
+        # Return final results
         return jsonify(result)
         
     except Exception as e:
         print(f"Error retrieving archives: {str(e)}")
-        return jsonify({'records': [], 'counts': {}}), 200  # Return empty array with 200 status to prevent breaking the UI
+        return jsonify({'records': [], 'total': 0, 'counts': {}}), 200  # Return empty array with 200 status
 
-@api_bp.route('/restore-archived/<record_type>/<record_id>', methods=['POST'])
+@api_bp.route('/archives/restore/<string:folder>/<string:record_id>', methods=['POST'])
 @login_required
-def restore_archived_record(record_type, record_id):
-    """Restore an archived record by ID"""
+@admin_required
+def restore_archive(folder, record_id):
+    """Unified API endpoint to restore an archived record by ID"""
     try:
-        print(f"Attempting to restore {record_type} with ID: {record_id}")
-        
-        if record_type == 'class':
-            # Find the class
-            class_obj = Class.query.get(record_id)
-            if not class_obj:
-                return jsonify({'error': f'Class with ID {record_id} not found'}), 404
+        if folder == 'class':
+            # Get the class record
+            class_obj = Class.query.get_or_404(record_id)
             
-            print(f"Found class: {class_obj.name}")
-            print(f"Before restore - active status: {class_obj.is_active}, description: {class_obj.description}")
-            
-            # Mark the class as active
+            # Set it as active and not archived
             class_obj.is_active = True
+            class_obj.is_archived = False
             
             # Remove the ARCHIVE NOTE completely from the description
             if class_obj.description and "ARCHIVE NOTE" in class_obj.description:
                 # Split by ARCHIVE NOTE and keep only the part before it
                 parts = class_obj.description.split("ARCHIVE NOTE")
-                class_obj.description = parts[0].strip() if parts[0].strip() else ""
-                print(f"Removed ARCHIVE NOTE. New description: {class_obj.description}")
+                class_obj.description = parts[0].strip()
             
             # Save changes
             db.session.commit()
             
-            # Verify changes were saved
-            db.session.refresh(class_obj)
-            print(f"After commit - active status: {class_obj.is_active}, description: {class_obj.description}")
+            return jsonify({
+                'success': True,
+                'message': f'Class {record_id} has been successfully restored',
+                'id': record_id,
+                'name': class_obj.name
+            })
             
-            # Query the database again to verify changes
-            verified_class = Class.query.get(record_id)
-            print(f"Verified from DB - active status: {verified_class.is_active}, description: {verified_class.description}")
+        elif folder == 'user':
+            # Get the user record
+            user = User.query.get_or_404(record_id)
+            
+            # Mark as active and not archived
+            user.is_active = True
+            user.is_archived = False
+            
+            # Clear archive date if it exists
+            if hasattr(user, 'archive_date'):
+                user.archive_date = None
+            
+            # Save changes
+            db.session.commit()
             
             return jsonify({
                 'success': True,
-                'message': 'Class restored successfully',
-                'class_id': record_id
+                'message': f'User {record_id} has been successfully restored',
+                'id': record_id,
+                'name': f"{user.first_name} {user.last_name}"
             })
         
-        elif record_type == 'student':
+        elif folder == 'student':
             # Find the student
             student = User.query.get(record_id)
             if not student:
                 return jsonify({'error': f'Student with ID {record_id} not found'}), 404
             
-            # Mark the student as active
+            # Mark the student as active and not archived
             student.is_active = True
+            student.is_archived = False
+            
+            # Clear archive date if it exists
+            if hasattr(student, 'archive_date'):
+                student.archive_date = None
             
             # Remove the archive note
-            if student.notes and "ARCHIVE NOTE" in student.notes:
+            if hasattr(student, 'notes') and student.notes and "ARCHIVE NOTE" in student.notes:
                 parts = student.notes.split("ARCHIVE NOTE")
                 student.notes = parts[0].strip() if parts[0].strip() else ""
             
@@ -1381,17 +1664,18 @@ def restore_archived_record(record_type, record_id):
                 'student_id': record_id
             })
         
-        elif record_type == 'company':
+        elif folder == 'company':
             # Find the company
             company = Company.query.get(record_id)
             if not company:
                 return jsonify({'error': f'Company with ID {record_id} not found'}), 404
             
-            # Mark the company as active
+            # Mark the company as active and not archived
             company.is_active = True
+            company.is_archived = False
             
             # Remove the archive note
-            if company.notes and "ARCHIVE NOTE" in company.notes:
+            if hasattr(company, 'notes') and company.notes and "ARCHIVE NOTE" in company.notes:
                 parts = company.notes.split("ARCHIVE NOTE")
                 company.notes = parts[0].strip() if parts[0].strip() else ""
             
@@ -1404,17 +1688,22 @@ def restore_archived_record(record_type, record_id):
                 'company_id': record_id
             })
         
-        elif record_type == 'instructor':
+        elif folder == 'instructor':
             # Find the instructor
             instructor = User.query.get(record_id)
             if not instructor:
                 return jsonify({'error': f'Instructor with ID {record_id} not found'}), 404
             
-            # Mark the instructor as active
+            # Mark the instructor as active and not archived
             instructor.is_active = True
+            instructor.is_archived = False
+            
+            # Clear archive date if it exists
+            if hasattr(instructor, 'archive_date'):
+                instructor.archive_date = None
             
             # Remove the archive note
-            if instructor.notes and "ARCHIVE NOTE" in instructor.notes:
+            if hasattr(instructor, 'notes') and instructor.notes and "ARCHIVE NOTE" in instructor.notes:
                 parts = instructor.notes.split("ARCHIVE NOTE")
                 instructor.notes = parts[0].strip() if parts[0].strip() else ""
             
@@ -1427,383 +1716,344 @@ def restore_archived_record(record_type, record_id):
                 'instructor_id': record_id
             })
         
+        elif folder == 'admin':
+            # Find the admin
+            admin = User.query.get(record_id)
+            if not admin:
+                return jsonify({'error': f'Administrator with ID {record_id} not found'}), 404
+            
+            # Mark the admin as active and not archived
+            admin.is_active = True
+            admin.is_archived = False
+            
+            # Clear archive date if it exists
+            if hasattr(admin, 'archive_date'):
+                admin.archive_date = None
+            
+            # Remove the archive note
+            if hasattr(admin, 'notes') and admin.notes and "ARCHIVE NOTE" in admin.notes:
+                parts = admin.notes.split("ARCHIVE NOTE")
+                admin.notes = parts[0].strip() if parts[0].strip() else ""
+            
+            # Save changes
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Administrator restored successfully',
+                'admin_id': record_id
+            })
+        
+        elif folder == 'attendance':
+            # Handle attendance records
+            try:
+                # Get the attendance record
+                attendance = Attendance.query.get_or_404(int(record_id))
+                
+                # Check if it's actually archived
+                if not attendance.is_archived:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Record is not archived'
+                    }), 400
+                
+                # Restore the record
+                attendance.is_archived = False
+                attendance.archive_date = None
+                
+                # Update comments to indicate restoration
+                if attendance.comments:
+                    attendance.comments += f"\n\nRESTORED ({datetime.now().strftime('%Y-%m-%d')})"
+                else:
+                    attendance.comments = f"RESTORED ({datetime.now().strftime('%Y-%m-%d')})"
+                
+                # Save changes
+                db.session.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Attendance record restored successfully'
+                })
+            except ValueError:
+                return jsonify({'error': 'Invalid attendance record ID'}), 400
+        
         else:
-            return jsonify({'error': f'Unsupported record type: {record_type}'}), 400
+            return jsonify({'error': f'Unsupported record type: {folder}'}), 400
             
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to restore record: {str(e)}'}), 500
 
+# Add deprecation notice to old endpoints that should be removed in future versions
+@api_bp.route('/restore-archived/<record_type>/<record_id>', methods=['POST'])
+@login_required
+@admin_required
+def restore_archived_record(record_type, record_id):
+    """DEPRECATED: Use /api/archives/restore/<folder>/<record_id> instead"""
+    return restore_archive(record_type, record_id)
+
+@api_bp.route('/restore-archived/attendance/<int:record_id>', methods=['POST'])
+@login_required
+def restore_archived_attendance(record_id):
+    """DEPRECATED: Use /api/archives/restore/attendance/<record_id> instead"""
+    return restore_archive('attendance', str(record_id))
+
 @api_bp.route('/archives/delete/<string:folder>/<string:record_id>', methods=['DELETE'])
 @login_required
+@admin_required
 def delete_archived_record(folder, record_id):
     """API endpoint to permanently delete an archived record"""
-    # Begin a new transaction for more control
-    session = db.session()
     try:
-        print(f"Attempting to delete {folder} record with ID: {record_id}")
-        
         if folder == 'class':
             # Find the class
             class_obj = Class.query.get(record_id)
             if not class_obj:
                 return jsonify({'error': f'Class with ID {record_id} not found'}), 404
             
-            print(f"Found class: {class_obj.name}, attempting to delete it")
+            # Check if there are still students enrolled
+            enrollments = Enrollment.query.filter_by(class_id=record_id).count()
+            if enrollments > 0:
+                return jsonify({
+                    'error': f'Class has {enrollments} enrollments', 
+                    'details': 'Unenroll all students from class before deleting'
+                }), 400
+                
+            # Delete the class
+            db.session.delete(class_obj)
+            db.session.commit()
             
-            # DIAGNOSTIC: Print all attributes of the class object to help debug
-            print(f"Class details: ID={class_obj.id}, Name={class_obj.name}, Active={class_obj.is_active}")
+            return jsonify({
+                'success': True, 
+                'message': f'Class {record_id} has been permanently deleted'
+            })
             
+        elif folder == 'student':
+            # Find the student
+            student = User.query.get(record_id)
+            if not student:
+                return jsonify({'error': f'Student with ID {record_id} not found'}), 404
+            
+            # Check if student has enrollments
+            student_enrollments = Enrollment.query.filter_by(student_id=record_id).count()
+            if student_enrollments > 0:
+                return jsonify({
+                    'error': f'Student has {student_enrollments} enrollments',
+                    'details': 'Unenroll from all classes first'
+                }), 400
+                
+            # Delete the student
+            db.session.delete(student)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Student with ID {record_id} permanently deleted'
+            })
+        
+        elif folder == 'admin':
+            # Find the admin
+            admin = User.query.get(record_id)
+            if not admin:
+                return jsonify({'error': f'Administrator with ID {record_id} not found'}), 404
+            
+            # Can only delete archived admins for safety
+            if not admin.is_archived:
+                return jsonify({'error': 'Cannot delete a non-archived administrator'}), 400
+                
+            # Delete the admin
+            db.session.delete(admin)
+            db.session.commit()
+                
+            return jsonify({
+                'success': True, 
+                'message': f'Administrator with ID {record_id} permanently deleted'
+            })
+        
+        elif folder == 'attendance':
+            # Handle attendance records
             try:
-                # First, check if there are any relationships that might prevent deletion
-                # Find all tables that reference this class
-                tables_to_check = {
-                    'attendance': 'class_id',
-                    'enrollment': 'class_id'
-                }
+                # Get the attendance record
+                attendance = Attendance.query.get_or_404(int(record_id))
                 
-                for table, field in tables_to_check.items():
-                    try:
-                        # Check if the table exists and if it has references to this class
-                        count_query = f"SELECT COUNT(*) FROM {table} WHERE {field} = :id"
-                        count = session.execute(text(count_query), {'id': record_id}).scalar()
-                        print(f"Found {count} records in {table} referencing class {record_id}")
-                        
-                        if count > 0:
-                            # Delete the references first
-                            try:
-                                delete_query = f"DELETE FROM {table} WHERE {field} = :id"
-                                session.execute(text(delete_query), {'id': record_id})
-                                print(f"Successfully deleted {count} records from {table}")
-                            except Exception as table_error:
-                                print(f"Error deleting records from {table}: {str(table_error)}")
-                                # Continue even if this fails, we'll try the main delete anyway
-                    except Exception as check_error:
-                        print(f"Error checking {table}: {str(check_error)}")
-                        # Continue to try other tables
+                # Check if it's archived
+                if not attendance.is_archived:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Cannot delete non-archived records'
+                    }), 400
                 
-                # Now try to delete the class itself
-                try:
-                    # Try direct SQL delete as a fallback
-                    session.execute(text("DELETE FROM class WHERE id = :id"), {'id': record_id})
-                    session.commit()
-                    print(f"Successfully deleted class {record_id} using SQL")
-                    return jsonify({'success': True, 'message': 'Class deleted permanently'})
-                except Exception as sql_error:
-                    print(f"Error deleting class with SQL: {str(sql_error)}")
-                    # If SQL delete fails, try ORM delete
-                    session.delete(class_obj)
-                    session.commit()
-                    print(f"Successfully deleted class {record_id} using ORM")
-                    return jsonify({'success': True, 'message': 'Class deleted permanently'})
-                    
-            except Exception as inner_e:
-                session.rollback()
-                error_msg = str(inner_e)
-                print(f"Error during class deletion: {error_msg}")
-                
-                if "foreign key constraint fails" in error_msg.lower():
-                    print("Foreign key constraint detected. Trying alternative approach.")
-                    
-                    # Try to mark as archived instead of deleting
-                    try:
-                        class_obj.is_active = False
-                        
-                        # Make sure it has ARCHIVE NOTE
-                        if not class_obj.description or "ARCHIVE NOTE" not in class_obj.description:
-                            archive_timestamp = datetime.now().strftime('%Y-%m-%d')
-                            reason = "Marked for deletion but couldn't be deleted due to constraints"
-                            
-                            if class_obj.description:
-                                class_obj.description += f"\n\nARCHIVE NOTE ({archive_timestamp}): {reason}"
-                            else:
-                                class_obj.description = f"ARCHIVE NOTE ({archive_timestamp}): {reason}"
-                                
-                        session.commit()
-                        print(f"Class {record_id} marked as archived instead of deleted due to constraints")
-                        return jsonify({
-                            'success': True, 
-                            'message': 'Class could not be deleted due to relationships, but has been marked as archived.'
-                        })
-                    except Exception as archive_error:
-                        session.rollback()
-                        print(f"Error archiving class: {str(archive_error)}")
+                # Delete the record
+                db.session.delete(attendance)
+                db.session.commit()
                 
                 return jsonify({
-                    'error': 'This class cannot be deleted because it is referenced by other records. Try archiving it instead.'
-                }), 500
-            
-        # Similar handling for other types...
+                    'success': True,
+                    'message': 'Attendance record deleted permanently'
+                })
+            except ValueError:
+                return jsonify({'error': 'Invalid attendance record ID'}), 400
+    
         else:
             return jsonify({'error': f'Invalid archive type: {folder}'}), 400
             
     except Exception as e:
-        session.rollback()
-        error_message = str(e)
-        print(f"Error deleting archived record: {error_message}")
-        
-        return jsonify({'error': f'Failed to delete record: {error_message}'}), 500
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete archived record: {str(e)}'}), 500
+
+# Add deprecation notice for old endpoint that should be removed in future
+@api_bp.route('/archives/delete/attendance/<int:record_id>', methods=['DELETE'])
+@login_required
+def delete_archived_attendance(record_id):
+    """DEPRECATED: Use /api/archives/delete/attendance/<record_id> instead"""
+    return delete_archived_record('attendance', str(record_id))
 
 @api_bp.route('/archives/export/<string:folder>', methods=['GET'])
 @login_required
 def export_archives_csv(folder):
     """API endpoint to export archived records to CSV"""
     try:
+        # Get search parameter
         search_term = request.args.get('search', '')
         
+        # Create CSV output in memory
+        output = StringIO()
+        writer = csv.writer(output)
+        
         if folder == 'class':
-            # Get inactive classes (archived)
-            query = Class.query.filter_by(is_active=False)
+            # Get archived classes
+            query = Class.query.filter(
+                Class.is_active == False,
+                Class.is_archived == True
+            )
             
             if search_term:
-                query = query.filter(
-                    (Class.name.like(f'%{search_term}%')) | 
-                    (Class.id.like(f'%{search_term}%'))
-                )
+                query = query.filter(Class.name.ilike(f'%{search_term}%'))
                 
             archived_classes = query.all()
             
             # Create CSV string
-            output = StringIO()
-            writer = csv.writer(output)
+            writer.writerow(['Class ID', 'Name', 'Day', 'Time', 'Instructor', 'Archive Date', 'Archive Reason'])
             
-            # Write headers
-            writer.writerow(['Class ID', 'Name', 'Day', 'Time', 'Instructor', 'Academic Year', 'Archive Date', 'Archive Reason'])
-            
-            # Write data
-            for class_obj in archived_classes:
+            for cls in archived_classes:
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if cls.description and 'ARCHIVE NOTE' in cls.description:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', cls.description)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                
                 # Get instructor name if available
-                instructor_name = "Not Assigned"
-                if class_obj.instructor_id:
-                    instructor = User.query.get(class_obj.instructor_id)
+                instructor_name = 'Not Assigned'
+                if hasattr(cls, 'instructor_id') and cls.instructor_id:
+                    instructor = User.query.get(cls.instructor_id)
                     if instructor:
                         instructor_name = f"{instructor.first_name} {instructor.last_name}"
                 
-                # Format time
-                time_str = f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}"
-                
-                # Parse archive date from description if possible
-                archive_date = "Unknown"
-                archive_reason = "Not specified"
-                if class_obj.description and "ARCHIVE NOTE" in class_obj.description:
+                # Format archive date
+                archive_date = 'Unknown'
+                if hasattr(cls, 'archive_date') and cls.archive_date:
                     try:
-                        # Extract date from format: ARCHIVE NOTE (YYYY-MM-DD)
-                        date_start = class_obj.description.find("ARCHIVE NOTE (") + 14
-                        date_end = class_obj.description.find(")", date_start)
-                        if date_start > 0 and date_end > 0:
-                            archive_date = class_obj.description[date_start:date_end]
-                            
-                            # Extract reason which comes after the closing parenthesis and colon
-                            reason_start = class_obj.description.find(":", date_end) + 1
-                            if reason_start > 0:
-                                archive_reason = class_obj.description[reason_start:].strip()
+                        archive_date = cls.archive_date.strftime('%Y-%m-%d')
                     except:
                         pass
                 
                 writer.writerow([
-                    class_obj.id,
-                    class_obj.name,
-                    class_obj.day_of_week,
-                    time_str,
+                    cls.id,
+                    cls.name,
+                    cls.day_of_week or 'Not specified',
+                    f"{cls.start_time.strftime('%H:%M') if cls.start_time else 'N/A'} - {cls.end_time.strftime('%H:%M') if cls.end_time else 'N/A'}",
                     instructor_name,
-                    class_obj.term,
                     archive_date,
                     archive_reason
                 ])
             
-            # Create the response
-            response = make_response(output.getvalue())
-            response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename=archived_classes_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        elif folder == 'student' or folder == 'instructor' or folder == 'admin':
+            # Filter by role
+            role_filter = folder.capitalize()  # Convert 'student' to 'Student', etc.
             
-            return response
-        
-        elif folder == 'student':
-            # Get inactive students (archived)
-            query = User.query.filter_by(role='Student', is_active=False)
+            query = User.query.filter_by(is_archived=True)
+            
+            if folder == 'admin':
+                query = query.filter(
+                    or_(User.role.ilike('%admin%'), User.role.ilike('%administrator%'))
+                )
+            else:
+                query = query.filter(User.role.ilike(f'%{role_filter}%'))
             
             if search_term:
                 query = query.filter(
-                    (User.first_name.like(f'%{search_term}%')) | 
-                    (User.last_name.like(f'%{search_term}%')) |
-                    (User.email.like(f'%{search_term}%')) |
-                    (User.id.like(f'%{search_term}%'))
+                    or_(
+                        User.first_name.ilike(f'%{search_term}%'),
+                        User.last_name.ilike(f'%{search_term}%'),
+                        User.email.ilike(f'%{search_term}%')
+                    )
                 )
-                
-            archived_students = query.all()
+            
+            archived_users = query.all()
             
             # Create CSV string
-            output = StringIO()
-            writer = csv.writer(output)
-            
-            # Write headers
-            writer.writerow(['Student ID', 'First Name', 'Last Name', 'Email', 'Company', 'Archive Date', 'Archive Reason'])
-            
-            # Write data
-            for student in archived_students:
-                # Get company name if available
-                company_name = "Not Assigned"
-                if student.company_id:
-                    company = Company.query.get(student.company_id)
-                    if company:
-                        company_name = company.name
+            # Write headers - slightly different for different user types
+            if folder == 'student':
+                writer.writerow(['Student ID', 'First Name', 'Last Name', 'Email', 'Company', 'Archive Date', 'Archive Reason'])
+            elif folder == 'instructor':
+                writer.writerow(['Instructor ID', 'First Name', 'Last Name', 'Email', 'Department', 'Archive Date', 'Archive Reason'])
+            elif folder == 'admin':
+                writer.writerow(['Admin ID', 'First Name', 'Last Name', 'Email', 'Role', 'Archive Date', 'Archive Reason'])
                 
-                # Parse archive date and reason from notes if possible
-                archive_date = "Unknown"
-                archive_reason = "Not specified"
-                if student.notes and "ARCHIVE NOTE" in student.notes:
+            # Write data rows
+            for user in archived_users:
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(user, 'notes') and user.notes and 'ARCHIVE NOTE' in user.notes:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', user.notes)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                
+                # Format archive date
+                archive_date = 'Unknown'
+                if hasattr(user, 'archive_date') and user.archive_date:
                     try:
-                        # Extract date from format: ARCHIVE NOTE (YYYY-MM-DD)
-                        date_start = student.notes.find("ARCHIVE NOTE (") + 14
-                        date_end = student.notes.find(")", date_start)
-                        if date_start > 0 and date_end > 0:
-                            archive_date = student.notes[date_start:date_end]
-                            
-                            # Extract reason which comes after the closing parenthesis and colon
-                            reason_start = student.notes.find(":", date_end) + 1
-                            if reason_start > 0:
-                                archive_reason = student.notes[reason_start:].strip()
+                        archive_date = user.archive_date.strftime('%Y-%m-%d')
                     except:
                         pass
                 
+                # Get company name for students / department for instructors
+                company_or_dept = 'Not Available'
+                if folder == 'student' and hasattr(user, 'company_id') and user.company_id:
+                    try:
+                        company = db.session.get(Company, user.company_id)
+                        if company:
+                            company_or_dept = company.name
+                    except:
+                        pass
+                elif folder == 'instructor' and hasattr(user, 'department'):
+                    company_or_dept = user.department or 'Not Assigned'
+                elif folder == 'admin':
+                    company_or_dept = user.role  # Use role for admin
+                
                 writer.writerow([
-                    student.id,
-                    student.first_name,
-                    student.last_name,
-                    student.email,
-                    company_name,
+                    user.id,
+                    user.first_name,
+                    user.last_name, 
+                    user.email,
+                    company_or_dept,
                     archive_date,
                     archive_reason
                 ])
             
-            # Create the response
-            response = make_response(output.getvalue())
-            response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename=archived_students_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-            
-            return response
-        
-        elif folder == 'instructor':
-            # Get inactive instructors (archived)
-            query = User.query.filter_by(role='Instructor', is_active=False)
-            
-            if search_term:
-                query = query.filter(
-                    (User.first_name.like(f'%{search_term}%')) | 
-                    (User.last_name.like(f'%{search_term}%')) |
-                    (User.email.like(f'%{search_term}%')) |
-                    (User.id.like(f'%{search_term}%'))
-                )
-                
-            archived_instructors = query.all()
-            
-            # Create CSV string
-            output = StringIO()
-            writer = csv.writer(output)
-            
-            # Write headers
-            writer.writerow(['Instructor ID', 'First Name', 'Last Name', 'Email', 'Department', 'Archive Date', 'Archive Reason'])
-            
-            # Write data
-            for instructor in archived_instructors:
-                # Parse archive date and reason from notes if possible
-                archive_date = "Unknown"
-                archive_reason = "Not specified"
-                if instructor.notes and "ARCHIVE NOTE" in instructor.notes:
-                    try:
-                        # Extract date from format: ARCHIVE NOTE (YYYY-MM-DD)
-                        date_start = instructor.notes.find("ARCHIVE NOTE (") + 14
-                        date_end = instructor.notes.find(")", date_start)
-                        if date_start > 0 and date_end > 0:
-                            archive_date = instructor.notes[date_start:date_end]
-                            
-                            # Extract reason which comes after the closing parenthesis and colon
-                            reason_start = instructor.notes.find(":", date_end) + 1
-                            if reason_start > 0:
-                                archive_reason = instructor.notes[reason_start:].strip()
-                    except:
-                        pass
-                
-                writer.writerow([
-                    instructor.id,
-                    instructor.first_name,
-                    instructor.last_name,
-                    instructor.email,
-                    instructor.department or "Not Assigned",
-                    archive_date,
-                    archive_reason
-                ])
-            
-            # Create the response
-            response = make_response(output.getvalue())
-            response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename=archived_instructors_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-            
-            return response
-        
-        elif folder == 'company':
-            # Get inactive companies (archived)
-            query = Company.query.filter_by(is_active=False)
-            
-            if search_term:
-                query = query.filter(
-                    (Company.name.like(f'%{search_term}%')) | 
-                    (Company.id.like(f'%{search_term}%')) |
-                    (Company.contact_name.like(f'%{search_term}%')) |
-                    (Company.email.like(f'%{search_term}%'))
-                )
-                
-            archived_companies = query.all()
-            
-            # Create CSV string
-            output = StringIO()
-            writer = csv.writer(output)
-            
-            # Write headers
-            writer.writerow(['Company ID', 'Name', 'Contact Person', 'Email', 'Phone', 'Archive Date', 'Archive Reason'])
-            
-            # Write data
-            for company in archived_companies:
-                # Parse archive date and reason from notes if possible
-                archive_date = "Unknown"
-                archive_reason = "Not specified"
-                if company.notes and "ARCHIVE NOTE" in company.notes:
-                    try:
-                        # Extract date from format: ARCHIVE NOTE (YYYY-MM-DD)
-                        date_start = company.notes.find("ARCHIVE NOTE (") + 14
-                        date_end = company.notes.find(")", date_start)
-                        if date_start > 0 and date_end > 0:
-                            archive_date = company.notes[date_start:date_end]
-                            
-                            # Extract reason which comes after the closing parenthesis and colon
-                            reason_start = company.notes.find(":", date_end) + 1
-                            if reason_start > 0:
-                                archive_reason = company.notes[reason_start:].strip()
-                    except:
-                        pass
-                
-                writer.writerow([
-                    company.id,
-                    company.name,
-                    company.contact_name or "Not specified",
-                    company.email or "Not specified",
-                    company.phone or "Not specified",
-                    archive_date,
-                    archive_reason
-                ])
-            
-            # Create the response
-            response = make_response(output.getvalue())
-            response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename=archived_companies_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-            
-            return response
-            
-        return jsonify({'error': 'Invalid archive type'}), 400
+        # Prepare response
+        output.seek(0)
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename=archived_{folder}_{datetime.now().strftime("%Y%m%d")}.csv'
+            }
+        )
         
     except Exception as e:
         print(f"Error exporting archives: {str(e)}")
-        return jsonify({'error': f'Failed to export archives: {str(e)}'}), 500 
+        return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/archives/class/count', methods=['GET'])
 @login_required
@@ -1829,45 +2079,74 @@ def get_archive_counts():
         result = {'counts': {}}
         
         # Count all archived records for stats - use try/except for each count to prevent errors
-        result['counts'] = {}
         
-        # Count students
+        # Count students - using is_archived flag
         try:
-            result['counts']['student'] = User.query.filter_by(is_active=False, role='Student').count()
+            result['counts']['student'] = User.query.filter(
+                User.is_archived == True,
+                User.role.ilike('%student%')
+            ).count()
+            print(f"Student archive count: {result['counts']['student']}")
         except Exception as e:
             print(f"Error counting students: {str(e)}")
             result['counts']['student'] = 0
             
-        # Count classes
+        # Count classes - both conditions must be met
         try:
-            result['counts']['class'] = Class.query.filter(Class.is_active==False, Class.description.like('%ARCHIVE NOTE%')).count()
+            result['counts']['class'] = Class.query.filter(
+                Class.is_active == False,
+                Class.is_archived == True
+            ).count()
+            print(f"Class archive count: {result['counts']['class']}")
         except Exception as e:
             print(f"Error counting classes: {str(e)}")
             result['counts']['class'] = 0
             
-        # Count companies
+        # Count companies - checking both inactive status and is_archived flag if available
         try:
-            # Use raw SQL to avoid model mapping issues
-            company_count = db.session.execute(text("SELECT COUNT(*) FROM company WHERE status = 'Inactive'")).scalar()
-            result['counts']['company'] = company_count
+            # Use ORM query with status field instead of is_archived
+            result['counts']['company'] = Company.query.filter(
+                Company.status == 'Inactive'
+            ).count()
+            print(f"Company archive count: {result['counts']['company']}")
         except Exception as e:
             print(f"Error counting companies: {str(e)}")
             result['counts']['company'] = 0
             
-        # Count instructors
+        # Count instructors - using is_archived flag
         try:
-            result['counts']['instructor'] = User.query.filter_by(is_active=False, role='Instructor').count()
+            result['counts']['instructor'] = User.query.filter(
+                User.is_archived == True,
+                User.role.ilike('%instructor%')
+            ).count()
+            print(f"Instructor archive count: {result['counts']['instructor']}")
         except Exception as e:
             print(f"Error counting instructors: {str(e)}")
             result['counts']['instructor'] = 0
             
-        # Count attendance records
+        # Count admins - using is_archived flag
+        try:
+            result['counts']['admin'] = User.query.filter(
+                User.is_archived == True,
+                or_(
+                    User.role.ilike('%admin%'), 
+                    User.role.ilike('%administrator%')
+                )
+            ).count()
+            print(f"Admin archive count: {result['counts']['admin']}")
+        except Exception as e:
+            print(f"Error counting admins: {str(e)}")
+            result['counts']['admin'] = 0
+            
+        # Count attendance records - using is_archived flag
         try:
             result['counts']['attendance'] = Attendance.query.filter_by(is_archived=True).count()
+            print(f"Attendance archive count: {result['counts']['attendance']}")
         except Exception as e:
             print(f"Error counting attendance: {str(e)}")
             result['counts']['attendance'] = 0
         
+        print(f"Archive counts: {result['counts']}")
         return jsonify(result)
         
     except Exception as e:
@@ -1877,152 +2156,115 @@ def get_archive_counts():
             'class': 0,
             'company': 0,
             'instructor': 0,
+            'admin': 0,
             'attendance': 0
         }}), 200  # Return zeros with 200 status to prevent breaking the UI 
 
 @api_bp.route('/students/<string:student_id>/enrollment', methods=['GET'])
 @login_required
 def get_student_enrollment(student_id):
+    """Get enrollment details for a student"""
     try:
-        student = User.query.get_or_404(student_id)
-        
-        # Get student info
-        student_info = {
-            'user_id': student.id,
-            'name': f"{student.first_name} {student.last_name}",
-            'email': student.email,
-            'status': 'Active' if student.is_active else 'Inactive',
-            'profile_img': student.profile_img
-        }
+        # Get the student
+        student = User.query.filter_by(id=student_id).first_or_404()
         
         # Get company info
-        company_info = {
-            'company_id': student.company_id,
-            'name': 'Not Assigned'
+        company = {"name": "Not Assigned", "company_id": None}
+        if hasattr(student, 'company_id') and student.company_id:
+            company_obj = Company.query.get(student.company_id)
+            if company_obj:
+                company = {
+                    "name": company_obj.name,
+                    "company_id": company_obj.id
+                }
+        
+        # Get all enrollments for this student
+        enrollment_records = Enrollment.query.filter_by(student_id=student_id).all()
+        
+        active_enrollments = []
+        historical_enrollments = []
+        all_enrollments = []
+        
+        for enrollment in enrollment_records:
+            try:
+                class_obj = Class.query.get(enrollment.class_id)
+                if not class_obj:
+                    continue
+                
+                # Get instructor info if available
+                instructor_name = "Not Assigned"
+                instructor_id = None
+                if hasattr(class_obj, 'instructor_id') and class_obj.instructor_id:
+                    instructor = User.query.get(class_obj.instructor_id)
+                    if instructor:
+                        instructor_name = f"{instructor.first_name} {instructor.last_name}"
+                        instructor_id = instructor.id
+                
+                # Create enrollment data with proper structure
+                enrollment_data = {
+                    'id': enrollment.id,
+                    'enrollment_id': enrollment.id,
+                    'student_id': student_id,
+                    'class_id': class_obj.id,
+                    'status': enrollment.status,
+                    'enrollment_status': enrollment.status,
+                    'enrollment_date': enrollment.enrollment_date.strftime('%Y-%m-%d') if enrollment.enrollment_date else None,
+                    'unenrollment_date': enrollment.unenrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment, 'unenrollment_date') and enrollment.unenrollment_date else None,
+                    'name': class_obj.name,
+                    'class_name': class_obj.name,
+                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M') if class_obj.start_time else ''} - {class_obj.end_time.strftime('%H:%M') if class_obj.end_time else ''}",
+                    'instructor': instructor_name,
+                    'instructor_name': instructor_name,
+                    'instructor_id': instructor_id,
+                    'day_of_week': class_obj.day_of_week,
+                    'day': class_obj.day_of_week,
+                    'start_time': class_obj.start_time.strftime('%H:%M') if class_obj.start_time else None,
+                    'end_time': class_obj.end_time.strftime('%H:%M') if class_obj.end_time else None,
+                    'time': f"{class_obj.start_time.strftime('%H:%M') if class_obj.start_time else ''} - {class_obj.end_time.strftime('%H:%M') if class_obj.end_time else ''}",
+                    'is_active': enrollment.status.lower() == 'active' and (not hasattr(enrollment, 'unenrollment_date') or not enrollment.unenrollment_date)
+                }
+                
+                # Add to the appropriate list based on enrollment status
+                if not hasattr(enrollment, 'unenrollment_date') or not enrollment.unenrollment_date:
+                    # This is an active enrollment
+                    active_enrollments.append(enrollment_data)
+                else:
+                    # This is a historical enrollment
+                    historical_enrollments.append(enrollment_data)
+                
+                # Also add to the main list
+                all_enrollments.append(enrollment_data)
+            except Exception as e:
+                print(f"Error processing enrollment {enrollment.id if hasattr(enrollment, 'id') else 'unknown'}: {str(e)}")
+                continue
+        
+        print(f"Found {len(active_enrollments)} active enrollments for student {student_id}")
+        print(f"Found {len(historical_enrollments)} historical enrollments for student {student_id}")
+        
+        # Format the student info
+        student_info = {
+            "user_id": student.id,
+            "name": f"{student.first_name} {student.last_name}",
+            "email": student.email,
+            "role": student.role,
+            "status": "Active" if student.is_active else "Inactive",
+            "profile_img": student.profile_img
         }
         
-        if student.company_id:
-            try:
-                company = Company.query.get(student.company_id)
-                if company:
-                    company_info['name'] = company.name
-            except Exception as company_error:
-                print(f"Error getting company info: {company_error}")
-                # Continue with default company info
-        
-        # Get enrollment info with classes
-        classes = []
-        active_classes = []
-        historical_classes = []
-        
-        # Use raw SQL to get ALL enrollments, including past ones
-        try:
-            # First, get active enrollments (no unenrollment_date)
-            active_sql = text("""
-                SELECT id, student_id, class_id, enrollment_date, status, 
-                       IFNULL(unenrollment_date, '') as unenrollment_date
-                FROM enrollment
-                WHERE student_id = :student_id
-                AND (unenrollment_date IS NULL)
-                ORDER BY enrollment_date DESC
-            """)
-            
-            active_enrollments = db.session.execute(active_sql, {"student_id": student_id}).fetchall()
-            print(f"Found {len(active_enrollments)} active enrollments for student {student_id}")
-            
-            # Then, get historical enrollments (with unenrollment_date)
-            historical_sql = text("""
-                SELECT id, student_id, class_id, enrollment_date, status, 
-                       IFNULL(unenrollment_date, '') as unenrollment_date
-                FROM enrollment
-                WHERE student_id = :student_id
-                AND unenrollment_date IS NOT NULL
-                ORDER BY unenrollment_date DESC
-            """)
-            
-            historical_enrollments = db.session.execute(historical_sql, {"student_id": student_id}).fetchall()
-            print(f"Found {len(historical_enrollments)} historical enrollments for student {student_id}")
-            
-            # Process active enrollments
-            for enrollment in active_enrollments:
-                # Get enrollment data from SQL result
-                enrollment_id = enrollment[0]
-                class_id = enrollment[2]
-                enrollment_date = enrollment[3]
-                enrollment_status = enrollment[4]
-                
-                # Get class info
-                class_obj = Class.query.get(class_id)
-                if not class_obj:
-                    print(f"Warning: Class {class_id} not found for active enrollment {enrollment_id}")
-                    continue  # Skip if class not found
-                
-                # Create class info dictionary
-                class_info = {
-                    'class_id': class_obj.id,
-                    'name': class_obj.name,
-                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
-                    'enrollment_status': enrollment_status,
-                    'enrollment_id': enrollment_id,
-                    'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else enrollment_date,
-                    'is_active': True
-                }
-                active_classes.append(class_info)
-            
-            # Process historical enrollments
-            for enrollment in historical_enrollments:
-                # Get enrollment data from SQL result
-                enrollment_id = enrollment[0]
-                class_id = enrollment[2]
-                enrollment_date = enrollment[3]
-                enrollment_status = enrollment[4]
-                unenrollment_date = enrollment[5]
-                
-                # Get class info
-                class_obj = Class.query.get(class_id)
-                if not class_obj:
-                    print(f"Warning: Class {class_id} not found for historical enrollment {enrollment_id}")
-                    continue  # Skip if class not found
-                
-                # Create class info dictionary
-                class_info = {
-                    'class_id': class_obj.id,
-                    'name': class_obj.name,
-                    'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
-                    'enrollment_status': 'Unenrolled',
-                    'enrollment_id': enrollment_id,
-                    'enrollment_date': enrollment_date.strftime('%Y-%m-%d') if hasattr(enrollment_date, 'strftime') else enrollment_date,
-                    'unenrollment_date': unenrollment_date if isinstance(unenrollment_date, str) else (unenrollment_date.strftime('%Y-%m-%d') if unenrollment_date else None),
-                    'is_active': False
-                }
-                historical_classes.append(class_info)
-            
-            # Combine active and historical classes
-            classes = active_classes + historical_classes
-                
-        except Exception as e:
-            print(f"Error getting enrollments: {e}")
-            import traceback
-            print(traceback.format_exc())
-            # If SQL fails, return empty classes list
-            classes = []
-        
-        # Return the full response
+        # Return formatted response
         return jsonify({
-            'student': student_info,
-            'company': company_info,
-            'classes': classes
+            "student": student_info,
+            "company": company,
+            "classes": all_enrollments,
+            "active_enrollments": active_enrollments,
+            "historical_enrollments": historical_enrollments,
+            "enrollments_count": len(all_enrollments),
+            "active_count": len(active_enrollments)
         })
+        
     except Exception as e:
-        import traceback
-        print(f"Error fetching student enrollment: {str(e)}")
-        print(traceback.format_exc())
-        return jsonify({
-            'error': str(e),
-            'student': {'name': 'Unknown Student', 'user_id': student_id},
-            'company': {'name': 'Unknown'},
-            'classes': []
-        }), 500
+        print(f"Error in get_student_enrollment: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @api_bp.route('/enrollments/approve', methods=['POST'])
 @login_required
@@ -2392,129 +2634,131 @@ def export_enrollments_csv():
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/attendance', methods=['GET'])
+@login_required
+@admin_or_instructor_required
 def get_attendance():
-    """API endpoint to get attendance records with filters."""
+    """
+    Get attendance records with filters
+    Filters:
+    - class_id: Filter by class
+    - student_id: Filter by student
+    - date_from: Filter from this date
+    - date_to: Filter to this date
+    - status: Filter by status (comma-separated)
+    """
     try:
-        # Get filter parameters
-        class_id = request.args.get('class_id', '')
-        instructor_id = request.args.get('instructor_id', '')
-        student_name = request.args.get('student_name', '')
-        status = request.args.get('status', '')
-        date_start = request.args.get('date_start', '')
-        date_end = request.args.get('date_end', '')
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 10))
-        exclude_archived = request.args.get('exclude_archived', 'false').lower() == 'true'
+        # Get query parameters
+        class_id = request.args.get('class_id')
+        student_id = request.args.get('student_id')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        status = request.args.get('status')
         
-        # Build the base query with direct SQL filtering
+        # Start the query
         query = db.session.query(
-            Attendance, User, Class
-        ).outerjoin(
-            User, User.id == Attendance.student_id
-        ).outerjoin(
-            Class, Class.id == Attendance.class_id
+            Attendance,
+            User.first_name,
+            User.last_name,
+            Class.name.label('class_name')
+        ).join(
+            User, Attendance.student_id == User.id
+        ).join(
+            Class, Attendance.class_id == Class.id
+        ).filter(
+            Attendance.is_archived == False
         )
         
         # Apply filters
         if class_id:
-            query = query.filter(Class.id == class_id)
+            query = query.filter(Attendance.class_id == class_id)
+        
+        if student_id:
+            query = query.filter(Attendance.student_id == student_id)
+        
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= from_date)
+            except ValueError:
+                return jsonify({'error': 'Invalid date_from format. Use YYYY-MM-DD.'}), 400
+        
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= to_date)
+            except ValueError:
+                return jsonify({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}), 400
         
         if status:
-            query = query.filter(Attendance.status == status)
+            status_list = status.split(',')
+            query = query.filter(Attendance.status.in_(status_list))
         
-        if student_name:
-            query = query.filter(or_(
-                User.first_name.ilike(f'%{student_name}%'),
-                User.last_name.ilike(f'%{student_name}%')
-            ))
+        # Restrict instructors to only see their classes
+        if current_user.role == 'Instructor':
+            query = query.filter(Class.instructor_id == current_user.id)
         
-        if instructor_id:
-            query = query.filter(Class.instructor_id == instructor_id)
+        # Execute query
+        results = query.order_by(Attendance.date.desc()).all()
         
-        # Filter out archived records if requested
-        if exclude_archived:
-            query = query.filter(or_(Attendance.is_archived == False, Attendance.is_archived == None))
-        
-        # Apply date filters
-        if date_start:
-            try:
-                date_start_obj = datetime.strptime(date_start, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date >= date_start_obj)
-            except Exception as e:
-                print(f"Invalid date_start format: {date_start}")
-        
-        if date_end:
-            try:
-                date_end_obj = datetime.strptime(date_end, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date <= date_end_obj)
-            except Exception as e:
-                print(f"Invalid date_end format: {date_end}")
-        
-        # Count total records first
-        total_count = query.count()
-        
-        # Get status counts
-        present_count = query.filter(Attendance.status == 'Present').count()
-        absent_count = query.filter(Attendance.status == 'Absent').count()
-        late_count = query.filter(Attendance.status == 'Late').count()
-        
-        # Apply pagination
-        query = query.order_by(Attendance.date.desc())
-        results = query.offset((page - 1) * per_page).limit(per_page).all()
-        
-        # Format records for response
-        records = []
-        for attendance, student, class_obj in results:
-            instructor_name = "Unknown"
-            instructor_id = None
+        # Format results
+        attendance_records = []
+        for record in results:
+            attendance, first_name, last_name, class_name = record
             
-            if class_obj and class_obj.instructor_id:
-                instructor = User.query.get(class_obj.instructor_id)
-                if instructor:
-                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
-                    instructor_id = instructor.id
-            
-            records.append({
+            attendance_records.append({
                 'id': attendance.id,
-                'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else '',
-                'status': attendance.status or 'Unknown',
-                'comment': attendance.comments,
-                'student_name': f"{student.first_name} {student.last_name}" if student else "Unknown",
-                'student_id': student.id if student else None,
-                'student_profile_img': student.profile_img if student and student.profile_img else 'profile.png',
-                'class_name': class_obj.name if class_obj else "Unknown",
-                'class_id': class_obj.id if class_obj else None,
-                'instructor_name': instructor_name,
-                'instructor_id': instructor_id
+                'studentId': attendance.student_id,
+                'studentName': f"{first_name} {last_name}",
+                'classId': attendance.class_id,
+                'className': class_name,
+                'date': attendance.date.strftime('%Y-%m-%d'),
+                'status': attendance.status,
+                'comments': attendance.comments
             })
         
+        # Calculate stats
+        stats = calculate_attendance_stats(attendance_records)
+        
+        # Calculate total count
+        total_count = len(attendance_records)
+        
         # Calculate total pages
+        per_page = int(request.args.get('per_page', 10))  # Default to 10 per page
         total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
         
-        # Prepare response
         return jsonify({
-            'records': records,
-            'total_records': total_count,
-            'stats': {
-                'total': total_count,
-                'present': present_count,
-                'absent': absent_count,
-                'late': late_count
-            },
-            'pagination': {
-                'page': page,
-                'per_page': per_page,
-                'total_pages': total_pages
-            }
+            'attendance': attendance_records,
+            'stats': stats,
+            'total': total_count
         })
-    
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'error': f'Failed to fetch attendance data: {str(e)}',
-            'records': []
-        }), 500
+        print(f"Error retrieving attendance records: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def calculate_attendance_stats(attendance_records):
+    """
+    Calculate statistics from attendance records
+    """
+    # Count unique students
+    unique_students = set(record['studentId'] for record in attendance_records)
+    
+    # Count unique classes
+    unique_classes = set(record['classId'] for record in attendance_records)
+    
+    # Calculate attendance rate
+    present_count = sum(1 for record in attendance_records if record['status'] == 'Present')
+    total_count = len(attendance_records)
+    attendance_rate = (present_count / total_count * 100) if total_count > 0 else 0
+    
+    # Get total enrollments count
+    enrollments_count = len(attendance_records)
+    
+    return {
+        'totalStudents': len(unique_students),
+        'activeClasses': len(unique_classes),
+        'attendanceRate': attendance_rate,
+        'totalEnrollments': enrollments_count
+    }
 
 @api_bp.route('/attendance/<int:record_id>/archive', methods=['POST'])
 @login_required
@@ -2537,13 +2781,19 @@ def archive_attendance_record(record_id):
         attendance.is_archived = True
         attendance.archive_date = datetime.utcnow().date()
         
-        # Add archive note to comments
+        # Format archive note with consistent pattern
+        archive_timestamp = datetime.now().strftime('%Y-%m-%d')
         reason = data.get('reason', 'User requested archive')
         comment = data.get('comment', '')
-        archive_note = f"ARCHIVE NOTE ({datetime.now().strftime('%Y-%m-%d')}): {reason}"
+        admin_name = f"{current_user.first_name} {current_user.last_name}"
         
+        # The main reason that will be shown
+        archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {reason}"
         if comment:
             archive_note += f" - {comment}"
+        
+        # Add admin name in a standardized format that the UI can parse
+        archive_note += f"\nArchived by: {admin_name}"
         
         # Preserve original comment if it exists
         if attendance.comments:
@@ -2560,7 +2810,7 @@ def archive_attendance_record(record_id):
             student_count = User.query.filter_by(is_archived=True, role='Student').count()
             instructor_count = User.query.filter_by(is_archived=True, role='Instructor').count()
             class_count = Class.query.filter_by(is_archived=True).count()
-            company_count = Company.query.filter_by(is_archived=True).count()
+            company_count = Company.query.filter_by(status='Inactive').count()
         except:
             # Default values if count fails
             attendance_count = 0
@@ -2740,73 +2990,212 @@ def get_archived_attendance():
             }
         }), 500
 
-@api_bp.route('/restore-archived/attendance/<int:record_id>', methods=['POST'])
+@api_bp.route('/classes/instructor/<string:instructor_id>', methods=['GET'])
 @login_required
-def restore_archived_attendance(record_id):
-    """Restore an archived attendance record"""
+def get_instructor_classes(instructor_id):
+    """API endpoint to get classes taught by a specific instructor"""
     try:
-        # Get the attendance record
-        attendance = Attendance.query.get_or_404(record_id)
+        # Get the instructor
+        instructor = User.query.filter_by(id=instructor_id, role='Instructor').first()
+        if not instructor:
+            return jsonify({'error': 'Instructor not found'}), 404
+            
+        # Get classes taught by this instructor
+        classes = Class.query.filter_by(instructor_id=instructor_id).all()
         
-        # Check if it's actually archived
-        if not attendance.is_archived:
-            return jsonify({
-                'success': False,
-                'message': 'Record is not archived'
-            }), 400
+        result = []
+        for class_obj in classes:
+            # Get enrolled student count
+            student_count = Enrollment.query.filter_by(class_id=class_obj.id).count()
+            
+            result.append({
+                'class_id': class_obj.id,
+                'name': class_obj.name,
+                'description': class_obj.description,
+                'day_of_week': class_obj.day_of_week,
+                'start_time': class_obj.start_time.strftime('%H:%M') if class_obj.start_time else None,
+                'end_time': class_obj.end_time.strftime('%H:%M') if class_obj.end_time else None,
+                'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}" if class_obj.start_time and class_obj.end_time else None,
+                'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}" if class_obj.day_of_week and class_obj.start_time and class_obj.end_time else None,
+                'is_active': class_obj.is_active,
+                'term': class_obj.term,
+                'students_count': student_count
+            })
         
-        # Restore the record
-        attendance.is_archived = False
-        attendance.archive_date = None
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error fetching instructor classes: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/users/<string:user_id>/archive', methods=['PUT'])
+@login_required
+def archive_user(user_id):
+    """API endpoint to archive a user"""
+    try:
+        # Check if user exists
+        user = User.query.get_or_404(user_id)
         
-        # Update comments to indicate restoration
-        if attendance.comments:
-            attendance.comments += f"\n\nRESTORED ({datetime.now().strftime('%Y-%m-%d')})"
-        else:
-            attendance.comments = f"RESTORED ({datetime.now().strftime('%Y-%m-%d')})"
+        # Check if current user has permission (must be admin)
+        if current_user.role.lower() != 'admin':
+            return jsonify({'error': 'You do not have permission to archive users'}), 403
+
+        # Get archive reason from request data
+        data = request.json or {}
+        archive_reason = data.get('reason', 'User archived by administrator')
+        
+        # Archive the user by setting is_active = False and is_archived = True
+        user.is_active = False
+        user.is_archived = True
+        
+        # Add timestamp to track when archive happened - safely handle missing column
+        try:
+            if hasattr(user, 'archive_date'):
+                user.archive_date = datetime.now().date()
+        except Exception as e:
+            pass
+        
+        # Format archive note with consistent pattern
+        archive_timestamp = datetime.now().strftime('%Y-%m-%d')
+        admin_name = f"{current_user.first_name} {current_user.last_name}"
+        
+        # The main reason that will be shown
+        archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {archive_reason}"
+        # Add admin name in a standardized format that the UI can parse
+        archive_note += f"\nArchived by: {admin_name}"
+        
+        # Update notes field if it exists
+        try:
+            if hasattr(user, 'notes'):
+                if user.notes:
+                    user.notes += f"\n\n{archive_note}"
+                else:
+                    user.notes = archive_note
+        except Exception as e:
+            pass
         
         # Save changes
         db.session.commit()
         
         return jsonify({
-            'success': True,
-            'message': 'Attendance record restored successfully'
+            'success': True, 
+            'message': f'User {user.id} has been archived successfully',
+            'role': user.role.lower()
         })
-        
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
-@api_bp.route('/archives/delete/attendance/<int:record_id>', methods=['DELETE'])
+@api_bp.route('/users/<string:user_id>/status', methods=['PUT'])
 @login_required
-def delete_archived_attendance(record_id):
-    """Permanently delete an archived attendance record"""
+def update_user_status(user_id):
+    """API endpoint to update a user's active status"""
     try:
-        # Get the attendance record
-        attendance = Attendance.query.get_or_404(record_id)
+        # Check if user exists
+        user = User.query.get_or_404(user_id)
         
-        # Check if it's archived
-        if not attendance.is_archived:
-            return jsonify({
-                'success': False,
-                'message': 'Cannot delete non-archived records'
-            }), 400
+        # Check if current user has permission (must be admin)
+        if current_user.role.lower() != 'admin':
+            return jsonify({'error': 'You do not have permission to update user status'}), 403
         
-        # Delete the record
-        db.session.delete(attendance)
+        # Get the is_active status from the request
+        data = request.get_json()
+        if 'is_active' not in data:
+            return jsonify({'error': 'Missing is_active field in request'}), 400
+            
+        # Update the user status
+        user.is_active = data['is_active']
+        
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'User {user.id} status updated successfully',
+            'is_active': user.is_active
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating user status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/classes/create', methods=['POST'])
+@login_required
+@admin_required
+def create_class():
+    """
+    Create a new class
+    """
+    # Get JSON data from request
+    data = request.json
+    
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+    
+    # Validate required fields
+    required_fields = ['name', 'day', 'time', 'year']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing required field: {field}'}), 400
+    
+    try:
+        # Generate a unique class ID
+        import string
+        import random
+        class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
+        
+        # Check if the ID already exists, if so, generate a new one
+        while Class.query.get(class_id) is not None:
+            class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
+        
+        # Parse time format "HH:MM - HH:MM"
+        time_parts = data['time'].split(' - ')
+        if len(time_parts) != 2:
+            return jsonify({'error': 'Invalid time format. Expected format: "HH:MM - HH:MM"'}), 400
+        
+        start_time = datetime.strptime(time_parts[0], '%H:%M').time()
+        end_time = datetime.strptime(time_parts[1], '%H:%M').time()
+        
+        # Create new class
+        new_class = Class(
+            id=class_id,
+            name=data['name'],
+            description=data.get('description'),
+            day_of_week=data['day'],
+            term=data['year'],
+            instructor_id=data.get('instructor_id') if data.get('instructor_id') else None,
+            start_time=start_time,
+            end_time=end_time,
+            is_active=True,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        
+        # Add to database
+        db.session.add(new_class)
         db.session.commit()
         
         return jsonify({
             'success': True,
-            'message': 'Attendance record deleted permanently'
-        })
+            'message': 'Class created successfully',
+            'class_id': class_id
+        }), 201
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'error': f'Failed to create class: {str(e)}'}), 500
+
+# Helper function to get company name by id
+def get_company_name(company_id):
+    """Get company name from company_id"""
+    if not company_id:
+        return "Not Assigned"
+    
+    try:
+        company = Company.query.get(company_id)
+        if company:
+            return company.name
+    except Exception as e:
+        print(f"Error getting company name: {str(e)}")
+    
+    return "Unknown Company"

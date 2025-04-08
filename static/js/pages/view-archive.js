@@ -2,9 +2,38 @@
 const currentState = {
     folder: '', // No default selection
     page: 1,
-    perPage: 10,
+    perPage: 5,
     search: '',
     total: 0
+};
+
+// Define all supported archive types
+const archiveTypes = {
+    'class': {
+        title: 'Archived Classes',
+        icon: 'bi-book',
+        columns: ['ID', 'Name', 'Schedule', 'Year', 'Archive Date', 'Actions']
+    },
+    'student': {
+        title: 'Archived Students',
+        icon: 'bi-person-badge',
+        columns: ['ID', 'Name', 'Company', 'Archive Date', 'Actions']
+    },
+    'company': {
+        title: 'Archived Companies',
+        icon: 'bi-building',
+        columns: ['ID', 'Name', 'Contact', 'Archive Date', 'Actions']
+    },
+    'attendance': {
+        title: 'Archived Attendance',
+        icon: 'bi-calendar-check',
+        columns: ['ID', 'Date', 'Class', 'Student', 'Status', 'Archive Date', 'Actions']
+    },
+    'admin': {
+        title: 'Archived Administrators',
+        icon: 'bi-person-gear',
+        columns: ['ID', 'Name', 'Email', 'Archive Date', 'Status', 'Actions']
+    }
 };
 
 // Store temporarily the record info for modal confirmation
@@ -16,44 +45,134 @@ let restoredRecord = null;
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Archive page loaded');
     
-    // Set up event listeners
+    // Initialize the archive page with a single function call
+    // This will handle all initialization, event listeners, and data loading
+    initializeArchivePage();
+});
+
+// Main initialization function
+function initializeArchivePage() {
+    // Set initial counts to zero
+    initializeCardCounts();
+    
+    // Set up all event listeners
     setupEventListeners();
     
     // Load initial counts separately from any specific archive data
-    fetchArchiveCounts();
+    fetchArchiveCounts().then(() => {
+        console.log('Archive counts loaded successfully');
+    }).catch(err => {
+        console.error('Failed to load initial archive counts:', err);
+    });
     
-    // Check URL parameters for folder selection
-    const urlParams = new URLSearchParams(window.location.search);
-    const folderParam = urlParams.get('type');
+    // Process URL parameters
+    processURLParams();
     
-    // Update state properties instead of reassigning the object
-    currentState.folder = folderParam || '';
-    currentState.page = 1;
-    currentState.perPage = 5;
-    currentState.search = '';
-    
-    // If we have a folder parameter, update UI and load data
-    if (folderParam) {
-        // Update the dropdown to match the selected folder
-        const archiveTypeFilter = document.getElementById('archiveTypeFilter');
-        if (archiveTypeFilter) {
-            archiveTypeFilter.value = folderParam;
-        }
-        
-        // Show the table for this folder
-        showArchiveTable(folderParam);
-        
-        // Load data for this folder
-        loadArchiveData(folderParam);
-        
-        // Highlight the selected card
-        highlightSelectedCard(folderParam);
-    } else {
-        // No folder parameter, show default view
-        hideAllArchiveTables();
-        document.getElementById('defaultMessage').classList.remove('d-none');
+    // If no folder is selected, just load the initial counts
+    if (!currentState.folder) {
+        loadInitialCounts();
     }
+}
 
+// Setup all event listeners in one place
+function setupEventListeners() {
+    // Archive type dropdown change
+    const archiveTypeFilter = document.getElementById('archiveTypeFilter');
+    if (archiveTypeFilter) {
+        archiveTypeFilter.addEventListener('change', function() {
+            const selectedType = this.value;
+            currentState.folder = selectedType;
+            currentState.page = 1; // Reset to first page
+            
+            if (selectedType) {
+                showArchiveTable(selectedType);
+                loadArchiveData(selectedType);
+                highlightSelectedCard(selectedType);
+                updateURLParams();
+            } else {
+                hideAllArchiveTables();
+                document.getElementById('defaultMessage').classList.remove('d-none');
+                document.getElementById('defaultMessage').innerHTML = `
+                    <i class="bi bi-archive fs-1 text-muted"></i>
+                    <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
+                `;
+                // Clear selection highlight from all cards
+                highlightSelectedCard(null);
+                updateURLParams();
+            }
+        });
+    }
+    
+    // Search input
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        // Use a longer debounce time to reduce API calls
+        const searchDebounceTime = 500; // 500ms
+        let searchTimeout;
+        
+        searchInput.addEventListener('input', function() {
+            // Update state with current search term
+            currentState.search = this.value;
+            
+            // Toggle clear button visibility
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) {
+                clearBtn.classList.toggle('d-none', currentState.search.length === 0);
+            }
+            
+            // Debounce search to avoid too many requests
+            clearTimeout(searchTimeout);
+            
+            // Only trigger search if we have at least 2 characters or if search is cleared
+            if (currentState.search.length === 0 || currentState.search.length >= 2) {
+                searchTimeout = setTimeout(() => {
+                    if (currentState.folder) {
+                        // If a specific folder is selected, only search in that folder
+                        currentState.page = 1; // Reset to first page for new searches
+                        loadArchiveData(currentState.folder);
+                    } else if (currentState.search.length >= 2) {
+                        // Only search all types when no folder is selected AND search has min 2 chars
+                        searchAllArchiveTypes(currentState.search);
+                    } else {
+                        // No folder selected and search cleared - show default message
+                        hideAllArchiveTables();
+                        document.getElementById('defaultMessage').classList.remove('d-none');
+                        document.getElementById('defaultMessage').innerHTML = `
+                            <i class="bi bi-archive fs-1 text-muted"></i>
+                            <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
+                        `;
+                        loadInitialCounts();
+                    }
+                }, searchDebounceTime);
+            }
+        });
+    }
+    
+    // Clear search button
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.value = '';
+                currentState.search = '';
+                this.classList.add('d-none');
+                
+                // Trigger search with empty term
+                if (currentState.folder) {
+                    loadArchiveData(currentState.folder);
+                } else {
+                    hideAllArchiveTables();
+                    document.getElementById('defaultMessage').classList.remove('d-none');
+                    document.getElementById('defaultMessage').innerHTML = `
+                        <i class="bi bi-archive fs-1 text-muted"></i>
+                        <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
+                    `;
+                }
+            }
+        });
+    }
+    
     // Set up the restore confirmation button
     const confirmRestoreBtn = document.getElementById('confirmRestoreBtn');
     if (confirmRestoreBtn) {
@@ -121,91 +240,37 @@ document.addEventListener('DOMContentLoaded', function() {
             recordToDelete = null;
         });
     }
-});
-
-function setupEventListeners() {
-    // Archive type filter
-    const archiveTypeFilter = document.getElementById('archiveTypeFilter');
-    if (archiveTypeFilter) {
-        archiveTypeFilter.addEventListener('change', function() {
-            const selectedFolder = this.value;
-            if (selectedFolder) {
-                currentState.folder = selectedFolder;
-                currentState.page = 1; // Reset to first page when switching folders
-                showArchiveTable(selectedFolder);
-                loadArchiveData(selectedFolder);
-                
-                // Update dropdown appearance
-                updateDropdownAppearance(selectedFolder);
-                
-                // Highlight the selected card
-                highlightSelectedCard(selectedFolder);
-            } else {
-                // Hide all tables and show default message
-                hideAllArchiveTables();
-                document.getElementById('defaultMessage').classList.remove('d-none');
-                
-                // Clear the selected highlight in UI
-                currentState.folder = '';
-                updateArchiveCounts({ student: 0, class: 0, company: 0, instructor: 0, attendance: 0 });
-                loadInitialCounts();
-            }
-        });
-        
-        // Set dropdown value to current state (may be empty string)
-        archiveTypeFilter.value = currentState.folder;
-        if (currentState.folder) {
-            updateDropdownAppearance(currentState.folder);
-        }
-    }
-
-    // Search input
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            currentState.search = this.value;
-            
-            // Toggle clear button visibility
-            const clearBtn = document.getElementById('clearSearchBtn');
-            if (clearBtn) {
-                if (currentState.search.length > 0) {
-                    clearBtn.classList.remove('d-none');
-                } else {
-                    clearBtn.classList.add('d-none');
-                }
-            }
-            
-            // Debounce search to avoid too many requests
-            clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                if (currentState.search.length >= 2) {
-                    if (currentState.folder) {
-                        // If we have a specific folder type, search in that type
-                        loadArchiveData(currentState.folder);
-                    } else {
-                        // If no folder is selected, search all types
-                        searchAllArchiveTypes(currentState.search);
-                    }
-                } else if (currentState.search.length === 0) {
-                    // If search is cleared
-                    if (currentState.folder) {
-                        // Reload current folder data
-                        loadArchiveData(currentState.folder);
-                    } else {
-                        // Show default message and load initial counts
-                        hideAllArchiveTables();
-                        document.getElementById('defaultMessage').classList.remove('d-none');
-                        document.getElementById('defaultMessage').innerHTML = `
-                            <i class="bi bi-archive fs-1 text-muted"></i>
-                            <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
-                        `;
-                        loadInitialCounts();
-                    }
-                }
-            }, 300);
+    
+    // Export button
+    const exportBtn = document.getElementById('exportCsvBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', function() {
+            exportCSV();
         });
     }
     
+    // Set up event listeners for pagination and rows per page
+    setupPaginationListeners();
+    
+    // Set up card click handlers
+    setupArchiveCardListeners();
+}
+
+// Setup archive card click handlers
+function setupArchiveCardListeners() {
+    const archiveTypes = ['student', 'class', 'company', 'instructor', 'admin', 'attendance'];
+    archiveTypes.forEach(type => {
+        const card = document.getElementById(`${type}ArchiveCard`);
+        if (card) {
+            card.addEventListener('click', function() {
+                switchArchiveType(type);
+            });
+        }
+    });
+}
+
+// Setup pagination event listeners
+function setupPaginationListeners() {
     // Rows per page selector
     const rowsPerPage = document.getElementById('rowsPerPage');
     if (rowsPerPage) {
@@ -230,18 +295,73 @@ function setupEventListeners() {
     const nextPage = document.getElementById('nextPage');
     if (nextPage) {
         nextPage.addEventListener('click', function() {
-            // We need to check against total pages which we'd get from the API response
             currentState.page++;
             loadArchiveData(currentState.folder);
         });
     }
+}
+
+// Add the missing processURLParams function
+function processURLParams() {
+    // Check URL parameters for folder selection
+    const urlParams = new URLSearchParams(window.location.search);
+    const folderParam = urlParams.get('type');
     
-    // Export button
-    const exportBtn = document.getElementById('exportCsvBtn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', function() {
-            exportCSV();
-        });
+    // If 'user' folder is specified, redirect to student archive instead
+    if (folderParam === 'user') {
+        // Redirect to student archive instead
+        const newUrl = window.location.pathname + '?type=student';
+        window.history.replaceState({}, '', newUrl);
+        currentState.folder = 'student';
+    } else {
+        currentState.folder = folderParam || '';
+    }
+    
+    // Get page parameter if it exists
+    const pageParam = urlParams.get('page');
+    if (pageParam && !isNaN(parseInt(pageParam))) {
+        currentState.page = parseInt(pageParam);
+    } else {
+        currentState.page = 1;
+    }
+    
+    // Get search parameter if it exists
+    currentState.search = urlParams.get('search') || '';
+    
+    // If search parameter exists, update the search input
+    if (currentState.search) {
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.value = currentState.search;
+            
+            // Show clear button
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) {
+                clearBtn.classList.remove('d-none');
+            }
+        }
+    }
+    
+    // If we have a folder parameter, update UI and load data
+    if (currentState.folder) {
+        // Update the dropdown to match the selected folder
+        const archiveTypeFilter = document.getElementById('archiveTypeFilter');
+        if (archiveTypeFilter) {
+            archiveTypeFilter.value = currentState.folder;
+        }
+        
+        // Show the table for this folder
+        showArchiveTable(currentState.folder);
+        
+        // Load data for this folder
+        loadArchiveData(currentState.folder);
+        
+        // Highlight the selected card
+        highlightSelectedCard(currentState.folder);
+    } else {
+        // No folder parameter, show default view
+        hideAllArchiveTables();
+        document.getElementById('defaultMessage').classList.remove('d-none');
     }
 }
 
@@ -249,12 +369,18 @@ function showArchiveTable(folder) {
     // Hide all archive tables and default message
     hideAllArchiveTables();
     document.getElementById('defaultMessage').classList.add('d-none');
-        
-        // Show selected archive table
-        const selectedTable = document.getElementById(`${folder}ArchiveTable`);
-        if (selectedTable) {
-            selectedTable.classList.remove('d-none');
+    
+    // Show selected archive table
+    const selectedTable = document.getElementById(`${folder}ArchiveTable`);
+    if (selectedTable) {
+        selectedTable.classList.remove('d-none');
+    } else if (folder === 'user') {
+        // Create user archive table if it doesn't exist
+        createUserArchiveTable();
     }
+    
+    // Update title with selected type
+    updateArchiveTitle(folder);
 }
 
 function hideAllArchiveTables() {
@@ -282,7 +408,7 @@ async function loadArchiveData(folder) {
     // Show the folder-specific table with loading state
     const table = document.getElementById(`${currentFolder}ArchiveTable`);
     if (table) {
-                table.classList.remove('d-none');
+        table.classList.remove('d-none');
     }
     
     // Update the title
@@ -329,9 +455,6 @@ async function loadArchiveData(folder) {
         }
         
         const data = await response.json();
-
-        // Note: We don't update counts here anymore since we're getting them separately
-        // to avoid the issue of counts being reset when viewing a specific archive type
 
         // Update table body
         if (tbody) {
@@ -382,78 +505,85 @@ async function fetchArchiveCounts() {
             class: 0,
             company: 0,
             instructor: 0,
+            admin: 0,
             attendance: 0
         });
+        
+        return data.counts;
     } catch (error) {
         console.error('Error fetching archive counts:', error);
         // Don't reset counts on error - keep the existing values
+        return null;
     }
 }
 
 // Function to update archive counts
 function updateArchiveCounts(counts) {
-    // Update the counts in the stats cards with animation
-    const countElements = {
-        'student': document.getElementById('studentCount'),
-        'class': document.getElementById('classCount'),
-        'company': document.getElementById('companyCount'),
-        'instructor': document.getElementById('instructorCount'),
-        'attendance': document.getElementById('attendanceCount')
+    const updateCount = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value || 0;
+        }
     };
     
-    // Update count values with 0 or the actual count
-    Object.keys(countElements).forEach(type => {
-        const countElement = countElements[type];
-        if (countElement) {
-            const count = counts[type] || 0;
-            countElement.textContent = count;
-        }
-    });
-    
-    // If a folder is selected, highlight that card
-    if (currentState.folder) {
-        highlightSelectedCard(currentState.folder);
-    } else {
-        // Otherwise, remove highlight from all cards
-        const allCards = ['student', 'class', 'company', 'instructor', 'attendance'];
-        allCards.forEach(cardType => {
-            const card = document.getElementById(`${cardType}ArchiveCard`);
-            if (card) {
-                card.classList.remove('archive-card-selected');
-            }
-        });
-    }
+    updateCount('studentCount', counts.student);
+    updateCount('classCount', counts.class);
+    updateCount('companyCount', counts.company);
+    updateCount('instructorCount', counts.instructor);
+    updateCount('adminCount', counts.admin);
+    updateCount('attendanceCount', counts.attendance);
 }
 
 // Function to handle clicking on stat cards
 function switchArchiveType(type) {
-    // Only switch if it's a different type
+    // Only switch if it's a different type or no type is selected
     if (type !== currentState.folder) {
+        // Clear search when switching types
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.value = '';
+            currentState.search = '';
+            // Hide clear button
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) {
+                clearBtn.classList.add('d-none');
+            }
+        }
+        
         // Update dropdown
         const archiveTypeFilter = document.getElementById('archiveTypeFilter');
         if (archiveTypeFilter) {
             archiveTypeFilter.value = type;
         }
         
-        // Update state
+        // Update state and reset pagination
         currentState.folder = type;
-        currentState.page = 1; // Reset to first page
+        currentState.page = 1;
         
-        // Update UI
+        // Show the table for this folder
         showArchiveTable(type);
+        
+        // Load data for this folder
         loadArchiveData(type);
+        
+        // Highlight the selected card
         highlightSelectedCard(type);
+        
+        // Update URL params to reflect the change
+        updateURLParams();
     }
 }
 
 // Function to highlight the selected card
 function highlightSelectedCard(type) {
     // Remove highlight from all cards
-    const allCards = ['student', 'class', 'company', 'instructor', 'attendance'];
+    const allCards = ['student', 'class', 'company', 'instructor', 'admin', 'attendance'];
     allCards.forEach(cardType => {
         const card = document.getElementById(`${cardType}ArchiveCard`);
         if (card) {
             card.classList.remove('archive-card-selected');
+            // Add a subtle box shadow to all cards
+            card.style.boxShadow = '0 0.125rem 0.25rem rgba(0, 0, 0, 0.075)';
         }
     });
     
@@ -461,6 +591,9 @@ function highlightSelectedCard(type) {
     const selectedCard = document.getElementById(`${type}ArchiveCard`);
     if (selectedCard) {
         selectedCard.classList.add('archive-card-selected');
+        // Add a more prominent box shadow and border to the selected card
+        selectedCard.style.boxShadow = '0 0.5rem 1rem rgba(0, 0, 0, 0.15)';
+        selectedCard.style.borderLeft = '4px solid #191970';
     }
 }
 
@@ -490,18 +623,37 @@ function updatePaginationInfo(data) {
     }
 }
 
+// Helper function to extract archive reason and admin info from description or notes
+const extractArchiveReason = (text) => {
+    if (!text) return { reason: 'Archived', admin: null };
+    
+    // Extract the basic reason
+    const reasonMatch = text.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
+    const reason = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim() : 'Archived';
+    
+    // Try to extract admin info if available
+    const adminMatch = text.match(/Archived by: (.+?)(\n|$)/);
+    const admin = adminMatch && adminMatch[1] ? adminMatch[1].trim() : null;
+    
+    return { reason, admin };
+};
+
+// Format the archive reason with admin info
+const formatArchiveReason = (reasonObj) => {
+    // For legacy archive records without admin information, add a default message
+    if (!reasonObj.admin) {
+        return `${reasonObj.reason} - Archived by Administrator`;
+    } else {
+        return `${reasonObj.reason} - Archived by ${reasonObj.admin}`;
+    }
+};
+
 function generateTableRow(record, type) {
     switch(type) {
         case 'class':
-            // Extract archive reason if available
-            let archiveReason = 'Archived';
-            
-            if (record.description && record.description.includes('ARCHIVE NOTE')) {
-                const match = record.description.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
-                if (match && match[1]) {
-                    archiveReason = match[1].trim();
-                }
-            }
+            // Extract archive reason from description
+            const classReasonObj = extractArchiveReason(record.description);
+            const classReason = formatArchiveReason(classReasonObj);
             
             return `
                 <tr>
@@ -520,7 +672,7 @@ function generateTableRow(record, type) {
                     <td>${record.day}, ${record.time}</td>
                     <td>${record.archive_date || 'Unknown'}</td>
                     <td>
-                        <span class="badge bg-secondary-subtle text-secondary">${archiveReason}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">${classReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
@@ -535,14 +687,17 @@ function generateTableRow(record, type) {
                 </tr>
             `;
         case 'student':
-            // Extract archive reason if available
-            let studentArchiveReason = 'Archived';
-            if (record.description && record.description.includes('ARCHIVE NOTE')) {
-                const match = record.description.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
-                if (match && match[1]) {
-                    studentArchiveReason = match[1].trim();
-                }
+            // Check all possible fields for archive note information
+            let studentNotesText = record.notes || record.description;
+            if (!studentNotesText && record.archive_note) {
+                studentNotesText = record.archive_note;
             }
+            
+            const studentReasonObj = extractArchiveReason(studentNotesText);
+            const studentReason = formatArchiveReason(studentReasonObj);
+            
+            // Make sure we have a valid company name
+            const companyName = record.company_name || record.company || 'Not Assigned';
             
             return `
                 <tr>
@@ -560,10 +715,10 @@ function generateTableRow(record, type) {
                         </div>
                     </td>
                     <td>${record.email || ''}</td>
-                    <td>${record.company || 'Not Assigned'}</td>
+                    <td>${companyName}</td>
                     <td>${record.archive_date || 'Unknown'}</td>
                     <td>
-                        <span class="badge bg-secondary-subtle text-secondary">${studentArchiveReason}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">${studentReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
@@ -578,14 +733,9 @@ function generateTableRow(record, type) {
                 </tr>
             `;
         case 'company':
-            // Extract archive reason if available
-            let companyArchiveReason = 'Archived';
-            if (record.description && record.description.includes('ARCHIVE NOTE')) {
-                const match = record.description.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
-                if (match && match[1]) {
-                    companyArchiveReason = match[1].trim();
-                }
-            }
+            // Extract archive reason from description or notes
+            const companyReasonObj = extractArchiveReason(record.description || record.notes);
+            const companyReason = formatArchiveReason(companyReasonObj);
             
             return `
                 <tr>
@@ -604,7 +754,7 @@ function generateTableRow(record, type) {
                     <td>${record.email || ''}</td>
                     <td>${record.archive_date || 'Unknown'}</td>
                     <td>
-                        <span class="badge bg-secondary-subtle text-secondary">${companyArchiveReason}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">${companyReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
@@ -619,14 +769,14 @@ function generateTableRow(record, type) {
                 </tr>
             `;
         case 'instructor':
-            // Extract archive reason if available
-            let instructorArchiveReason = 'Archived';
-            if (record.description && record.description.includes('ARCHIVE NOTE')) {
-                const match = record.description.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
-                if (match && match[1]) {
-                    instructorArchiveReason = match[1].trim();
-                }
+            // Check all possible fields for archive note information
+            let instructorNotesText = record.notes || record.description;
+            if (!instructorNotesText && record.archive_note) {
+                instructorNotesText = record.archive_note;
             }
+            
+            const instructorReasonObj = extractArchiveReason(instructorNotesText);
+            const instructorReason = formatArchiveReason(instructorReasonObj);
             
             const department = record.department || 'Not Assigned';
             
@@ -649,7 +799,7 @@ function generateTableRow(record, type) {
                     <td>${department}</td>
                     <td>${record.archive_date || 'Unknown'}</td>
                     <td>
-                        <span class="badge bg-secondary-subtle text-secondary">${instructorArchiveReason}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">${instructorReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
@@ -664,6 +814,18 @@ function generateTableRow(record, type) {
                 </tr>
                 `;
         case 'attendance':
+            // Extract archive reason or use provided one
+            let attendanceReasonObj;
+            if (record.archive_reason) {
+                attendanceReasonObj = {
+                    reason: record.archive_reason,
+                    admin: record.archived_by || null
+                };
+            } else {
+                attendanceReasonObj = extractArchiveReason(record.notes);
+            }
+            const attendanceReason = formatArchiveReason(attendanceReasonObj);
+            
             return `
                 <tr>
                     <td>
@@ -686,7 +848,7 @@ function generateTableRow(record, type) {
                     </td>
                     <td>${record.archive_date || 'Unknown'}</td>
                     <td>
-                        <span class="badge bg-secondary-subtle text-secondary">${record.archive_reason || 'Archived'}</span>
+                        <span class="badge bg-secondary-subtle text-secondary">${attendanceReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
@@ -694,6 +856,46 @@ function generateTableRow(record, type) {
                                 <i class="bi bi-arrow-counterclockwise"></i>
                             </button>
                             <button class="btn btn-link text-danger p-0" onclick="deleteRecord('${record.id}', 'attendance')" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        case 'admin':
+            // Extract archive reason from notes field
+            const adminReasonObj = extractArchiveReason(record.notes);
+            const adminReason = formatArchiveReason(adminReasonObj);
+            
+            return `
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <img src="/static/images/${record.profile_img || 'profile.png'}" 
+                                 class="rounded-circle me-3" 
+                                 width="40" 
+                                 height="40"
+                                 alt="${record.name || `${record.first_name || ''} ${record.last_name || ''}`}">
+                            <div>
+                                <div class="fw-medium">${record.name || `${record.first_name || ''} ${record.last_name || ''}`}</div>
+                                <div class="text-muted small">${record.id || ''}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>${record.email || ''}</td>
+                    <td>${record.archive_date || 'Unknown'}</td>
+                    <td>
+                        <span class="badge bg-secondary-subtle text-secondary">Inactive</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-secondary-subtle text-secondary">${adminReason}</span>
+                    </td>
+                    <td class="text-end">
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button class="btn btn-link text-success p-0" onclick="restoreRecord('${record.id}', 'admin')" title="Restore">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            <button class="btn btn-link text-danger p-0" onclick="deleteRecord('${record.id}', 'admin')" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -799,154 +1001,142 @@ function showDeleteConfirmation(id, type) {
     modal.show();
 }
 
-// Function that actually performs the restore
-async function performRestore(id, type) {
-    // Store button reference for later
-    const button = document.querySelector(`button[onclick*="restoreRecord('${id}"]`);
-    const originalContent = button ? button.innerHTML : null;
+// Function to initialize card counts to "0" on page load
+function initializeCardCounts() {
+    // Set all count elements to "0" by default
+    updateArchiveCounts({ 
+        student: 0, 
+        class: 0, 
+        company: 0, 
+        instructor: 0, 
+        admin: 0,
+        attendance: 0 
+    });
+}
+
+// Create a reusable function to handle API requests with loading UI
+async function makeAPIRequest(url, options = {}, button = null) {
+    // Store original button content if provided
+    let originalContent = button ? button.innerHTML : null;
+    let isButtonDisabled = false;
     
     try {
-        // Show loading state on the button if possible
+        // Show loading state on button if provided
         if (button) {
+            originalContent = button.innerHTML;
             button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
             button.disabled = true;
+            isButtonDisabled = true;
         }
         
-        // Use the correct endpoint URL
-        const response = await fetch(`/api/restore-archived/${type}/${id}`, {
-                method: 'POST'
-            });
+        // Make the API request
+        const response = await fetch(url, options);
         
+        // Handle non-OK responses
         if (!response.ok) {
-            throw new Error(`Failed to restore record: ${response.status}`);
+            const errorData = await response.json().catch(() => ({ error: `HTTP error: ${response.status}` }));
+            throw new Error(errorData.error || `Request failed: ${response.status}`);
         }
         
-        const result = await response.json();
-        
-        // Show success toast notification
-        showToast('Success', result.message || 'Record restored successfully', 'success');
-        
-        // If we restored a class, show navigation modal
-        if (type === 'class') {
-            showClassNavigationModal(id);
-        } else {
-            // For other record types, just reload the data
-            if (currentState.folder) {
-                loadArchiveData(currentState.folder);
-            } else {
-                // If no specific folder is selected, refresh counts
-                loadInitialCounts();
-            }
-        }
-        
-        } catch (error) {
-        console.error('Error restoring record:', error);
-        // Show error toast notification
-        showToast('Error', `Failed to restore record: ${error.message}`, 'error');
-        
-        // Restore button state - button is now properly in scope
-        if (button) {
+        // Parse and return the response data
+        return await response.json();
+    } catch (error) {
+        // Let the caller handle the error
+        throw error;
+    } finally {
+        // Reset button state if provided
+        if (button && originalContent && isButtonDisabled) {
             button.innerHTML = originalContent;
             button.disabled = false;
         }
     }
 }
 
-// Function that actually performs the delete
-async function performDelete(id, type) {
-    // Store button reference for later
-    const button = document.querySelector(`button[onclick*="deleteRecord('${id}"]`);
-    const originalContent = button ? button.innerHTML : null;
+async function performRestore(id, type) {
+    const button = document.querySelector(`button[onclick*="restoreRecord('${id}"]`);
     
     try {
-        // Show loading state on the button if possible
-        if (button) {
-            button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
-            button.disabled = true;
-        }
+        // Make API request with button UI handling
+        const data = await makeAPIRequest(`/api/archives/restore/${type}/${id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }, button);
         
-        // Use API endpoint for deletion
-            const response = await fetch(`/api/archives/delete/${type}/${id}`, {
-                method: 'DELETE'
-            });
+        // Show success message
+        showToast('Success', data.message || 'Record has been restored', 'success');
         
-        if (!response.ok) {
-            throw new Error(`Failed to delete record: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        // Show success toast notification
-        showToast('Success', result.message || 'Record deleted successfully', 'success');
-        
-        // Reload the data
+        // Refresh data
+        await fetchArchiveCounts();
         loadArchiveData(currentState.folder);
+    } catch (error) {
+        console.error('Error restoring record:', error);
+        showToast('Error', error.message || 'Failed to restore record', 'error');
+    }
+}
+
+async function performDelete(id, type) {
+    const button = document.querySelector(`button[onclick*="deleteRecord('${id}"]`);
+    
+    try {
+        // Make API request with button UI handling
+        const data = await makeAPIRequest(`/api/archives/delete/${type}/${id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        }, button);
         
-        } catch (error) {
+        // Show success message
+        showToast('Success', data.message || 'Record has been permanently deleted', 'success');
+        
+        // Refresh data
+        await fetchArchiveCounts();
+        loadArchiveData(currentState.folder);
+    } catch (error) {
         console.error('Error deleting record:', error);
-        // Show error toast notification
-        showToast('Error', `Failed to delete record: ${error.message}`, 'error');
-        
-        // Restore button state if we have a reference to it
-        if (button) {
-            button.innerHTML = originalContent;
-            button.disabled = false;
-        }
+        showToast('Error', error.message || 'Failed to delete record', 'error');
     }
 }
 
 async function exportCSV() {
+    const exportBtn = document.getElementById('exportCsvBtn');
+    
     try {
-        // Show loading toast
         showToast('Export', 'Preparing CSV export...', 'info');
         
-        // Get the button to show loading state
-        const exportBtn = document.getElementById('exportCsvBtn');
-        const originalBtnContent = exportBtn ? exportBtn.innerHTML : '';
-        
-        if (exportBtn) {
-            exportBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Exporting...';
-            exportBtn.disabled = true;
-        }
-        
-        // Validate folder type
         if (!currentState.folder) {
             throw new Error('Please select an archive type to export');
         }
         
-        // Get current filters
         const searchParam = currentState.search ? `search=${encodeURIComponent(currentState.search)}` : '';
-        
-        // Create the URL with the current filters - include trailing slash to match API endpoint
         const url = `/api/archives/export/${currentState.folder}`;
         const queryURL = searchParam ? `${url}?${searchParam}` : url;
         
-        console.log('Exporting from URL:', queryURL);
-        
-        // Use fetch API instead of direct navigation
-        const response = await fetch(queryURL);
-        
-        // Reset button state
-        if (exportBtn) {
-            exportBtn.innerHTML = originalBtnContent;
-            exportBtn.disabled = false;
-        }
-        
-        if (!response.ok) {
-            // Get the error message from the response if possible
-            let errorMessage = `Export failed with status: ${response.status}`;
-            try {
-                const errorData = await response.json();
-                if (errorData && errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch (e) {
-                // If we can't parse the JSON, use the default error message
+        // Use the generic API request function
+        let response;
+        try {
+            // For this case we need the raw response, not JSON
+            response = await fetch(queryURL);
+            
+            if (exportBtn) {
+                exportBtn.innerHTML = '<i class="bi bi-arrow-up-right"></i> Export CSV';
+                exportBtn.disabled = false;
             }
-            throw new Error(errorMessage);
+            
+            if (!response.ok) {
+                let errorMessage = `Export failed with status: ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData && errorData.error) {
+                        errorMessage = errorData.error;
+                    }
+                } catch (e) {
+                    // Fallback to default error message
+                }
+                throw new Error(errorMessage);
+            }
+        } catch (error) {
+            throw error;
         }
         
-        // Get the filename from the Content-Disposition header if available
         let filename = `archived_${currentState.folder}_${new Date().toISOString().slice(0, 10)}.csv`;
         const contentDisposition = response.headers.get('Content-Disposition');
         if (contentDisposition) {
@@ -956,10 +1146,7 @@ async function exportCSV() {
             }
         }
         
-        // Get the blob from the response
         const blob = await response.blob();
-        
-        // Create a download link and trigger the download
         const url_link = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
@@ -968,18 +1155,14 @@ async function exportCSV() {
         document.body.appendChild(a);
         a.click();
         
-        // Clean up
         window.URL.revokeObjectURL(url_link);
         document.body.removeChild(a);
         
-        // Show success toast
         showToast('Success', `CSV exported successfully as ${filename}`, 'success');
     } catch (error) {
         console.error('Error exporting CSV:', error);
         showToast('Error', `Failed to export data: ${error.message}`, 'error');
         
-        // Reset button if error occurs
-        const exportBtn = document.getElementById('exportCsvBtn');
         if (exportBtn) {
             exportBtn.innerHTML = '<i class="bi bi-arrow-up-right"></i> Export CSV';
             exportBtn.disabled = false;
@@ -991,16 +1174,13 @@ async function exportCSV() {
 function updateDropdownAppearance(selectedFolder) {
     const archiveTypeFilter = document.getElementById('archiveTypeFilter');
     if (archiveTypeFilter) {
-        // Add a border or background color to indicate selection
         archiveTypeFilter.style.borderColor = '#191970';
         
-        // Find the selected option and update its text
         const options = archiveTypeFilter.options;
         for (let i = 0; i < options.length; i++) {
             const option = options[i];
             if (option.value === selectedFolder) {
                 const folderName = selectedFolder.charAt(0).toUpperCase() + selectedFolder.slice(1);
-                // Update the table title
                 const tableTitle = document.getElementById('archiveTableTitle');
                 if (tableTitle) {
                     tableTitle.textContent = `${folderName} Archives`;
@@ -1014,15 +1194,12 @@ function updateDropdownAppearance(selectedFolder) {
 // Function to load just the counts without loading a specific table
 async function loadInitialCounts() {
     try {
-        // Build URL to fetch only the counts
         let url = '/api/archives/counts';
         
-        // Fetch data from API
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to fetch archive counts: ${response.status}`);
         const data = await response.json();
 
-        // Update stats counts - ensure attendance is included
         updateArchiveCounts(data.counts || { 
             student: 0, 
             class: 0, 
@@ -1033,7 +1210,6 @@ async function loadInitialCounts() {
         
     } catch (error) {
         console.error('Error loading archive counts:', error);
-        // If there's an error, set all counts to 0 - include attendance
         updateArchiveCounts({ 
             student: 0, 
             class: 0, 
@@ -1046,123 +1222,96 @@ async function loadInitialCounts() {
 
 // Function to search all archive types
 async function searchAllArchiveTypes(searchTerm) {
-    if (!searchTerm || searchTerm.length < 2) return;
+    if (!searchTerm || searchTerm.length < 2) {
+        return;
+    }
+    
+    document.getElementById('defaultMessage').classList.add('d-none');
+    hideAllArchiveTables();
+    
+    document.getElementById('defaultMessage').classList.remove('d-none');
+    document.getElementById('defaultMessage').innerHTML = `
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Searching...</span>
+        </div>
+        <p class="mt-2 text-muted">Searching across all archive types for "${searchTerm}"</p>
+    `;
+    
+    const archiveTypes = ['student', 'class', 'company', 'instructor', 'admin', 'attendance'];
+    let resultsFound = false;
+    let typeWithResults = null;
     
     try {
-        // Hide default message and show a searching message
-        hideAllArchiveTables();
-        document.getElementById('defaultMessage').innerHTML = `
-            <div class="spinner-border text-primary mb-3" role="status">
-                <span class="visually-hidden">Searching...</span>
-            </div>
-            <p class="mt-3 text-muted">Searching all archives for "${searchTerm}"...</p>
-        `;
-        document.getElementById('defaultMessage').classList.remove('d-none');
-        
-        // Initialize results object
-        let resultsFound = false;
-        const archiveTypes = ['student', 'class', 'company', 'instructor', 'attendance'];
-        const resultCounts = {
-            student: 0,
-            class: 0,
-            company: 0,
-            instructor: 0,
-            attendance: 0
-        };
-        
-        // Search each archive type in parallel
         const searchPromises = archiveTypes.map(async (type) => {
-            try {
-                let url = `/api/archives/${type}?search=${encodeURIComponent(searchTerm)}&page=1&per_page=5`;
-                const response = await fetch(url);
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to search ${type} archives: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                resultCounts[type] = data.total || (data.records ? data.records.length : 0);
-                return { type, count: resultCounts[type], data };
-            } catch (error) {
-                console.error(`Error searching ${type} archives:`, error);
-                resultCounts[type] = 0;
-                return { type, count: 0, error: error.message };
-            }
-        });
-        
-        const searchResults = await Promise.all(searchPromises);
-        
-        // Process results and update UI
-        let totalResults = 0;
-        const resultsWithData = searchResults.filter(result => result.count > 0);
-        
-        searchResults.forEach(result => {
-            totalResults += result.count;
-        });
-        
-        // Update the archive counts
-        fetchArchiveCounts(); // Fetch actual counts instead of using search results
-        
-        if (totalResults === 0) {
-            // No results found
-            document.getElementById('defaultMessage').innerHTML = `
-                <i class="bi bi-search fs-1 text-muted"></i>
-                <p class="mt-3 text-muted">No archives found matching "${searchTerm}"</p>
-                <button class="btn btn-sm btn-outline-secondary mt-2" onclick="clearSearch()">
-                    <i class="bi bi-x-circle me-1"></i>Clear search
-                </button>
-            `;
-        } else if (resultsWithData.length === 1) {
-            // Only one type has results, automatically select it
-            const typeWithResults = resultsWithData[0].type;
+            const url = `/api/archives/${type}?search=${encodeURIComponent(searchTerm)}&page=1&per_page=${currentState.perPage}`;
+            const response = await fetch(url);
             
-            // Update dropdown
+            if (!response.ok) {
+                throw new Error(`Error searching ${type}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const resultCount = data.records ? data.records.length : 0;
+            
+            if (resultCount > 0) {
+                resultsFound = true;
+                if (!typeWithResults) {
+                    typeWithResults = type;
+                }
+            }
+            
+            return { type, count: resultCount, data };
+        });
+        
+        const results = await Promise.all(searchPromises);
+        document.getElementById('defaultMessage').classList.add('d-none');
+        
+        if (resultsFound && typeWithResults) {
+            currentState.folder = typeWithResults; 
+            
             const archiveTypeFilter = document.getElementById('archiveTypeFilter');
             if (archiveTypeFilter) {
                 archiveTypeFilter.value = typeWithResults;
             }
             
-            // Update state
-            currentState.folder = typeWithResults;
-            
-            // Show the table and load data
+            const typeResult = results.find(r => r.type === typeWithResults);
             showArchiveTable(typeWithResults);
-            loadArchiveData(typeWithResults);
             
-            // Update UI appearance
-            updateDropdownAppearance(typeWithResults);
+            const tbody = document.querySelector(`#${typeWithResults}ArchiveBody`);
+            if (tbody && typeResult && typeResult.data.records) {
+                if (typeResult.data.records.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">No results found</td></tr>';
+                } else {
+                    tbody.innerHTML = typeResult.data.records.map(record => 
+                        generateTableRow(record, typeWithResults)
+                    ).join('');
+                    
+                    updatePaginationInfo(typeResult.data);
+                }
+            }
+            
             highlightSelectedCard(typeWithResults);
+            updateURLParams();
         } else {
-            // Multiple types have results, show a summary
-            const summaryHTML = `
-                <i class="bi bi-list-ul fs-1 text-muted"></i>
-                <p class="mt-3">Found ${totalResults} results across ${resultsWithData.length} archive types</p>
-                <div class="d-flex gap-2 flex-wrap justify-content-center">
-                    ${archiveTypes.map(type => {
-                        const count = resultCounts[type] || 0;
-                        if (count > 0) {
-                            return `<button class="btn btn-sm ${type === currentState.folder ? 'btn-primary' : 'btn-outline-primary'}" 
-                                    onclick="selectArchiveType('${type}')" style="background-color: ${type === currentState.folder ? '#191970' : ''}; border-color: #191970;">
-                                    ${type.charAt(0).toUpperCase() + type.slice(1)} (${count})
-                                </button>`;
-                        }
-                        return '';
-                    }).join('')}
-                </div>
-                <p class="mt-3 text-muted small">Click on an archive type to view detailed results</p>
+            document.getElementById('defaultMessage').classList.remove('d-none');
+            document.getElementById('defaultMessage').innerHTML = `
+                <i class="bi bi-search fs-1 text-muted"></i>
+                <p class="mt-3 text-muted">No results found for "${searchTerm}"</p>
                 <button class="btn btn-sm btn-outline-secondary mt-2" onclick="clearSearch()">
-                    <i class="bi bi-x-circle me-1"></i>Clear search
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> Clear search
                 </button>
             `;
-            document.getElementById('defaultMessage').innerHTML = summaryHTML;
         }
     } catch (error) {
-        console.error('Error during multi-search:', error);
+        console.error("Error during multi-archive search:", error);
+        
+        document.getElementById('defaultMessage').classList.remove('d-none');
         document.getElementById('defaultMessage').innerHTML = `
             <i class="bi bi-exclamation-triangle fs-1 text-danger"></i>
-            <p class="mt-3 text-danger">Error searching archives: ${error.message}</p>
+            <p class="mt-3 text-danger">An error occurred during search.</p>
+            <p class="text-muted small">${error.message}</p>
             <button class="btn btn-sm btn-outline-secondary mt-2" onclick="clearSearch()">
-                <i class="bi bi-x-circle me-1"></i>Clear search
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Clear search
             </button>
         `;
     }
@@ -1190,29 +1339,40 @@ function selectArchiveType(type) {
 
 // Helper function to clear search
 function clearSearch() {
+    // Clear search input
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         searchInput.value = '';
-        currentState.search = '';
     }
     
-    // Hide the clear button
+    // Update state
+    currentState.search = '';
+    
+    // Hide clear button
     const clearBtn = document.getElementById('clearSearchBtn');
     if (clearBtn) {
         clearBtn.classList.add('d-none');
     }
     
-    // Reset display based on current state
     if (currentState.folder) {
+        // If a folder is selected, reload its data without the search filter
         loadArchiveData(currentState.folder);
     } else {
+        // No folder selected, just show default message
         hideAllArchiveTables();
+        document.getElementById('defaultMessage').classList.remove('d-none');
         document.getElementById('defaultMessage').innerHTML = `
             <i class="bi bi-archive fs-1 text-muted"></i>
             <p class="mt-3 text-muted">Please select an archive type from the dropdown above</p>
         `;
-        document.getElementById('defaultMessage').classList.remove('d-none');
-        loadInitialCounts();
+    }
+    
+    // Update URL params to remove search
+    updateURLParams();
+    
+    // Return focus to search input
+    if (searchInput) {
+        searchInput.focus();
     }
 }
 
@@ -1272,24 +1432,71 @@ function updateURLParams() {
     window.history.replaceState({}, '', newURL);
 }
 
-// Use a debounce function for search input to prevent excessive API calls
-const debounce = (func, wait) => {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-};
+// Create user archive table if it doesn't exist
+function createUserArchiveTable() {
+    // Check if the table container already exists
+    if (document.getElementById('userArchiveTable')) {
+        return;
+    }
+    
+    // Get the main container
+    const mainContainer = document.querySelector('.content-body');
+    if (!mainContainer) return;
+    
+    // Create the table container
+    const tableContainer = document.createElement('div');
+    tableContainer.id = 'userArchiveTable';
+    tableContainer.className = 'archive-table';
+    
+    // Use the columns from the archiveTypes configuration
+    const columns = archiveTypes.user.columns;
+    
+    // Create table HTML
+    tableContainer.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Archive Date</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userArchiveTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-4">
+            <div class="pagination-info">0-0 of 0</div>
+            <div class="pagination d-flex gap-2">
+                <button id="prevPageBtn" class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button id="nextPageBtn" class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Append to the container
+    mainContainer.appendChild(tableContainer);
+}
 
-// Optimize search handler with debounce
-const handleSearchInput = debounce(() => {
-    const searchQuery = document.getElementById('searchInput').value.trim();
-    updateState({ search: searchQuery, page: 1 });
-}, 300);
-
-// Add event listener using the debounced function
-document.getElementById('searchInput').addEventListener('input', handleSearchInput); 
+// Update archive title
+function updateArchiveTitle(folder) {
+    const archiveTableTitle = document.getElementById('archiveTableTitle');
+    if (archiveTableTitle) {
+        const folderName = folder.charAt(0).toUpperCase() + folder.slice(1);
+        archiveTableTitle.textContent = `${folderName} Archives`;
+    }
+} 
