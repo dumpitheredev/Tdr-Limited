@@ -21,11 +21,20 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 # Role-based access control decorators
 def admin_required(f):
-    """Decorator to check if user is an admin"""
+    """Decorator to check if the user is an admin"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or current_user.role.lower() != 'admin':
-            return jsonify({'error': 'Administrator access required'}), 403
+        # Check if user is authenticated and is an admin
+        if not current_user.is_authenticated or 'admin' not in current_user.role.lower():
+            return jsonify({'error': 'Unauthorized access'}), 403
+
+        # For POST, PUT, DELETE methods (CRUD operations except Read), 
+        # check if the user has limited access
+        if request.method in ['POST', 'PUT', 'DELETE']:
+            # If access_level is limited, restrict access
+            if hasattr(current_user, 'access_level') and current_user.access_level == 'limited':
+                return jsonify({'error': 'Limited access accounts cannot perform this operation'}), 403
+                
         return f(*args, **kwargs)
     return decorated_function
 
@@ -80,17 +89,15 @@ def get_users():
     
     if search:
         query = query.filter(
-            (User.first_name.like(f'%{search}%')) |
-            (User.last_name.like(f'%{search}%')) |
-            (User.email.like(f'%{search}%'))
+            User.first_name.like(f'%{search}%') |
+            User.last_name.like(f'%{search}%') |
+            User.email.like(f'%{search}%')
         )
     
     users = query.all()
     
     # Format response
-    result = []
-    for user in users:
-        result.append({
+    result = [{
             'id': user.id,
             'first_name': user.first_name,
             'last_name': user.last_name,
@@ -98,7 +105,7 @@ def get_users():
             'role': user.role,
             'is_active': user.is_active,
             'profile_img': user.profile_img
-        })
+    } for user in users]
     
     return jsonify(result)
 
@@ -109,7 +116,7 @@ def get_user(user_id):
     try:
         # Get the user with basic info
         user = User.query.get_or_404(user_id)
-        
+    
         # Build base result with common fields
         result = {
             'id': user.id,
@@ -121,7 +128,7 @@ def get_user(user_id):
             'status': 'Active' if user.is_active else 'Inactive',
             'profile_img': user.profile_img
         }
-        
+    
         # Add role-specific data based on user type
         if user.role and user.role.lower() == 'student':
             # Get student enrollments and related data
@@ -133,9 +140,8 @@ def get_user(user_id):
         
         return jsonify(result)
     except Exception as e:
-        import traceback
         print(f"Error in get_user: {str(e)}")
-        print(traceback.format_exc())
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 def get_student_data(user):
@@ -147,13 +153,13 @@ def get_student_data(user):
         company = Company.query.get(user.company_id)
         if company:
             company_name = company.name
-            company_data = {
-                'id': company.id,
-                'name': company.name,
-                'contact': company.contact,
-                'email': company.email
-            }
-
+        company_data = {
+            'id': company.id,
+            'name': company.name,
+            'contact': company.contact,
+            'email': company.email
+        }
+    
     # Get enrollments
     enrollments = []
     active_enrollments = []
@@ -254,10 +260,16 @@ def get_admin_data(user):
         {'name': 'system_settings', 'description': 'Can configure system-wide settings'}
     ]
     
+    # Include access level in response
+    access_level = 'full'
+    if hasattr(user, 'access_level') and user.access_level:
+        access_level = user.access_level
+    
     return {
         'admin_role': 'admin',
         'permissions': permissions,
-        'access_roles': permissions  # Alias for compatibility
+        'access_roles': permissions,  # Alias for compatibility
+        'access_level': access_level  # Add access level to the response
     }
 
 @api_bp.route('/students', methods=['GET'])
@@ -1269,6 +1281,14 @@ def update_class_status(class_id):
     try:
         class_obj = Class.query.get_or_404(class_id)
         
+        # Check if current user is an admin
+        if current_user.role.lower() != 'admin':
+            return jsonify({'error': 'Only administrators can update class status'}), 403
+            
+        # Check if current user has limited access
+        if hasattr(current_user, 'access_level') and current_user.access_level == 'limited':
+            return jsonify({'error': 'Limited access accounts cannot change class status'}), 403
+        
         # Get JSON data from request
         data = request.json
         
@@ -1850,6 +1870,29 @@ def delete_archived_record(folder, record_id):
                 'message': f'Student with ID {record_id} permanently deleted'
             })
         
+        elif folder == 'instructor':
+            # Find the instructor
+            instructor = User.query.get(record_id)
+            if not instructor:
+                return jsonify({'error': f'Instructor with ID {record_id} not found'}), 404
+            
+            # Check if instructor has classes
+            instructor_classes = Class.query.filter_by(instructor_id=record_id).count()
+            if instructor_classes > 0:
+                return jsonify({
+                    'error': f'Instructor has {instructor_classes} classes',
+                    'details': 'Reassign all classes first'
+                }), 400
+                
+            # Delete the instructor
+            db.session.delete(instructor)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Instructor with ID {record_id} permanently deleted'
+            })
+        
         elif folder == 'admin':
             # Find the admin
             admin = User.query.get(record_id)
@@ -1865,8 +1908,8 @@ def delete_archived_record(folder, record_id):
             db.session.commit()
                 
             return jsonify({
-                'success': True, 
-                'message': f'Administrator with ID {record_id} permanently deleted'
+                            'success': True, 
+            'message': f'Administrator with ID {record_id} permanently deleted'
             })
         
         elif folder == 'attendance':
@@ -3040,6 +3083,10 @@ def archive_user(user_id):
         if current_user.role.lower() != 'admin':
             return jsonify({'error': 'You do not have permission to archive users'}), 403
 
+        # Check if current user has limited access
+        if hasattr(current_user, 'access_level') and current_user.access_level == 'limited':
+            return jsonify({'error': 'Limited access accounts cannot archive users'}), 403
+
         # Get archive reason from request data
         data = request.json or {}
         archive_reason = data.get('reason', 'User archived by administrator')
@@ -3098,6 +3145,10 @@ def update_user_status(user_id):
         if current_user.role.lower() != 'admin':
             return jsonify({'error': 'You do not have permission to update user status'}), 403
         
+        # Check if current user has limited access
+        if hasattr(current_user, 'access_level') and current_user.access_level == 'limited':
+            return jsonify({'error': 'Limited access accounts cannot change user status'}), 403
+        
         # Get the is_active status from the request
         data = request.get_json()
         if 'is_active' not in data:
@@ -3118,6 +3169,124 @@ def update_user_status(user_id):
         db.session.rollback()
         print(f"Error updating user status: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/users', methods=['POST'])
+@login_required
+@admin_required
+def create_user():
+    """API endpoint to create a new user"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate required fields
+        required_fields = ['firstName', 'lastName', 'email', 'userId', 'userRole']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Check if user ID already exists
+        if User.query.get(data['userId']):
+            return jsonify({'error': 'User ID already exists'}), 400
+        
+        # Check if email already exists
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({'error': 'Email already exists'}), 400
+            
+        # Map role prefixes to role names
+        role_map = {
+            'bh': 'admin',  # Changed from 'Administrator' to 'admin'
+            'ak': 'instructor',  # Changed from 'Instructor' to 'instructor'
+            'st': 'student'  # Changed from 'Student' to 'student'
+        }
+        
+        # Generate a secure password (should be changed by user later)
+        import secrets
+        import string
+        password_chars = string.ascii_letters + string.digits + string.punctuation
+        temp_password = ''.join(secrets.choice(password_chars) for _ in range(12))
+        
+        # Hash the password
+        from werkzeug.security import generate_password_hash
+        hashed_password = generate_password_hash(temp_password)
+        
+        # Create username from first name and last name
+        username = f"{data['firstName'].lower()}.{data['lastName'].lower()}"
+        
+        # Check for existing username and append numbers if needed
+        base_username = username
+        counter = 1
+        while User.query.filter_by(username=username).first():
+            username = f"{base_username}{counter}"
+            counter += 1
+        
+        # Parse date of birth if provided
+        date_of_birth = None
+        if 'dateOfBirth' in data and data['dateOfBirth']:
+            from datetime import datetime
+            try:
+                date_of_birth = datetime.strptime(data['dateOfBirth'], '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        
+        # Create new user
+        new_user = User(
+            id=data['userId'],
+            username=username,
+            email=data['email'],
+            password=hashed_password,
+            first_name=data['firstName'],
+            last_name=data['lastName'],
+            role=role_map.get(data['userRole'], 'Student'),
+            is_active=True,
+            date_of_birth=date_of_birth,
+            profile_img='profile.png'
+        )
+        
+        # Add instructor-specific fields
+        if data['userRole'] == 'ak':
+            if 'department' in data and data['department']:
+                new_user.department = data['department']
+            if 'qualification' in data and data['qualification']:
+                new_user.qualification = data['qualification']
+            if 'specialization' in data and data['specialization']:
+                new_user.specialization = data['specialization']
+        
+        # Add admin-specific fields
+        if data['userRole'] == 'bh':
+            if 'accessLevel' in data and data['accessLevel']:
+                new_user.access_level = data['accessLevel']
+        
+        # Add company ID for students
+        if data['userRole'] == 'st' and 'companyId' in data and data['companyId']:
+            new_user.company_id = data['companyId']
+        
+        # Save to database
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'User created successfully',
+            'user': {
+                'id': new_user.id,
+                'first_name': new_user.first_name,
+                'last_name': new_user.last_name,
+                'email': new_user.email,
+                'role': new_user.role,
+                'username': new_user.username,
+                'temp_password': temp_password  # Only return this during development
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"Error creating user: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': f'Failed to create user: {str(e)}'}), 500
 
 @api_bp.route('/classes/create', methods=['POST'])
 @login_required

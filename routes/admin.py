@@ -4,11 +4,23 @@ from models import db, User, Class, Enrollment, Attendance, Company
 from datetime import datetime, timedelta
 import csv
 from io import StringIO
-from sqlalchemy import text, or_
+from sqlalchemy import text, or_, func, case
+import time
+from functools import wraps
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 # --------------- Helper Functions ---------------
+
+def admin_required(f):
+    """Decorator to check if user is an admin"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role.lower() != 'admin':
+            flash('You do not have permission to access this page.', 'error')
+            return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 def filter_by_role(query, role):
     """Filter query by role (case insensitive)"""
@@ -65,11 +77,10 @@ def safe_query_execution(func, error_fallback):
         return func()
     except Exception as e:
         print(f"Error in database query: {e}")
-        # Instead of using fallback which may show mock/default data temporarily, 
-        # propagate a clear error to the frontend
+        # Show error message but still use fallback data for rendering
         flash(f"Database error: {str(e)}", "error")
-        # Return None so we can check if there's an error
-        return None
+        # Return the fallback data instead of None
+        return error_fallback
 
 # Middleware to check if user is admin
 @admin_bp.before_request
@@ -120,6 +131,9 @@ def user_management():
     status_filter = request.args.get('status', '')
     search_term = request.args.get('search', '')
     
+    # Add timestamp for cache busting
+    now = int(time.time())
+    
     def get_user_data():
         # Get all users for stats
         all_users = User.query.all()
@@ -139,10 +153,98 @@ def user_management():
                                   status_filter=status_filter, 
                                   search_term=search_term)
         
+        # Get the users with eager loading of relationships
         users = query.all()
         
+        # Enhance user data with related information
+        enhanced_users = []
+        for user in users:
+            enhanced_user = user  # Use the actual user object
+            
+            # For students, add enrollment data
+            if user.role == 'student':
+                # Get enrollment data
+                enrollments = db.session.query(Enrollment, Class)\
+                    .join(Class, Enrollment.class_id == Class.id)\
+                    .filter(Enrollment.student_id == user.id)\
+                    .all()
+                
+                # Format enrollments for the template
+                formatted_enrollments = []
+                for enrollment, class_obj in enrollments:
+                    formatted_enrollments.append({
+                        'class_id': class_obj.id,
+                        'class_name': class_obj.name,
+                        'schedule': f"{class_obj.day_of_week}, {class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
+                        'status': enrollment.status
+                    })
+                
+                # Store enrollments on the user object
+                enhanced_user.enrollments = formatted_enrollments
+                
+                # Get attendance statistics
+                attendance_stats = db.session.query(
+                    func.sum(case((Attendance.status == 'Present', 1), else_=0)).label('present'),
+                    func.sum(case((Attendance.status == 'Absent', 1), else_=0)).label('absent')
+                ).filter(Attendance.student_id == user.id).first()
+                
+                # Add attendance data
+                enhanced_user.attendance = {
+                    'present': attendance_stats.present or 0,
+                    'absent': attendance_stats.absent or 0
+                }
+                
+            # For instructors, add classes data
+            elif user.role == 'instructor':
+                # Get classes taught
+                classes = Class.query.filter_by(instructor_id=user.id).all()
+                
+                # Format classes for the template
+                formatted_classes = []
+                for class_obj in classes:
+                    # Count enrolled students
+                    enrolled_count = Enrollment.query.filter_by(
+                        class_id=class_obj.id, 
+                        status='Active'
+                    ).count()
+                    
+                    formatted_classes.append({
+                        'id': class_obj.id,
+                        'name': class_obj.name,
+                        'day': class_obj.day_of_week,
+                        'time': f"{class_obj.start_time.strftime('%H:%M')} - {class_obj.end_time.strftime('%H:%M')}",
+                        'enrolled_count': enrolled_count,
+                        'is_active': class_obj.is_active
+                    })
+                
+                # Store classes on the user object
+                enhanced_user.classes_taught = formatted_classes
+                
+            # For admins, add mock permissions (replace with real permissions when implemented)
+            elif user.role == 'admin':
+                # Set mock permissions based on user ID or other factors
+                permissions = [
+                    'user_management',
+                    'class_management',
+                    'enrollment_management',
+                    'report_generation'
+                ]
+                
+                # Add super_admin for first admin
+                if str(user.id).endswith('1'):
+                    permissions.append('super_admin')
+                    permissions.append('system_settings')
+                    enhanced_user.admin_role = 'Super Administrator'
+                else:
+                    enhanced_user.admin_role = 'Administrator'
+                
+                # Store permissions on the user object
+                enhanced_user.permissions = permissions
+            
+            enhanced_users.append(enhanced_user)
+        
         return {
-            'users': users,
+            'users': enhanced_users,
             'total_users': total_users,
             'active_users': active_users,
             'inactive_users': inactive_users
@@ -166,7 +268,8 @@ def user_management():
                           inactive_users=result['inactive_users'],
                           role_filter=role_filter,
                           status_filter=status_filter,
-                          search_term=search_term)
+                          search_term=search_term,
+                          now=now)
 
 @admin_bp.route('/student-management')
 @login_required
@@ -851,17 +954,37 @@ def view_archive():
         # Get archived students (role can be Student or student)
         archived_students = filter_by_role(User.query, 'student').filter_by(is_archived=True).all()
         
+        # Get archived instructors (role can be Instructor or instructor)
+        archived_instructors = filter_by_role(User.query, 'instructor').filter_by(is_archived=True).all()
+        
+        # Get archived admins (role can be Admin or admin or Administrator)
+        archived_admins = User.query.filter(
+            User.is_archived==True,
+            db.or_(
+                User.role.ilike('admin'),
+                User.role.ilike('administrator')
+            )
+        ).all()
+        
         # Get archived attendance records
         archived_attendance = Attendance.query.filter_by(is_archived=True).all()
+        
+        # All archived users combined
+        archived_users = User.query.filter_by(is_archived=True).all()
         
         return {
             'archived_classes': archived_classes,
             'archived_students': archived_students,
+            'archived_instructors': archived_instructors,
+            'archived_admins': archived_admins,
             'archived_attendance': archived_attendance,
             'archived_counts': {
                 'class': len(archived_classes),
                 'student': len(archived_students),
-                'attendance': len(archived_attendance)
+                'instructor': len(archived_instructors),
+                'admin': len(archived_admins),
+                'attendance': len(archived_attendance),
+                'user': len(archived_users)
             }
         }
     
@@ -869,11 +992,16 @@ def view_archive():
     fallback = {
         'archived_classes': [],
         'archived_students': [],
+        'archived_instructors': [],
+        'archived_admins': [],
         'archived_attendance': [],
         'archived_counts': {
             'class': 0,
             'student': 0,
-            'attendance': 0
+            'instructor': 0,
+            'admin': 0,
+            'attendance': 0,
+            'user': 0
         }
     }
     
@@ -883,6 +1011,17 @@ def view_archive():
                            active_page='view_archive',
                            archived_classes=result['archived_classes'],
                            archived_students=result['archived_students'],
+                           archived_instructors=result['archived_instructors'],
+                           archived_admins=result['archived_admins'],
                            archived_attendance=result['archived_attendance'],
                            archive_type=archive_type,
                            archived_counts=result['archived_counts'])
+
+@admin_bp.route('/reports')
+@login_required
+@admin_required
+def reports():
+    """
+    Render the reports page
+    """
+    return render_template('admin/reports.html', now=int(time.time()))
