@@ -1,730 +1,1407 @@
-let currentPageState = {
+/**
+ * Student Management Module
+ * 
+ * This module handles all functionality for the student management page including:
+ * - Fetching and displaying students with pagination
+ * - Filtering by status and search
+ * - Student actions (view, edit, archive)
+ * - Managing student statistics
+ */
+
+// ------------------- State Management -------------------
+let state = {
+    // Pagination
     page: 1,
     perPage: 5,
     totalItems: 0,
-    currentData: [],
+    
+    // Filters
     searchTerm: '',
-    statusFilter: ''
+    statusFilter: '',
+    
+    // Data
+    currentData: [],
+    
+    // Currently selected student
+    currentEditingStudent: null
 };
 
-let currentEditingStudent = null;
+// ------------------- Core Functions -------------------
 
-document.addEventListener('DOMContentLoaded', async function() {
+/**
+ * Show a toast notification using the global notification system
+ * @param {string} message - The message to display
+ * @param {string} type - The toast type (success, error, info, warning)
+ */
+function showToast(message, type = 'success') {
     try {
-        // Initial data fetch
-        const response = await fetch('/api/students');
-        if (!response.ok) {
-            throw new Error('Failed to fetch students');
+        // Always use the global notification system if available
+        if (typeof window.getNotificationManager === 'function') {
+            const manager = window.getNotificationManager({
+                useBootstrapToasts: true
+            });
+            
+            const title = type.charAt(0).toUpperCase() + type.slice(1);
+            manager.showBootstrapToast(title, message, {
+                type: type
+            });
+            return;
         }
+        
+        // Second option: use the global showToast if it's different from this one
+        if (typeof window.showToast === 'function') {
+            const title = type.charAt(0).toUpperCase() + type.slice(1);
+            window.showToast(title, message, type);
+            return;
+        }
+        
+        // Last resort: use toast_notification.html component if available
+        const statusToast = document.getElementById('statusToast');
+        if (!statusToast) {
+            console.error('Toast element not found');
+            return;
+        }
+        
+        // Get the title and message elements
+        const toastTitle = document.getElementById('toastTitle');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        if (!toastTitle || !toastMessage) {
+            console.error('Toast elements not found');
+            return;
+        }
+        
+        // Set the title based on type
+        let title = 'Information';
+        let icon = '<i class="bi bi-info-circle-fill text-info me-2"></i>';
+        
+        if (type === 'success') {
+            title = 'Success';
+            icon = '<i class="bi bi-check-circle-fill text-success me-2"></i>';
+        } else if (type === 'error' || type === 'danger') {
+            title = 'Error';
+            icon = '<i class="bi bi-exclamation-circle-fill text-danger me-2"></i>';
+        } else if (type === 'warning') {
+            title = 'Warning';
+            icon = '<i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>';
+        }
+        
+        // Update toast content
+        toastTitle.innerHTML = icon + title;
+        toastMessage.innerHTML = message;
+        
+        // Show the toast
+        const toast = new bootstrap.Toast(statusToast);
+        toast.show();
+    } catch (error) {
+        console.error('Toast error');
+    }
+}
+
+/**
+ * Clean up all modals and their backdrops in the document
+ * This is a more thorough cleanup function that handles all modals
+ */
+function cleanupAllModals() {
+    try {
+        // Get all modal elements
+        const modals = document.querySelectorAll('.modal');
+        
+        // Remove all backdrops
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.remove();
+        });
+        
+        // Ensure body classes are removed
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+        document.body.style.removeProperty('overflow');
+        
+        // Clean up all modal elements
+        modals.forEach(modal => {
+            const modalId = modal.id;
+            if (modalId) {
+                try {
+                    // First try to hide it using Bootstrap's API
+                    const bsModal = bootstrap.Modal.getInstance(modal);
+                    if (bsModal) {
+                        bsModal.hide();
+                    }
+                } catch (err) {
+                    // Silent failure, no logging needed
+                }
+                
+                // Clean up the modal element manually
+                modal.classList.remove('show');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+                modal.removeAttribute('aria-modal');
+                modal.removeAttribute('role');
+            }
+        });
+    } catch (error) {
+        console.error('Error cleaning up modals');
+    }
+}
+
+/**
+ * Initializes the student management page
+ */
+async function initStudentManagement() {
+    try {
+        console.log('student management page loaded');
+        
+        // Clean up any stray modals from previous sessions
+        cleanupAllModals();
+        
+        // Check if the student-modal.js is properly loaded
+        if (typeof window.showStudentModalView !== 'function') {
+            console.error('Required dependency not loaded');
+            showToast('Warning: Student modal functionality may not work correctly. Please refresh the page.', 'warning');
+        }
+        
+        // Ensure toast container exists
+        ensureToastContainer();
+        
+        // Load initial student data
+        await loadStudents();
+        
+        // Set up event listeners
+        setupEventListeners();
+        
+        // Initial render
+        updateTable();
+        updateCardStatistics();
+        
+        console.log('student management initialized successfully');
+    } catch (error) {
+        console.error('Error initializing student management');
+        showToast('Failed to initialize student management', 'error');
+    }
+}
+
+/**
+ * Ensure toast container exists for notifications
+ */
+function ensureToastContainer() {
+    // Check if we already have a toast container
+    let toastContainer = document.getElementById('toastContainer');
+    
+    // If not, create one
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toastContainer';
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        toastContainer.style.zIndex = '9999';
+        document.body.appendChild(toastContainer);
+    }
+}
+
+/**
+ * Load students from the API with optional filters
+ */
+async function loadStudents() {
+    try {
+        // Build query params for filters
+        const params = new URLSearchParams();
+        if (state.statusFilter) params.append('status', state.statusFilter);
+        if (state.searchTerm) params.append('search', state.searchTerm);
+        
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        const response = await fetch(`/api/users${queryString}`);
+        
+        if (!response.ok) throw new Error('Failed to fetch students');
+        
         const data = await response.json();
         
-        // Store the data in currentPageState
-        currentPageState.currentData = data.filter(user => user.role === 'Student') || [];
-        currentPageState.totalItems = currentPageState.currentData.length;
+        // Make role filter case-insensitive
+        state.currentData = Array.isArray(data) 
+            ? data.filter(user => {
+                // Check if user has role property and it includes 'student' case-insensitive
+                const userRole = user.role || '';
+                const isStudent = userRole.toLowerCase().includes('student');
+                return isStudent;
+              }).map(formatStudentData) 
+            : [];
         
-        // Update status cards when data is loaded
-        updateStatusCards(currentPageState.currentData);
+        state.totalItems = state.currentData.length;
         
-        // Initialize table
-        updateTable();
-        
-        // Add status filter handler
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) {
-            statusFilter.addEventListener('change', function() {
-                currentPageState.page = 1;
-                currentPageState.statusFilter = this.value;
-                updateTable();
-            });
-        }
-        
-        // Add search handler
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('input', function() {
-                currentPageState.page = 1;
-                currentPageState.searchTerm = this.value;
-                updateTable();
-            });
-        }
-
-        // Add rows per page handler
-    const rowsPerPage = document.getElementById('rowsPerPage');
-        if (rowsPerPage) {
-            rowsPerPage.addEventListener('change', function() {
-                currentPageState.page = 1;
-                currentPageState.perPage = parseInt(this.value);
-                updateTable();
-            });
-        }
-
-        // Add pagination handlers
-    const prevPage = document.getElementById('prevPage');
-    const nextPage = document.getElementById('nextPage');
-        
-        if (prevPage) {
-            prevPage.addEventListener('click', function() {
-                if (currentPageState.page > 1) {
-                    currentPageState.page--;
-                    updateTable();
-                }
-            });
-        }
-
-        if (nextPage) {
-            nextPage.addEventListener('click', function() {
-                const maxPage = Math.ceil(currentPageState.totalItems / currentPageState.perPage);
-                if (currentPageState.page < maxPage) {
-                    currentPageState.page++;
-                    updateTable();
-                }
-            });
-        }
-
+        return state.currentData;
     } catch (error) {
-        console.error('Error initializing student management:', error);
-        showToast('Error', 'Failed to load students', 'error');
+        showToast('Failed to load students', 'error');
+        return [];
     }
-});
+}
 
+/**
+ * Formats a student object for display in the UI
+ */
+function formatStudentData(student) {
+    if (!student) return {};
+    
+    return {
+        id: student.id || student.user_id || '',
+        user_id: student.id || student.user_id || '',
+        name: student.name || `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'Unknown',
+        email: student.email || '',
+        status: student.status || (student.is_active ? 'Active' : 'Inactive') || 'Unknown',
+        profile_img: student.profile_img || null,
+        grade: student.grade || '',
+        section: student.section || '',
+        created_at: student.created_at || '',
+    };
+}
+
+/**
+ * Formats a student data object for the modal display
+ */
+function formatStudentForModal(student) {
+    if (!student) return {};
+    
+    const formattedData = formatStudentData(student);
+    
+    // Add additional display-friendly attributes
+    formattedData.statusClass = formattedData.status.toLowerCase() === 'active' ? 'text-success' : 'text-danger';
+    formattedData.joinDate = formattedData.created_at ? new Date(formattedData.created_at).toLocaleDateString() : 'Unknown';
+    
+    // Format the image path for display
+    if (formattedData.profile_img) {
+        if (!formattedData.profile_img.startsWith('/') && !formattedData.profile_img.startsWith('http')) {
+            formattedData.profile_img = `/static/images/${formattedData.profile_img}`;
+        }
+    } else {
+        formattedData.profile_img = '/static/images/profile.png';
+    }
+    
+    return formattedData;
+}
+
+/**
+ * Setup all event listeners for the page
+ */
+function setupEventListeners() {
+    // Search input
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            state.searchTerm = this.value;
+            state.page = 1;
+            handleFiltersChanged();
+        });
+    }
+
+    // Status filter
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        statusFilter.addEventListener('change', function() {
+            state.statusFilter = this.value;
+            state.page = 1;
+            handleFiltersChanged();
+        });
+    }
+
+    // Rows per page
+    const rowsPerPage = document.getElementById('rowsPerPage');
+    if (rowsPerPage) {
+        rowsPerPage.addEventListener('change', function() {
+            state.perPage = parseInt(this.value);
+            state.page = 1;
+            updateTable();
+        });
+    }
+
+    // Pagination buttons
+    const prevButton = document.getElementById('prevPage');
+    if (prevButton) {
+        prevButton.addEventListener('click', function() {
+            if (state.page > 1) {
+                state.page--;
+                updateTable();
+            }
+        });
+    }
+
+    const nextButton = document.getElementById('nextPage');
+    if (nextButton) {
+        nextButton.addEventListener('click', function() {
+            const maxPage = Math.ceil(state.totalItems / state.perPage);
+            if (state.page < maxPage) {
+                state.page++;
+                updateTable();
+            }
+        });
+    }
+    
+    // Set up event listeners for modal hidden events to clean up backdrops
+    const editModal = document.getElementById('editStudentModal');
+    if (editModal) {
+        editModal.addEventListener('hidden.bs.modal', function() {
+            setTimeout(() => cleanupModalBackdrop('editStudentModal'), 150);
+        });
+    }
+    
+    const archiveModal = document.getElementById('confirmArchiveModal');
+    if (archiveModal) {
+        archiveModal.addEventListener('hidden.bs.modal', function() {
+            setTimeout(() => cleanupModalBackdrop('confirmArchiveModal'), 150);
+        });
+    }
+    
+    // Add keydown event to close modals on ESC key
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            cleanupModalBackdrop();
+        }
+    });
+
+    // Set up delegation for student action buttons (edit, view, archive)
+    document.addEventListener('click', function(event) {
+        // Find the clicked button, if any
+        const actionButton = event.target.closest('button[onclick*="handleStudentAction"]');
+        if (!actionButton) return;
+        
+        // Prevent the default onclick behavior
+        event.preventDefault();
+        
+        // Stop propagation to prevent double execution
+        event.stopPropagation();
+        
+        // Extract the action and ID from the onclick attribute
+        const onclickAttr = actionButton.getAttribute('onclick') || '';
+        const actionMatch = onclickAttr.match(/handleStudentAction\('([^']+)'/);
+        const idMatch = onclickAttr.match(/,\s*['"]([^'"]+)['"]/);
+        
+        if (!actionMatch) return;
+        
+        const action = actionMatch[1];
+        let studentId = null;
+        
+        // Try to get the ID from multiple sources
+        if (idMatch && idMatch[1]) {
+            // ID from onclick attribute
+            studentId = idMatch[1];
+        } else {
+            // Try to get from table row
+            const row = actionButton.closest('tr[data-user-id]');
+            if (row) {
+                studentId = row.getAttribute('data-user-id');
+            }
+        }
+        
+        // Only proceed if we have both action and ID
+        if (action && studentId) {
+            // Directly call the appropriate handler to avoid double execution
+            switch(action) {
+                case 'view':
+                    handleViewStudent(studentId);
+                    break;
+                case 'edit':
+                    handleEditStudent(studentId);
+                    break;
+                case 'archive':
+                    handleArchiveStudent(studentId);
+                    break;
+                default:
+                    // Unknown action - silently ignore
+                    break;
+            }
+        }
+    });
+
+    // Export button dynamically update href
+    updateExportButton();
+
+    // Set up the show/hide of the custom reason field when "other" is selected
+    const archiveReasonSelect = document.getElementById('archiveReason');
+    const customReasonContainer = document.getElementById('customReasonContainer');
+    
+    if (archiveReasonSelect && customReasonContainer) {
+        archiveReasonSelect.addEventListener('change', function() {
+            if (this.value === 'other') {
+                customReasonContainer.classList.remove('d-none');
+            } else {
+                customReasonContainer.classList.add('d-none');
+            }
+        });
+    }
+    
+    // Add event listener for close buttons in modals to ensure proper cleanup
+    document.querySelectorAll('.modal .btn-close, .modal .btn[data-bs-dismiss="modal"]').forEach(button => {
+        button.addEventListener('click', function() {
+            const modal = this.closest('.modal');
+            if (modal) {
+                setTimeout(() => cleanupModalBackdrop(modal.id), 150);
+            }
+        });
+    });
+}
+
+/**
+ * Handle filters changed - reload data and update UI
+ */
+async function handleFiltersChanged() {
+    await loadStudents();
+    updateTable();
+    updateCardStatistics();
+    updateExportButton();
+}
+
+/**
+ * Filter students based on criteria
+ * @param {Array} students - Array of students to filter
+ * @param {string} status - Status filter
+ * @param {string} search - Search term
+ * @returns {Array} Filtered students array
+ */
+function filterStudents(students, status, search) {
+    // Use current data if no students provided
+    const data = students || state.currentData;
+    
+    // Apply status filter
+    let filtered = data;
+    if (status) {
+        filtered = filtered.filter(student => student.status === status);
+    }
+    
+    // Apply search filter
+    if (search) {
+        const searchLower = search.toLowerCase();
+        filtered = filtered.filter(student => 
+            (student.name?.toLowerCase().includes(searchLower) || 
+             student.user_id?.toLowerCase().includes(searchLower) ||
+             student.email?.toLowerCase().includes(searchLower))
+        );
+    }
+    
+    return filtered;
+}
+
+/**
+ * Export students to CSV based on current filters
+ * @param {string} status - Status filter
+ * @param {string} search - Search query
+ */
+function exportStudentsToCSV(status, search) {
+    try {
+        // Use current data with filters applied
+        const filteredData = filterStudents(state.currentData, status, search);
+        
+        if (filteredData.length === 0) {
+            showToast('No students to export', 'warning');
+            return;
+        }
+        
+        // Define CSV headers
+        const headers = ['ID', 'Name', 'Role', 'Status', 'Email', 'Phone'];
+        
+        // Convert data to CSV format
+        let csvContent = headers.join(',') + '\n';
+        
+        filteredData.forEach(student => {
+            const row = [
+                student.user_id || '',
+                student.name || '',
+                student.role || '',
+                student.status || '',
+                student.email || '',
+                student.phone || ''
+            ].map(cell => `"${String(cell || '').replace(/"/g, '""')}"`); // Escape quotes in CSV
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        // Create download link
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `students_export_${new Date().toISOString().slice(0,10)}.csv`);
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Show success toast
+        showToast(`Exported ${filteredData.length} students to CSV`, 'success');
+    } catch (error) {
+        console.error('Error exporting CSV:', error);
+        showToast('Failed to export students to CSV', 'error');
+    }
+}
+
+/**
+ * Update the export button's href based on current filters
+ */
+function updateExportButton() {
+    try {
+        const exportButton = document.getElementById('exportCSV');
+        if (!exportButton) return;
+        
+        // Get current filters
+        const status = document.getElementById('statusFilter')?.value || '';
+        const search = document.getElementById('searchInput')?.value || '';
+        
+        // Construct the export URL with query parameters
+        let exportUrl = '/admin/export-students-to-csv?';
+        const params = [];
+        
+        if (status) {
+            params.push(`status=${encodeURIComponent(status)}`);
+        }
+        
+        if (search) {
+            params.push(`search=${encodeURIComponent(search)}`);
+        }
+        
+        exportUrl += params.join('&');
+        
+        // Update the button href
+        exportButton.setAttribute('href', exportUrl);
+        
+        // Add click handler for client-side CSV export
+        exportButton.onclick = function(e) {
+            e.preventDefault();
+            exportStudentsToCSV(status, search);
+            return false;
+        };
+    } catch (error) {
+        console.error('Error updating export button:', error);
+    }
+}
+
+// ------------------- UI Update Functions -------------------
+
+/**
+ * Update the student table with current data and filters
+ */
 function updateTable() {
     try {
-        // Get filtered data
-        let filteredData = [...(currentPageState.currentData || [])];
+        // Apply pagination
+        const startIndex = (state.page - 1) * state.perPage;
+        const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
+        const paginatedData = state.currentData.slice(startIndex, endIndex);
 
-        // Apply status filter
-        if (currentPageState.statusFilter) {
-            filteredData = filteredData.filter(student => 
-                student.status === currentPageState.statusFilter
-            );
-        }
-
-        // Apply search filter
-        if (currentPageState.searchTerm) {
-            const searchTerm = currentPageState.searchTerm.toLowerCase();
-            filteredData = filteredData.filter(student =>
-                student.name.toLowerCase().includes(searchTerm) ||
-                student.user_id.toLowerCase().includes(searchTerm)
-            );
-        }
-
-        // Update total items
-        const totalItems = filteredData.length;
-        currentPageState.totalItems = totalItems;
-
-        // Calculate pagination
-        const startIndex = (currentPageState.page - 1) * currentPageState.perPage;
-        const endIndex = Math.min(startIndex + currentPageState.perPage, totalItems);
-        const paginatedData = filteredData.slice(startIndex, endIndex);
-
-        // Update table content
-        const tbody = document.querySelector('tbody');
-        if (tbody) {
-            if (paginatedData.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6" class="text-center">No students found</td>
-                    </tr>`;
-            } else {
-                tbody.innerHTML = paginatedData.map(student => `
-                    <tr>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <img src="/static/images/${student.profile_img}" 
-                                     alt="Profile" 
-                                     class="rounded-circle me-2" 
-                                     width="32" 
-                                     height="32">
-                                <div>
-                                    <div class="fw-semibold">${student.name}</div>
-                                    <div class="small text-muted">${student.user_id}</div>
-                                </div>
-                            </div>
-                        </td>
-                        <td>${student.role}</td>
-                        <td>
-                            <span class="badge ${
-                                student.status === 'Active' ? 'bg-success-subtle text-success' : 
-                                student.status === 'Completed' ? 'bg-info-subtle text-info' :
-                                'bg-danger-subtle text-danger'
-                            }" style="${
-                                student.status === 'Completed' ? 'bg-info-subtle text-info' : ''
-                            }">
-                                ${student.status}
-                            </span>
-                        </td>
-                        <td class="text-end">
-                            <div class="d-flex gap-2 justify-content-end">
-                                <button class="btn btn-link p-0" onclick="handleStudentAction('edit', '${student.user_id}')">
-                                    <i class="bi bi-pencil" style="color: #191970;"></i>
-                                </button>
-                                <button class="btn btn-link p-0" data-bs-toggle="modal" data-bs-target="#viewStudentModal" onclick="handleStudentAction('view', '${student.user_id}')">
-                                    <i class="bi bi-eye" style="color: #191970;"></i>
-                                </button>
-                                <button class="btn btn-link p-0" onclick="handleStudentAction('delete', '${student.user_id}')">
-                                    <i class="bi bi-archive" style="color: #191970;"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('');
+        // Find the table element
+        const table = document.getElementById('studentTable');
+        if (!table) {
+            // Look for any table on the page as fallback
+            const tables = document.getElementsByTagName('table');
+            if (tables.length === 0) {
+                return;
             }
+        }
+
+        // Find the tbody element
+        const tbody = table ? table.querySelector('tbody') : document.querySelector('tbody');
+        if (!tbody) {
+            return;
+        }
+     
+        // Update table content based on data
+        if (paginatedData.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                <td colspan="4" class="text-center py-5">
+                    <div class="text-muted">
+                        <i class="bi bi-inbox fs-2"></i>
+                        <p class="mt-2">No students found</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+        } else {
+            // Generate table rows
+            tbody.innerHTML = paginatedData.map(student => {
+                // Ensure we have a valid student ID, using either id or user_id property
+                const studentId = student.user_id || student.id || '';
+                
+                return `
+            <tr data-user-role="${student.role || ''}" data-user-id="${studentId}">
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <img src="/static/images/${student.profile_img || 'profile.png'}" 
+                            class="rounded-circle me-3" 
+                            width="40" 
+                            height="40"
+                            alt="${student.name || 'Student'}">
+                            <div>
+                            <div class="fw-medium">${student.name || 'Unnamed Student'}</div>
+                            <div class="text-muted small">${studentId}</div>
+                            </div>
+                        </div>
+                    </td>
+                <td class="align-middle">${student.role || 'Student'}</td>
+                <td class="align-middle">
+                        <span class="badge ${
+                            student.status === 'Active' ? 'bg-success-subtle text-success' : 
+                            'bg-danger-subtle text-danger'
+                        }">
+                            ${student.status || 'Unknown'}
+                        </span>
+                    </td>
+                <td class="align-middle text-end">
+                        <div class="d-flex gap-2 justify-content-end">
+                            <button class="btn btn-link p-0" onclick="handleStudentAction('edit', '${studentId}')">
+                                <i class="bi bi-pencil" style="color: #191970;"></i>
+                            </button>
+                        <button class="btn btn-link p-0" onclick="handleStudentAction('view', '${studentId}')">
+                                <i class="bi bi-eye" style="color: #191970;"></i>
+                            </button>
+                        <button class="btn btn-link p-0" onclick="handleStudentAction('archive', '${studentId}')">
+                                <i class="bi bi-archive" style="color: #191970;"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            }).join('');
         }
 
         // Update pagination info
         const paginationInfo = document.getElementById('paginationInfo');
         if (paginationInfo) {
-            paginationInfo.textContent = totalItems > 0 ? 
-                `${startIndex + 1}-${endIndex} of ${totalItems}` : 
-                'No students found';
+            if (state.totalItems === 0) {
+                paginationInfo.textContent = '0 items';
+            } else {
+                paginationInfo.textContent = `${startIndex + 1}-${endIndex} of ${state.totalItems}`;
+            }
         }
 
-        // Update button states
+        // Update pagination buttons
         const prevButton = document.getElementById('prevPage');
+        if (prevButton) {
+            prevButton.disabled = state.page <= 1;
+        }
+
         const nextButton = document.getElementById('nextPage');
-        if (prevButton) prevButton.disabled = currentPageState.page === 1;
-        if (nextButton) nextButton.disabled = endIndex >= totalItems;
-
+        if (nextButton) {
+            nextButton.disabled = endIndex >= state.totalItems;
+        }
     } catch (error) {
+        // Silent error handling
         console.error('Error updating table:', error);
-        showToast('Error', 'Failed to update table', 'error');
     }
 }
 
-// Handle student actions (view, edit, delete)
-window.handleStudentAction = async function(action, studentId) {
-    switch(action) {
+/**
+ * Update card statistics based on filtered data
+ */
+function updateCardStatistics() {
+    try {
+        // Calculate counts
+        const totalStudents = state.currentData.length;
+        const activeStudents = state.currentData.filter(student => student.status === 'Active').length;
+        const inactiveStudents = state.currentData.filter(student => student.status === 'Inactive').length;
+
+        // Update DOM elements with null checks
+        const totalElement = document.querySelector('[data-count="total"]');
+        const activeElement = document.querySelector('[data-count="active"]');
+        const inactiveElement = document.querySelector('[data-count="inactive"]');
+        
+        // Check if elements exist
+        if (!totalElement || !activeElement || !inactiveElement) {
+            return;
+        }
+        
+        // Update elements
+        totalElement.textContent = totalStudents;
+        activeElement.textContent = activeStudents;
+        inactiveElement.textContent = inactiveStudents;
+    } catch (error) {
+        // Silent error handling
+        console.error('Error updating statistics:', error);
+    }
+}
+
+// ------------------- Student Action Handlers -------------------
+
+/**
+ * Global handler for student actions (view, edit, archive)
+ */
+window.handleStudentAction = function(action, studentId) {
+    // If this function is called from an onclick attribute with pattern onClick="handleStudentAction('action')"
+    if (typeof studentId === 'undefined' && typeof event !== 'undefined') {
+        // Extract ID from the clicked button or its parent row
+        const button = event.target.closest('button');
+        if (button) {
+            // Get the student ID from button's onclick attribute or its parent row
+            const onclickAttr = button.getAttribute('onclick') || '';
+            const idMatch = onclickAttr.match(/,\s*['"]([^'"]+)['"]/); // Extract ID from second parameter
+            
+            if (idMatch && idMatch[1]) {
+                studentId = idMatch[1];
+            } else {
+                // Try to get from the row data attribute
+                const row = button.closest('tr[data-user-id]');
+                if (row) {
+                    studentId = row.getAttribute('data-user-id');
+                }
+            }
+        }
+    }
+    
+    // Validate student ID - make sure it's not the action name
+    if (!studentId || studentId === action) {
+        showToast('Invalid student ID', 'error');
+        return;
+    }
+    
+    // Dispatch to appropriate handler based on action
+    switch (action) {
         case 'view':
-            try {
-                const response = await fetch(`/api/students/${studentId}`);
-                if (!response.ok) throw new Error('Failed to fetch student details');
-                const student = await response.json();
-
-                // Update modal content with student details
-                document.getElementById('studentName').textContent = student.name;
-                document.getElementById('studentId').textContent = student.user_id;
-                document.getElementById('studentStatus').textContent = student.status;
-                document.getElementById('studentStatus').className = `badge ${
-                    student.status === 'Active' ? 'bg-success' : 'bg-danger'
-                }`;
-                document.getElementById('studentImage').src = `/static/images/${student.profile_img}`;
-                
-                // Update company and group info
-                document.getElementById('studentCompany').textContent = 
-                    student.company || 'Not Assigned';
-                document.getElementById('studentGroup').textContent = 
-                    student.group || 'Not Assigned';
-
-                // Update enrolled classes
-                const enrolledClasses = student.enrolled_classes || [];
-                document.getElementById('enrolledClasses').innerHTML = 
-                    enrolledClasses.length ? enrolledClasses.map(classInfo => `
-                        <div class="mb-2">
-                            <div class="fw-semibold">${classInfo.class_code} - ${classInfo.class_name}</div>
-                            <div class="small text-muted">
-                                Schedule: ${classInfo.schedule}<br>
-                                Instructor: ${classInfo.instructor}
-                            </div>
-                        </div>
-                    `).join('') : '<p class="text-muted mb-0">No classes enrolled</p>';
-
-            } catch (error) {
-                console.error('Error viewing student:', error);
-            }
+            handleViewStudent(studentId);
             break;
-
         case 'edit':
-            try {
-                const response = await fetch(`/api/students/${studentId}`);
-                if (!response.ok) throw new Error('Failed to fetch student details');
-                const student = await response.json();
-                
-                // Store the current editing student
-                currentEditingStudent = student;
-                
-                // Set the current status in the select
-                const statusSelect = document.getElementById('studentStatusSelect');
-                statusSelect.value = student.status;
-                
-                // Show the edit modal
-                const editModal = new bootstrap.Modal(document.getElementById('editStudentModal'));
-                editModal.show();
-            } catch (error) {
-                console.error('Error editing student:', error);
-            }
+            handleEditStudent(studentId);
             break;
-
-        case 'delete':
-            console.log('Delete student:', studentId);
+        case 'archive':
+            handleArchiveStudent(studentId);
+            break;
+        default:
+            // Unknown action - silently ignore
             break;
     }
 };
 
-function initializeModalPagination() {
-    // Get all required elements with null checks
-    const modalRowsPerPage = document.getElementById('modalRowsPerPage');
-    const modalPrevPage = document.getElementById('modalPrevPage');
-    const modalNextPage = document.getElementById('modalNextPage');
-    const modalPaginationInfo = document.getElementById('modalPaginationInfo');
-
-    // Initialize state variables
-    let modalCurrentPage = 1;
-    let modalPerPage = modalRowsPerPage ? parseInt(modalRowsPerPage.value) || 10 : 10; // Default to 10 if element not found
-    let modalTotalItems = 0;
-
-    // Function to update modal pagination info
-    function updateModalPaginationInfo(start, end, total) {
-        if (modalPaginationInfo) {
-            modalPaginationInfo.textContent = `${start}-${end} of ${total}`;
-        }
-    }
-
-    // Function to update modal pagination buttons
-    function updateModalPaginationButtons(totalItems) {
-        if (!modalPrevPage || !modalNextPage) return;
-        
-        const maxPage = Math.ceil(totalItems / modalPerPage);
-        modalPrevPage.disabled = modalCurrentPage <= 1;
-        modalNextPage.disabled = modalCurrentPage >= maxPage;
-    }
-
-    // Event handlers for modal pagination
-    if (modalRowsPerPage) {
-        modalRowsPerPage.addEventListener('change', function() {
-            modalPerPage = parseInt(this.value) || 10;
-            modalCurrentPage = 1; // Reset to first page
-            updateModalPaginationInfo(1, modalPerPage, modalTotalItems);
-            updateModalPaginationButtons(modalTotalItems);
-        });
-    }
-
-    if (modalPrevPage) {
-        modalPrevPage.addEventListener('click', function() {
-            if (!this.disabled && modalCurrentPage > 1) {
-                modalCurrentPage--;
-                const start = (modalCurrentPage - 1) * modalPerPage + 1;
-                const end = Math.min(start + modalPerPage - 1, modalTotalItems);
-                updateModalPaginationInfo(start, end, modalTotalItems);
-                updateModalPaginationButtons(modalTotalItems);
-            }
-        });
-    }
-
-    if (modalNextPage) {
-        modalNextPage.addEventListener('click', function() {
-            const maxPage = Math.ceil(modalTotalItems / modalPerPage);
-            if (!this.disabled && modalCurrentPage < maxPage) {
-                modalCurrentPage++;
-                const start = (modalCurrentPage - 1) * modalPerPage + 1;
-                const end = Math.min(start + modalPerPage - 1, modalTotalItems);
-                updateModalPaginationInfo(start, end, modalTotalItems);
-                updateModalPaginationButtons(modalTotalItems);
-            }
-        });
-    }
-
-    // Initialize pagination with default values
-    modalTotalItems = 50; // Replace with actual total
-    if (modalPaginationInfo && modalPrevPage && modalNextPage) {
-        updateModalPaginationInfo(1, modalPerPage, modalTotalItems);
-        updateModalPaginationButtons(modalTotalItems);
-    }
-}
-
-// Function to calculate and update attendance statistics
-function updateAttendanceStatistics() {
+/**
+ * Handles viewing a student - loads data and shows view modal
+ */
+async function handleViewStudent(studentId) {
     try {
-        // Get all attendance cells
-        const attendanceCells = document.querySelectorAll('.attendance-cell .badge');
+        if (!studentId) {
+            showToast('Invalid student ID', 'error');
+            return;
+        }
+
+        // Try finding student in current data first for immediate display
+        const cachedStudent = state.currentData.find(student => 
+            (student.user_id && student.user_id.toString() === studentId.toString()) || 
+            (student.id && student.id.toString() === studentId.toString())
+        );
         
-        let totalPresent = 0;
-        let totalAbsence = 0;
-        let totalDays = attendanceCells.length;
+        let modalShown = false;
         
-        // Count present and absent days
-        attendanceCells.forEach(badge => {
-            if (badge.classList.contains('badge-present')) {
-                totalPresent++;
-            } else if (badge.classList.contains('badge-absent')) {
-                totalAbsence++;
+        if (cachedStudent) {
+            // Format the student data for the modal
+            const formattedData = formatStudentForModal(cachedStudent);
+            
+            // Call the global student modal function
+            if (typeof window.showStudentModalView === 'function') {
+                window.showStudentModalView(formattedData);
+                modalShown = true;
+            } else {
+                console.error('Student modal function unavailable');
             }
-            // Note: Late is counted as present for percentage calculation
-            if (badge.classList.contains('badge-late')) {
-                totalPresent++;
+        }
+        
+        // Then fetch fresh data from API
+        try {
+            const response = await fetch(`/api/users/${studentId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch student details: ${response.status}`);
             }
-        });
-        
-        // Calculate attendance percentage
-        const attendancePercentage = totalDays > 0 ? (totalPresent / totalDays) * 100 : 0;
-        
-        // Update the statistics in the modal - with null checks
-        const totalPresentElement = document.getElementById('totalPresent');
-        const totalAbsenceElement = document.getElementById('totalAbsence');
-        const attendancePercentageElement = document.getElementById('attendancePercentage');
-        
-        if (totalPresentElement) totalPresentElement.textContent = totalPresent;
-        if (totalAbsenceElement) totalAbsenceElement.textContent = totalAbsence;
-        if (attendancePercentageElement) {
-            attendancePercentageElement.textContent = `${attendancePercentage.toFixed(2)}%`;
+            
+            const studentData = await response.json();
+            
+            // Format the student data for the modal
+            const formattedData = formatStudentForModal(studentData);
+            
+            // Call the global student modal function
+            if (typeof window.showStudentModalView === 'function') {
+                window.showStudentModalView(formattedData);
+            } else {
+                console.error('Student modal function unavailable');
+                if (!modalShown) {
+                    showToast('Error: Unable to display student details', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching student data');
+            // Only show error if we didn't already show the modal with cached data
+            if (!modalShown) {
+                showToast('Error: Unable to display student details', 'error');
+            }
         }
     } catch (error) {
-        console.error('Error updating attendance statistics:', error);
+        console.error('Error in handleViewStudent');
+        showToast('Error loading student data', 'error');
     }
 }
 
-// Function to handle date range search
-function handleDateRangeSearch() {
-    const dateFrom = document.getElementById('dateFrom')?.value;
-    const dateTo = document.getElementById('dateTo')?.value;
-    
-    if (dateFrom && dateTo) {
-        // Add your date range filtering logic here
-        console.log('Date range:', dateFrom, 'to', dateTo);
-        // Update the table and statistics based on the date range
-        updateAttendanceStatistics();
-    }
-}
-
-const attendanceTable = {
-    init: function(type = 'student') {
-        this.type = type;
-        this.initializeDatePickers();
-        this.bindEvents();
-        this.populateTable();
-    },
-
-    initializeDatePickers: function() {
-        // Initialize start date picker
-        this.startDatePicker = flatpickr("#startDate", {
-            dateFormat: "d/m/Y",
-            allowInput: true,
-            maxDate: 'today',
-            onChange: (selectedDates, dateStr) => {
-                // Update end date minimum when start date changes
-                this.endDatePicker.set('minDate', dateStr);
-            }
-        });
-
-        // Initialize end date picker
-        this.endDatePicker = flatpickr("#endDate", {
-            dateFormat: "d/m/Y",
-            allowInput: true,
-            maxDate: 'today',
-            onChange: (selectedDates, dateStr) => {
-                // Update start date maximum when end date changes
-                this.startDatePicker.set('maxDate', dateStr);
-            }
-        });
-
-        // Set initial dates (last 7 days)
-        const today = new Date();
-        const lastWeek = new Date(today);
-        lastWeek.setDate(today.getDate() - 6); // Show last 7 days including today
-
-        this.startDatePicker.setDate(lastWeek);
-        this.endDatePicker.setDate(today);
-    },
-
-    bindEvents: function() {
-        // Bind calendar icon clicks
-        document.querySelectorAll('.calendar-icon').forEach(icon => {
-            icon.style.pointerEvents = 'auto';
-            icon.style.cursor = 'pointer';
-            icon.addEventListener('click', (e) => {
-                const input = e.target.closest('.date-input-wrapper').querySelector('input');
-                input._flatpickr.open();
-            });
-        });
-
-        // Bind filter button clicks
-        const applyFilterBtn = document.querySelector('.apply-filter');
-        if (applyFilterBtn) {
-            applyFilterBtn.addEventListener('click', () => this.filterAttendance());
-        }
-
-        const resetFilterBtn = document.querySelector('button[onclick="attendanceTable.resetFilter()"]');
-        if (resetFilterBtn) {
-            resetFilterBtn.removeAttribute('onclick');
-            resetFilterBtn.addEventListener('click', () => this.resetFilter());
-        }
-    },
-
-    filterAttendance: function() {
-        const startDate = this.startDatePicker.selectedDates[0];
-        const endDate = this.endDatePicker.selectedDates[0];
-        
-        if (startDate && endDate) {
-            console.log('Filtering attendance between:', startDate, 'and', endDate);
-            // Implement your filtering logic here
-            this.populateTable(); // Refresh table with filtered data
-        }
-    },
-
-    resetFilter: function() {
-        // Reset date pickers to last 7 days
-        const today = new Date();
-        const lastWeek = new Date(today);
-        lastWeek.setDate(today.getDate() - 6); // Show last 7 days including today
-
-        this.startDatePicker.setDate(lastWeek);
-        this.endDatePicker.setDate(today);
-
-        // Reset table to show 7-day data
-        this.filterAttendance();
-    },
-
-    calculateStatistics: function(lectureData) {
-        let totalDays = 0;
-        let totalPresent = 0;
-        let totalAbsent = 0;
-
-        lectureData.forEach(lecture => {
-            lecture.attendance.forEach(day => {
-                totalDays++;
-                if (day.status === 'Present' || day.status === 'Late') {
-                    totalPresent++;
-                } else if (day.status === 'Absent') {
-                    totalAbsent++;
-                }
-            });
-        });
-
-        const attendancePercentage = totalDays > 0 
-            ? ((totalPresent / totalDays) * 100).toFixed(2)
-            : 0;
-
-        // Update the statistics cards
-        const totalPresentElement = document.getElementById('totalPresent');
-        const totalAbsenceElement = document.getElementById('totalAbsence');
-        const attendancePercentageElement = document.getElementById('attendancePercentage');
-
-        if (totalPresentElement) totalPresentElement.textContent = totalPresent;
-        if (totalAbsenceElement) totalAbsenceElement.textContent = totalAbsent;
-        if (attendancePercentageElement) attendancePercentageElement.textContent = `${attendancePercentage}%`;
-    },
-
-    populateTable: function() {
-        const nameColumn = document.getElementById('studentNameColumn');
-        const attendanceBody = document.getElementById('attendanceTableBody');
-        
-        // Using first 3 classes from mock_classes in app.py
-        const lectureData = [
-            {
-                name: '(KL45XY) Mathematics 101',
-                time: '09:00 - 10:30',
-                attendance: [
-                    { status: 'late', time: '9:20 AM' },
-                    { status: 'present', time: '9:00 AM' },
-                    { status: 'present', time: '9:00 AM' },
-                    { status: 'present', time: '9:00 AM' },
-                    { status: 'late', time: '9:20 AM' }
-                ]
-            },
-            {
-                name: '(KL72AB) Physics Basic',
-                time: '11:00 - 12:30',
-                attendance: [
-                    { status: 'absent', time: '-' },
-                    { status: 'absent', time: '-' },
-                    { status: 'present', time: '11:00 AM' },
-                    { status: 'present', time: '11:00 AM' },
-                    { status: 'late', time: '11:30 AM' }
-                ]
-            },
-            {
-                name: '(KL89CD) Chemistry Lab',
-                time: '14:00 - 15:30',
-                attendance: [
-                    { status: 'present', time: '14:00 AM' },
-                    { status: 'present', time: '14:00 AM' },
-                    { status: 'absent', time: '-' },
-                    { status: 'absent', time: '-' },
-                    { status: 'absent', time: '-' }
-                ]
-            }
-        ];
-
-        if (this.type === 'student') {
-            // Clear existing content
-            nameColumn.innerHTML = '';
-            
-            // Update header text
-            const header = document.querySelector('.student-header');
-            if (header) {
-                header.textContent = 'Lecture Details';
-            }
-
-            // Populate lecture details
-            lectureData.forEach(lecture => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="student-cell">
-                        <div class="student-name">${lecture.name}</div>
-                        <div class="student-info">${lecture.time}</div>
-                    </td>
-                `;
-                nameColumn.appendChild(row);
-            });
-
-            // Rest of the attendance population code remains the same
-            attendanceBody.innerHTML = '';
-            lectureData.forEach(lecture => {
-                const row = document.createElement('tr');
-                lecture.attendance.forEach(day => {
-                    let badgeClasses = '';
-                    switch(day.status) {
-                        case 'Present':
-                            badgeClasses = 'bg-success-subtle text-success';
-                break;
-                        case 'Absent':
-                            badgeClasses = 'bg-danger-subtle text-danger';
-                break;
-                        case 'Late':
-                            badgeClasses = 'bg-warning-subtle text-warning';
-                break;
-                    }
-                    
-                    row.innerHTML += `
-                        <td class="attendance-cell">
-                            <div class="attendance-content">
-                                <span class="badge ${badgeClasses}" 
-                                      style="padding: 8px 16px; font-size: 14px;">
-                                    ${day.status.charAt(0).toUpperCase() + day.status.slice(1)}
-                                </span>
-                            </div>
-                        </td>
-                    `;
-                });
-                attendanceBody.appendChild(row);
-            });
-
-            // Calculate and update statistics
-            this.calculateStatistics(lectureData);
-        }
-    },
-
-    // ... rest of your existing attendance table functions
-};
-
-// Initialize based on modal type
-document.addEventListener('DOMContentLoaded', function() {
-    const viewStudentModal = document.getElementById('viewStudentModal');
-    const viewClassModal = document.getElementById('viewClassModal');
-
-    if (viewStudentModal) {
-        viewStudentModal.addEventListener('show.bs.modal', function() {
-            // Initialize attendance table with student type
-            attendanceTable.init('student');
-            
-            // Make calendar icons clickable in modal
-            viewStudentModal.querySelectorAll('.calendar-icon').forEach(icon => {
-                icon.style.pointerEvents = 'auto';
-                icon.style.cursor = 'pointer';
-                icon.addEventListener('click', (e) => {
-                    const input = e.target.closest('.date-input-wrapper').querySelector('input');
-                    if (input._flatpickr) {
-                        input._flatpickr.open();
-                    }
-                });
-            });
-
-            // Style the Apply Filter button
-            const applyFilterBtn = viewStudentModal.querySelector('.apply-filter');
-            if (applyFilterBtn) {
-                applyFilterBtn.style.backgroundColor = '#191970';
-                applyFilterBtn.style.borderColor = '#191970';
-            }
-        });
-    }
-
-    if (viewClassModal) {
-        viewClassModal.addEventListener('show.bs.modal', function() {
-            attendanceTable.init('class');
-        });
-    }
-});
-
-// Add this function at the top level of your file
-function showToast(title, message, type = 'success') {
-    const toast = document.getElementById('statusToast');
-    const toastTitle = document.getElementById('toastTitle');
-    const toastMessage = document.getElementById('toastMessage');
-    const iconElement = toast.querySelector('.toast-header i');
-    
-    // Update toast content
-    toastTitle.textContent = title;
-    toastMessage.textContent = message;
-    
-    // Update icon and color based on type
-    iconElement.className = type === 'success' 
-        ? 'bi bi-check-circle-fill text-success me-2'
-        : 'bi bi-exclamation-circle-fill text-danger me-2';
-    
-    // Show toast
-    const bsToast = new bootstrap.Toast(toast, {
-        delay: 3000 // Auto-hide after 3 seconds
-    });
-    bsToast.show();
-}
-
-// Add the updateStatusCards function
-function updateStatusCards(data) {
-    if (!Array.isArray(data)) return;
-
-    const totalStudents = data.length;
-    const activeStudents = data.filter(item => item.status === 'Active').length;
-    const completedStudents = data.filter(item => item.status === 'Completed').length;
-    const inactiveStudents = data.filter(item => item.status === 'Inactive').length;
-
-    // Update the numbers in the cards
-    document.querySelector('[data-count="total"]').textContent = totalStudents;
-    document.querySelector('[data-count="active"]').textContent = activeStudents;
-    document.querySelector('[data-count="completed"]').textContent = completedStudents;
-    document.querySelector('[data-count="inactive"]').textContent = inactiveStudents;
-}
-
-// Update the saveStudentStatus function
-window.saveStudentStatus = async function() {
-    if (!currentEditingStudent) return;
-    
+/**
+ * Handles editing a student - loads data and shows edit modal
+ */
+async function handleEditStudent(studentId) {
     try {
-        const newStatus = document.getElementById('studentStatusSelect').value;
+        if (!studentId) {
+            showToast('Invalid student ID', 'error');
+            return;
+        }
+
+        // Disable form while loading data
+        const form = document.getElementById('editStudentForm');
+        if (form) {
+            form.classList.add('loading');
+        }
         
-        const response = await fetch(`/api/students/${currentEditingStudent.user_id}/status`, {
+        // Get the edit modal element
+        const modal = document.getElementById('editStudentModal');
+        if (!modal) {
+            showToast('Error: Edit modal not found', 'error');
+            return;
+        }
+        
+        // Store the student ID on the modal element for later reference
+        modal.setAttribute('data-student-id', studentId);
+        
+        // Flag to track if modal has been shown
+        let modalShown = false;
+        
+        // Get the student from current data first for immediate display
+        const cachedStudent = state.currentData.find(student => 
+            (student.user_id && student.user_id.toString() === studentId.toString()) || 
+            (student.id && student.id.toString() === studentId.toString())
+        );
+        
+        if (cachedStudent) {
+            state.currentEditingStudent = formatStudentForModal(cachedStudent);
+            populateEditForm(state.currentEditingStudent);
+            
+            // Show the modal
+            try {
+                const editModal = new bootstrap.Modal(modal);
+                editModal.show();
+                modalShown = true;
+            } catch (error) {
+                console.error('Error showing modal');
+                try {
+                    $(modal).modal('show');
+                    modalShown = true;
+                } catch (e) {
+                    console.error('Error showing modal');
+                }
+            }
+        }
+        
+        // Fetch fresh data from API to update the form
+        try {
+            const response = await fetch(`/api/users/${studentId}`);
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+            
+            const apiData = await response.json();
+            
+            // Format data for modal
+            state.currentEditingStudent = formatStudentForModal(apiData);
+            
+            // Update form with fresh data
+            populateEditForm(state.currentEditingStudent);
+            
+            // If modal wasn't shown from cached data, show it now
+            if (!modalShown) {
+                try {
+                    const editModal = new bootstrap.Modal(modal);
+                    editModal.show();
+                    modalShown = true;
+                } catch (error) {
+                    console.error('Error showing modal');
+                    try {
+                        $(modal).modal('show');
+                        modalShown = true;
+                    } catch (e) {
+                        console.error('Error showing modal');
+                        showToast('Error: Unable to show edit modal', 'error');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching student data');
+            // If we already showed modal with cached data, just log the error
+            // Otherwise show an error toast
+            if (!modalShown) {
+                showToast('Error loading student data', 'error');
+            } else {
+                showToast('Warning: Using cached data. Could not refresh from server.', 'warning');
+            }
+        }
+    } catch (error) {
+        console.error('Error in handleEditStudent');
+        showToast('Error loading student data for editing', 'error');
+    } finally {
+        // Re-enable form regardless of outcome
+        const form = document.getElementById('editStudentForm');
+        if (form) {
+            form.classList.remove('loading');
+        }
+    }
+}
+
+/**
+ * Populates the edit form with student data
+ */
+function populateEditForm(studentData) {
+    if (!studentData) {
+        console.error('Missing student data');
+        return;
+    }
+    
+    // Set values in the form based on edit_student_modal.html component
+    const nameElement = document.getElementById('editStudentName');
+    if (nameElement) {
+        const fullName = studentData.name || `${studentData.first_name || ''} ${studentData.last_name || ''}`.trim();
+        nameElement.textContent = fullName || 'Unknown Student';
+    }
+    
+    const idElement = document.getElementById('editStudentId');
+    if (idElement) {
+        const studentId = studentData.user_id || studentData.id || '';
+        idElement.textContent = studentId || 'ID not available';
+    }
+    
+    // Set status dropdown
+    const statusSelect = document.getElementById('studentStatusSelect');
+    if (statusSelect) {
+        // Determine status from various possible fields
+        let currentStatus = 'Active'; // Default to active
+        
+        if (studentData.status) {
+            currentStatus = studentData.status;
+        } else if (studentData.is_active !== undefined) {
+            currentStatus = studentData.is_active ? 'Active' : 'Inactive';
+        }
+        
+        // Try to find matching option
+        let optionFound = false;
+        
+        // Look through options and select the matching one
+        for (let i = 0; i < statusSelect.options.length; i++) {
+            if (statusSelect.options[i].value.toLowerCase() === currentStatus.toLowerCase()) {
+                statusSelect.selectedIndex = i;
+                optionFound = true;
+                break;
+            }
+        }
+        
+        // If no match was found, see if we can add a new option
+        if (!optionFound) {
+            // Create and add a new option
+            const newOption = document.createElement('option');
+            newOption.value = currentStatus;
+            newOption.textContent = currentStatus;
+            statusSelect.appendChild(newOption);
+            
+            // Set it as selected
+            statusSelect.value = currentStatus;
+        }
+    }
+    
+    // Set student image
+    const studentImage = document.getElementById('editStudentImage');
+    if (studentImage) {
+        // Default image path
+        let imagePath = '/static/images/profile.png';
+        
+        // Use student image if available
+        if (studentData.profile_img) {
+            if (studentData.profile_img.startsWith('/')) {
+                imagePath = studentData.profile_img;
+            } else if (studentData.profile_img.startsWith('http')) {
+                imagePath = studentData.profile_img;
+            } else {
+                imagePath = `/static/images/${studentData.profile_img}`;
+            }
+        }
+        
+        // Set the image source and alt text
+        studentImage.src = imagePath;
+        studentImage.alt = studentData.name || 'Student';
+        
+        // Add error handler to fallback to default if image fails to load
+        studentImage.onerror = function() {
+            this.src = '/static/images/profile.png';
+            this.onerror = null; // Prevent infinite loop
+        };
+    }
+    
+    // Show that form is populated and ready
+    const form = document.getElementById('editStudentForm');
+    if (form) {
+        form.classList.remove('loading');
+        form.classList.add('populated');
+    }
+}
+
+/**
+ * Handles archiving a student
+ */
+function handleArchiveStudent(studentId) {
+    if (!studentId) {
+        showToast('Invalid student ID', 'error');
+        return;
+    }
+
+    // Find student in current data
+    const student = state.currentData.find(student => 
+        (student.user_id && student.user_id.toString() === studentId.toString()) || 
+        (student.id && student.id.toString() === studentId.toString())
+    );
+    
+    if (!student) {
+        showToast('Student not found', 'error');
+        return;
+    }
+    
+    // Clean up any existing modals first
+    cleanupModalBackdrop();
+    
+    // Ensure the modal exists
+    const modal = document.getElementById('confirmArchiveModal');
+    if (!modal) {
+        showToast('Unable to display archive confirmation', 'error');
+        return;
+    }
+    
+    // Populate confirmation modal with null checks
+    const idInput = document.getElementById('archiveStudentId');
+    if (idInput) {
+        idInput.value = studentId;
+    }
+    
+    const nameElement = document.getElementById('archiveStudentName');
+    if (nameElement) {
+        nameElement.textContent = student.name || 'Unknown Student';
+    }
+    
+    const idDisplay = document.getElementById('archiveStudentIdDisplay');
+    if (idDisplay) {
+        idDisplay.textContent = studentId;
+    }
+    
+    // Show confirmation modal
+    try {
+        const confirmModal = new bootstrap.Modal(modal);
+        confirmModal.show();
+    } catch (error) {
+        console.error('Error showing modal');
+        showToast('Could not display archive confirmation', 'error');
+    }
+}
+
+/**
+ * Archives a student (called from confirmation modal)
+ */
+function archiveStudent() {
+    // Get the student ID from the modal
+    const studentId = document.getElementById('archiveStudentId').value;
+    const studentName = document.getElementById('archiveStudentName').textContent;
+    
+    // Get the archive reason
+    const reasonSelect = document.getElementById('archiveReason');
+    const customReasonInput = document.getElementById('customReason');
+    
+    if (!reasonSelect || !reasonSelect.value) {
+        showToast('Please select an archive reason', 'error');
+        return;
+    }
+    
+    // Determine the final reason text
+    let archiveReason = reasonSelect.value;
+    if (archiveReason === 'other' && customReasonInput) {
+        if (!customReasonInput.value.trim()) {
+            showToast('Please specify a custom reason', 'error');
+            customReasonInput.focus();
+            return;
+        }
+        archiveReason = customReasonInput.value.trim();
+    }
+    
+    // Disable archive button to prevent multiple submissions
+    const archiveBtn = document.getElementById('confirmArchiveBtn');
+    if (archiveBtn) {
+        archiveBtn.disabled = true;
+        archiveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+    }
+    
+    
+    // Send the archive request
+    fetch(`/api/users/${studentId}/archive`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            reason: archiveReason,
+            name: studentName
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.message || 'Failed to archive student');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Hide the modal - with proper cleanup
+        const modal = bootstrap.Modal.getInstance(document.getElementById('confirmArchiveModal'));
+        if (modal) {
+            modal.hide();
+            // Clean up backdrop and modal state
+            setTimeout(() => {
+                cleanupModalBackdrop('confirmArchiveModal');
+            }, 150);
+        }
+        
+        // Show success message with strong styling
+        showToast(`Student ${studentName} has been archived successfully`, 'success');
+        
+        // Try to add link to archives in the toast
+        try {
+            setTimeout(() => {
+                const toastElement = document.querySelector('#toastContainer .toast:last-child .toast-body');
+                if (toastElement) {
+                    const archiveLink = document.createElement('div');
+                    archiveLink.className = 'mt-2';
+                    archiveLink.innerHTML = '<a href="/admin/archive-view?type=student" class="btn btn-sm btn-outline-secondary">View in Student Archives</a>';
+                    toastElement.appendChild(archiveLink);
+                }
+            }, 100);
+        } catch (error) {
+            console.error('Error adding archive link');
+        }
+        
+        // Remove from the table
+        removeStudentFromTable(studentId);
+        
+        // Update statistics
+        loadStudents().then(() => {
+            updateCardStatistics();
+            updateTable();
+        });
+    })
+    .catch(error => {
+        console.error('Error archiving student');
+        showToast(`Failed to archive student: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable archive button
+        if (archiveBtn) {
+            archiveBtn.disabled = false;
+            archiveBtn.innerHTML = 'Archive Student';
+        }
+        
+        // Reset form fields
+        if (reasonSelect) reasonSelect.value = '';
+        if (customReasonInput) customReasonInput.value = '';
+        
+        // Hide custom reason field
+        const customReasonContainer = document.getElementById('customReasonContainer');
+        if (customReasonContainer) {
+            customReasonContainer.classList.add('d-none');
+        }
+    });
+}
+
+/**
+ * Remove a student from the table after archiving
+ */
+function removeStudentFromTable(studentId) {
+    if (!studentId) return;
+    
+    // Find the student in the current data and remove it
+    const studentIndex = state.currentData.findIndex(student => 
+        (student.user_id && student.user_id.toString() === studentId.toString()) || 
+        (student.id && student.id.toString() === studentId.toString())
+    );
+    
+    if (studentIndex !== -1) {
+        state.currentData.splice(studentIndex, 1);
+        state.totalItems--;
+        
+        // Update the table to reflect the change
+        updateTable();
+    }
+    
+    // Also try to remove the row directly from the DOM for immediate feedback
+    try {
+        const studentRow = document.querySelector(`tr[data-user-id="${studentId}"]`);
+        if (studentRow) {
+            studentRow.remove();
+        }
+    } catch (error) {
+        // Silent failure, the updateTable call above will handle it
+        console.error('Error removing row from DOM');
+    }
+}
+
+/**
+ * Save student status (called from edit modal)
+ */
+window.saveStudentStatus = async function() {
+    try {
+        // Show processing indicator
+        const saveButton = document.querySelector('#editStudentModal .btn-primary');
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+        }
+        
+        // Get the modal element to extract the student ID
+        const modal = document.getElementById('editStudentModal');
+        if (!modal) {
+            showToast('Error: Cannot find edit modal', 'error');
+            return;
+        }
+        
+        // Find the student ID - first try data attribute on modal
+        let studentId = modal.getAttribute('data-student-id');
+        
+        // Try from the state
+        if (!studentId && state.currentEditingStudent) {
+            studentId = state.currentEditingStudent.user_id || state.currentEditingStudent.id;
+        }
+        
+        // Try from the form element
+        if (!studentId) {
+            const idElement = document.getElementById('editStudentId');
+            if (idElement && idElement.textContent) {
+                studentId = idElement.textContent.trim();
+            }
+        }
+        
+        // Validate the student ID
+        if (!studentId) {
+            showToast('Cannot update student: ID not found', 'error');
+            return;
+        }
+        
+        // Get the new status
+        const statusSelect = document.getElementById('studentStatusSelect');
+        if (!statusSelect) {
+            throw new Error('Status select not found');
+        }
+        
+        const newStatus = statusSelect.value;
+        const isActive = newStatus === 'Active';
+        
+        // Send status update to API
+        const response = await fetch(`/api/users/${studentId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ status: newStatus })
+            body: JSON.stringify({ 
+                status: newStatus,
+                is_active: isActive
+            })
         });
-
-        if (!response.ok) throw new Error('Failed to update student status');
-
-        // Update local data safely
-        if (Array.isArray(currentPageState.currentData)) {
-            currentPageState.currentData = currentPageState.currentData.map(student => {
-                if (student.user_id === currentEditingStudent.user_id) {
-                    return { ...student, status: newStatus };
-                }
-                return student;
-            });
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || `API returned ${response.status}: ${response.statusText}`);
         }
-
-        // Close modal
+        
+        const result = await response.json();
+        
+        // Update in local data if student exists in current data
+        const studentIndex = state.currentData.findIndex(student => 
+            (student.user_id && student.user_id.toString() === studentId.toString()) || 
+            (student.id && student.id.toString() === studentId.toString())
+        );
+        
+        if (studentIndex !== -1) {
+            state.currentData[studentIndex].status = newStatus;
+            state.currentData[studentIndex].is_active = isActive;
+        }
+        
+        // Close modal with proper cleanup
         const editModal = bootstrap.Modal.getInstance(document.getElementById('editStudentModal'));
         if (editModal) {
             editModal.hide();
+            // Clean up backdrop and modal state
+            setTimeout(() => {
+                cleanupModalBackdrop('editStudentModal');
+            }, 150);
         }
-
-        // Update both table and status cards
+        
+        // Update UI
         updateTable();
-        updateStatusCards(currentPageState.currentData);
-
-        // Show success toast
-        showToast('Success', 'Student status updated successfully', 'success');
-
+        updateCardStatistics();
+        
+        // Show success message
+        showToast(`Student status updated to ${newStatus}`, 'success');
+        
+        // Return result for testing or chaining
+        return result;
     } catch (error) {
-        console.error('Error saving student status:', error);
-        showToast('Error', 'Failed to update student status', 'error');
+        showToast(`Failed to update student status: ${error.message}`, 'error');
+    } finally {
+        // Re-enable save button
+        const saveButton = document.querySelector('#editStudentModal .btn-primary');
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = 'Save Changes';
+        }
     }
 };
+
+/**
+ * Ensure modal backdrop is removed
+ * This uses the global cleanupModalBackdrop function from student-modal.js if available
+ * @param {string} modalId - The ID of the modal element (without #)
+ */
+function cleanupModalBackdrop(modalId) {
+    // Use the global function if it exists (from student-modal.js)
+    // But only if it's not this same function to prevent infinite recursion
+    if (typeof window.cleanupModalBackdrop === 'function' && 
+        window.cleanupModalBackdrop !== cleanupModalBackdrop) {
+        window.cleanupModalBackdrop(modalId);
+        return;
+    }
+
+    // Fallback implementation
+    try {
+        // Remove any lingering backdrop
+        const backdrop = document.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.remove();
+        }
+        
+        // Ensure body classes are removed
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+        document.body.style.removeProperty('overflow');
+        
+        // If modalId is provided, ensure the modal element is properly cleaned up
+        if (modalId) {
+            const modalElement = document.getElementById(modalId);
+            if (modalElement) {
+                modalElement.classList.remove('show');
+                modalElement.style.display = 'none';
+                modalElement.setAttribute('aria-hidden', 'true');
+                modalElement.removeAttribute('aria-modal');
+                modalElement.removeAttribute('role');
+            }
+        }
+    } catch (error) {
+        console.error('Error cleaning up modal backdrop');
+    }
+}
+
+// Make functions globally available
+window.handleStudentAction = handleStudentAction;
+window.archiveStudent = archiveStudent;
+
+// Only assign our cleanupModalBackdrop to window if there isn't one from student-modal.js
+if (typeof window.cleanupModalBackdrop !== 'function') {
+    window.cleanupModalBackdrop = cleanupModalBackdrop;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initStudentManagement);

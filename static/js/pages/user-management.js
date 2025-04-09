@@ -484,7 +484,7 @@ async function handleEditUser(userId) {
         }
         
         // Then fetch fresh data from API
-        const response = await fetch(`/api/users/${userId}`);
+                const response = await fetch(`/api/users/${userId}`);
         
         if (!response.ok) {
             console.error('Failed to fetch user details from API');
@@ -499,9 +499,9 @@ async function handleEditUser(userId) {
         populateEditForm(userData);
         
         // Show the modal
-        const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
-        editModal.show();
-    } catch (error) {
+                const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+                editModal.show();
+            } catch (error) {
         console.error('Error in handleEditUser:', error);
         showToast('Error loading user data', 'error');
     } finally {
@@ -822,6 +822,98 @@ async function saveUserStatus(userId, isActive) {
     }
 }
 
+/**
+ * Populate the edit form with user data
+ * @param {Object} userData - The user data to populate the form with
+ */
+function populateEditForm(userData) {
+    if (!userData) {
+        console.error('No user data provided to populate form');
+        return;
+    }
+    
+    console.log('Populating edit form with user data:', userData);
+    
+    // Get form elements
+    const form = document.getElementById('editUserForm');
+    if (!form) {
+        console.error('Edit user form not found');
+        return;
+    }
+    
+    // Set user ID in hidden field
+    const userIdField = document.getElementById('editUserId');
+    if (userIdField) {
+        userIdField.textContent = userData.user_id || userData.id;
+    }
+    
+    // Set user status in dropdown
+    const statusSelect = document.getElementById('userStatusSelect');
+    if (statusSelect) {
+        const isActive = userData.is_active || userData.status === 'Active';
+        statusSelect.value = isActive ? 'Active' : 'Inactive';
+    }
+    
+    // Set name display
+    const userNameDisplay = document.getElementById('editUserName');
+    if (userNameDisplay) {
+        userNameDisplay.textContent = userData.name || `${userData.first_name} ${userData.last_name}`;
+    }
+    
+    // Set user image
+    const userImage = document.getElementById('editUserImage');
+    if (userImage) {
+        userImage.src = userData.profile_img ? `/static/images/${userData.profile_img}` : '/static/images/profile.png';
+    }
+    
+    // Set role display
+    const userRoleDisplay = document.getElementById('editUserRole');
+    if (userRoleDisplay) {
+        userRoleDisplay.textContent = userData.role || '';
+    }
+    
+    // Set form fields if they exist
+    const emailField = form.querySelector('[name="email"]');
+    if (emailField) {
+        emailField.value = userData.email || '';
+    }
+    
+    const firstNameField = form.querySelector('[name="first_name"]');
+    if (firstNameField) {
+        firstNameField.value = userData.first_name || '';
+    }
+    
+    const lastNameField = form.querySelector('[name="last_name"]');
+    if (lastNameField) {
+        lastNameField.value = userData.last_name || '';
+    }
+    
+    // Enable form for editing
+    form.classList.remove('loading');
+}
+
+/**
+ * Remove a user from the table after archiving
+ * @param {string} userId - The ID of the user to remove
+ */
+function removeUserFromTable(userId) {
+    // Find the user in the current data and remove it
+    const userIndex = state.currentData.findIndex(user => user.user_id === userId);
+    if (userIndex !== -1) {
+        state.currentData.splice(userIndex, 1);
+        state.totalItems--;
+        
+        // Update the table to reflect the change
+        updateTable();
+    }
+    
+    // Also try to remove the row directly from the DOM for immediate feedback
+    const userRow = document.querySelector(`tr[data-user-id="${userId}"]`);
+    if (userRow) {
+        userRow.remove();
+    }
+}
+
 // Make functions globally available
 window.handleUserAction = handleUserAction;
 window.archiveUser = archiveUser;
@@ -952,27 +1044,5 @@ function handleSaveUserStatus() {
     } catch (error) {
         console.error('Error handling save user status:', error);
         showToast('Failed to save user status', 'error');
-    }
-}
-
-/**
- * Remove a user from the table after archiving
- * @param {string} userId - The ID of the user to remove
- */
-function removeUserFromTable(userId) {
-    // Find the user in the current data and remove it
-    const userIndex = state.currentData.findIndex(user => user.user_id === userId);
-    if (userIndex !== -1) {
-        state.currentData.splice(userIndex, 1);
-        state.totalItems--;
-        
-        // Update the table to reflect the change
-        updateTable();
-    }
-    
-    // Also try to remove the row directly from the DOM for immediate feedback
-    const userRow = document.querySelector(`tr[data-user-id="${userId}"]`);
-    if (userRow) {
-        userRow.remove();
     }
 }
