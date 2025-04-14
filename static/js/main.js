@@ -1,6 +1,14 @@
 // static/js/main.js
-// Main initialization function
+// Load notification system
 document.addEventListener('DOMContentLoaded', function() {
+    // Load notification script dynamically to ensure it's available
+    if (!window.showToast) {
+        const script = document.createElement('script');
+        script.src = '/static/js/notification.js';
+        script.async = true;
+        document.head.appendChild(script);
+    }
+
     // Initialize tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     tooltipTriggerList.map(function (tooltipTriggerEl) {
@@ -217,8 +225,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Initialize the context info
-    initializeContextInfo();
+    // Initialize the context info is now handled in the main DOMContentLoaded event
+    // so we don't need to call it again here
 });
 
 function initializeContextInfo() {
@@ -257,18 +265,22 @@ if (typeof window.pageInformation === 'undefined') {
     window.pageInformation = {
         'admin-dashboard': {
             title: 'Admin Dashboard',
-            description: 'Overview of system statistics and key metrics for administrators.',
+            description: 'Central command center providing comprehensive system statistics, user metrics, and quick access to administrative functions.',
             features: [
-                'View total users, students, and instructors',
-                'Monitor active and inactive users',
-                'Quick access to all administrative functions',
-                'System health indicators and alerts'
+                'View total users, students, instructors, and companies',
+                'Monitor active and inactive users across all categories',
+                'Track class and attendance statistics in real-time',
+                'Access quick links to frequently used admin functions',
+                'View recent activity and system notifications',
+                'Monitor system health and performance indicators'
             ],
             instructions: [
-                'Use the cards to view overall statistics',
-                'Click on specific sections to access detailed information',
-                'Use the sidebar menu to navigate to other admin functions',
-                'Check notifications for important system alerts'
+                'Use the metric cards to view overall system statistics',
+                'Click on any card to access detailed information for that category',
+                'Use the quick action buttons for common administrative tasks',
+                'Navigate to specific management sections using the sidebar menu',
+                'Check the notifications panel for important system alerts',
+                'Use the search function to quickly find specific information'
             ]
         },
         'admin-profile': {
