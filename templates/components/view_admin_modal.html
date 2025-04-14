@@ -1,26 +1,40 @@
 <!-- View Admin Modal -->
-<div class="modal fade" id="viewAdminModal" tabindex="-1" aria-labelledby="viewAdminModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
+<div class="modal fade" id="viewAdminModal" tabindex="-1">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="viewAdminModalLabel">Admin Details</h5>
+                <h5 class="modal-title">Administrator Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="row">
-                    <!-- Admin Profile Header -->
-                    <div class="col-12 mb-4">
-                        <div class="d-flex align-items-center gap-4">
-                            <img id="adminImage" src="" alt="Admin Photo" 
-                                 class="rounded-circle" style="width: 120px; height: 120px; object-fit: cover;">
-                            <div>
-                                <div class="d-flex align-items-center gap-3 mb-2">
-                                    <h2 id="adminName" class="mb-0 fw-semibold" style="color: #191970;"></h2>
-                                    <span id="adminStatus" class="badge"></span>
+                <div class="d-flex align-items-center mb-4">
+                    <img id="adminImage" src="{{ url_for('static', filename='images/profile.png') }}" 
+                         alt="Admin" class="rounded-circle me-4" width="100" height="100"
+                         style="object-fit: cover;">
+                    <div>
+                        <h4 id="adminName" class="mb-1" style="color: #191970;">Admin Name</h4>
+                        <div>
+                            <span id="adminStatus" class="badge bg-success-subtle text-success mb-2">
+                                Active
+                            </span>
+                        </div>
+                        <p class="text-muted mb-0">Administrator ID: <span id="adminId">-</span></p>
+                        <p class="text-muted mb-0">Role: <span id="adminRole">Administrator</span></p>
+                        <div class="mt-2">Access: <span id="adminAccessLevel"></span></div>
+                    </div>
+                </div>
+                
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0">Permissions</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="adminPermissions" class="list-group list-group-flush">
+                            <div class="list-group-item">
+                                <div class="text-center py-3">
+                                    <i class="bi bi-shield-lock fs-3 text-muted"></i>
+                                    <p class="text-muted mb-0 mt-2">No permission information available.</p>
                                 </div>
-                                <p class="mb-1">Admin ID: <span id="adminId"></span></p>
-                                <p class="mb-1">Department: <span id="adminDepartment"></span></p>
-                                <p class="mb-0">Role: <span id="adminRole"></span></p>
                             </div>
                         </div>
                     </div>
@@ -31,4 +45,4 @@
             </div>
         </div>
     </div>
-</div> 
+</div>

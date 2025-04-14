@@ -35,16 +35,10 @@ let state = {
 async function initUserManagement() {
     console.log('User management page loaded');
     try {
-        // Load initial user data
         await loadUsers();
-        
-        // Set up event listeners
         setupEventListeners();
-        
-        // Initial render
         updateTable();
         updateCardStatistics();
-        
         console.log('User management initialized successfully');
     } catch (error) {
         console.error('Error initializing user management:', error);
@@ -57,7 +51,6 @@ async function initUserManagement() {
  */
 async function loadUsers() {
     try {
-        // Build query params for filters
         const params = new URLSearchParams();
         if (state.roleFilter) params.append('role', state.roleFilter);
         if (state.statusFilter) params.append('status', state.statusFilter);
@@ -70,7 +63,6 @@ async function loadUsers() {
         
         const data = await response.json();
         
-        // Normalize data format
         state.currentData = Array.isArray(data) ? data.map(formatUserData) : [];
         state.totalItems = state.currentData.length;
         
@@ -116,9 +108,9 @@ function formatUserData(user) {
  */
 function setupEventListeners() {
     // Search input
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('input', function() {
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
             state.searchTerm = this.value;
             state.page = 1;
             handleFiltersChanged();
@@ -126,9 +118,9 @@ function setupEventListeners() {
     }
 
     // Role filter
-        const roleFilter = document.getElementById('roleFilter');
-        if (roleFilter) {
-            roleFilter.addEventListener('change', function() {
+    const roleFilter = document.getElementById('roleFilter');
+    if (roleFilter) {
+        roleFilter.addEventListener('change', function() {
             state.roleFilter = this.value;
             state.page = 1;
             handleFiltersChanged();
@@ -136,36 +128,36 @@ function setupEventListeners() {
     }
 
     // Rows per page
-        const rowsPerPage = document.getElementById('rowsPerPage');
-        if (rowsPerPage) {
-            rowsPerPage.addEventListener('change', function() {
+    const rowsPerPage = document.getElementById('rowsPerPage');
+    if (rowsPerPage) {
+        rowsPerPage.addEventListener('change', function() {
             state.perPage = parseInt(this.value);
             state.page = 1;
-                updateTable();
-            });
-        }
+            updateTable();
+        });
+    }
 
     // Pagination buttons
-        const prevButton = document.getElementById('prevPage');
-        if (prevButton) {
-            prevButton.addEventListener('click', function() {
+    const prevButton = document.getElementById('prevPage');
+    if (prevButton) {
+        prevButton.addEventListener('click', function() {
             if (state.page > 1) {
                 state.page--;
-                    updateTable();
-                }
-            });
-        }
+                updateTable();
+            }
+        });
+    }
 
-        const nextButton = document.getElementById('nextPage');
-        if (nextButton) {
-            nextButton.addEventListener('click', function() {
+    const nextButton = document.getElementById('nextPage');
+    if (nextButton) {
+        nextButton.addEventListener('click', function() {
             const maxPage = Math.ceil(state.totalItems / state.perPage);
             if (state.page < maxPage) {
                 state.page++;
-                    updateTable();
-                }
-            });
-        }
+                updateTable();
+            }
+        });
+    }
 
     // Set up delegation for user action buttons (edit, view, toggle status)
     // Use document level delegation to catch all buttons regardless of container
@@ -214,10 +206,54 @@ function setupEventListeners() {
         }
     });
 
-    // Export button dynamically update href
-    updateExportButton();
+    // Export button listener (attached only once)
+    const exportBtn = document.getElementById('exportUserCSV');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            const exportButton = this;
+            const originalButtonText = exportButton.innerHTML;
+            exportButton.disabled = true;
+            exportButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Preparing...';
+
+            const params = new URLSearchParams();
+            if (state.roleFilter) params.append('role', state.roleFilter);
+            if (state.statusFilter) params.append('status', state.statusFilter);
+            if (state.searchTerm) params.append('search', state.searchTerm);
+            const queryString = params.toString();
+            
+            const countUrl = `/api/users/export/count?${queryString}`;
+            const exportUrl = `/api/users/export?${queryString}`;
+
+            fetch(countUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const count = data.count;
+                        if (count > 0) {
+                            showToast(`Exported ${count} users to CSV`, 'success');
+                            setTimeout(() => {
+                                window.location.href = exportUrl;
+                            }, 100);
+                        } else {
+                            showToast('No Users', 'No users match the current filters for export.', 'info');
+                        }
+                    } else {
+                        showToast('Error', data.error || 'Failed to count users for export.', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error during count fetch:', error);
+                    showToast('An error occurred while preparing the user export.', 'error');
+                })
+                .finally(() => {
+                    exportButton.disabled = false;
+                    exportButton.innerHTML = originalButtonText;
+                });
+        });
+    }
     
-    // Initialize tooltips
     initializeTooltips();
 
     // Set up the show/hide of the custom reason field when "other" is selected
@@ -252,23 +288,68 @@ async function handleFiltersChanged() {
     await loadUsers();
     updateTable();
     updateCardStatistics();
-    updateExportButton();
 }
 
 /**
- * Update the export button's href based on current filters
+ * Update the href of the export button based on current filters
  */
 function updateExportButton() {
-    const exportBtn = document.getElementById('exportCSV');
-    if (exportBtn) {
+    const exportBtn = document.getElementById('exportUserCSV');
+    if (!exportBtn) return;
+
+    // Remove previous listener to avoid duplicates if this is called multiple times
+    const newExportBtn = exportBtn.cloneNode(true);
+    exportBtn.parentNode.replaceChild(newExportBtn, exportBtn);
+
+    // Add the new event listener
+    newExportBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        
+        const exportButton = this;
+        const originalButtonText = exportButton.innerHTML;
+
+        // Disable button and show loading state
+        exportButton.disabled = true;
+        exportButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Preparing...';
+
+        // Get current filters from state
         const params = new URLSearchParams();
         if (state.roleFilter) params.append('role', state.roleFilter);
         if (state.statusFilter) params.append('status', state.statusFilter);
         if (state.searchTerm) params.append('search', state.searchTerm);
+        const queryString = params.toString();
         
-        const queryString = params.toString() ? `?${params.toString()}` : '';
-        exportBtn.href = `/admin/export-users-csv${queryString}`;
-    }
+        const countUrl = `/api/users/export/count?${queryString}`;
+        const exportUrl = `/api/users/export?${queryString}`;
+
+        fetch(countUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const count = data.count;
+                    if (count > 0) {
+                        // Use the global showToast
+                        showToast('Export Started', `Exporting ${count} ${count === 1 ? 'user' : 'users'} to CSV...`, 'success');
+                        setTimeout(() => {
+                            window.location.href = exportUrl; // Trigger download
+                        }, 100); // 100ms delay
+                    } else {
+                        showToast('No Users', 'No users match the current filters for export.', 'info');
+                    }
+                } else {
+                    showToast('Error', data.error || 'Failed to count users for export.', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error counting users for export:', error);
+                showToast('An error occurred while preparing the user export.', 'error');
+            })
+            .finally(() => {
+                // Re-enable button and restore original text
+                exportButton.disabled = false;
+                exportButton.innerHTML = originalButtonText;
+            });
+    });
 }
 
 // ------------------- UI Update Functions -------------------
@@ -383,65 +464,6 @@ function updateCardStatistics() {
     }
 }
 
-/**
- * Show a toast notification
- * @param {string} message - The message to display
- * @param {string} type - The toast type (success, error, info, warning)
- */
-function showToast(message, type = 'success') {
-    // Get the existing toast element
-    const toast = document.getElementById('statusToast');
-    if (!toast) {
-        console.error('Toast element not found in the DOM');
-        return;
-    }
-    
-    // Set the toast title based on type
-    const toastTitle = document.getElementById('toastTitle');
-    if (toastTitle) {
-        // Convert type to title case
-        if (type === 'error') {
-            toastTitle.textContent = 'Error';
-            // Update icon to error
-            const iconElement = toastTitle.previousElementSibling;
-            if (iconElement && iconElement.classList.contains('bi')) {
-                iconElement.className = 'bi bi-exclamation-circle-fill text-danger me-2';
-            }
-        } else if (type === 'info') {
-            toastTitle.textContent = 'Information';
-            // Update icon to info
-            const iconElement = toastTitle.previousElementSibling;
-            if (iconElement && iconElement.classList.contains('bi')) {
-                iconElement.className = 'bi bi-info-circle-fill text-primary me-2';
-            }
-        } else if (type === 'warning') {
-            toastTitle.textContent = 'Warning';
-            // Update icon to warning
-            const iconElement = toastTitle.previousElementSibling;
-            if (iconElement && iconElement.classList.contains('bi')) {
-                iconElement.className = 'bi bi-exclamation-triangle-fill text-warning me-2';
-            }
-        } else {
-            toastTitle.textContent = 'Success';
-            // Update icon to success
-            const iconElement = toastTitle.previousElementSibling;
-            if (iconElement && iconElement.classList.contains('bi')) {
-                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
-            }
-        }
-    }
-    
-    // Set the toast message
-    const toastMessage = document.getElementById('toastMessage');
-    if (toastMessage) {
-        toastMessage.innerHTML = message;
-    }
-    
-    // Initialize and show Bootstrap toast
-    const bsToast = new bootstrap.Toast(toast);
-    bsToast.show();
-}
-
 // ------------------- User Action Handlers -------------------
 
 /**
@@ -467,49 +489,34 @@ function handleUserAction(action, userId) {
  * Handle edit user action
  */
 async function handleEditUser(userId) {
-    console.log('Initiating edit for user:', userId);
     try {
-        // Disable form while loading data
         const form = document.getElementById('editUserForm');
-        if (form) {
-            form.classList.add('loading');
-        }
+        if (form) form.classList.add('loading');
         
-        // Get the user from current data first for immediate display
         const cachedUser = state.currentData.find(user => user.user_id == userId);
         if (cachedUser) {
-            console.log('Using cached user data for initial display');
             state.currentEditingUser = cachedUser;
             populateEditForm(cachedUser);
         }
         
-        // Then fetch fresh data from API
-                const response = await fetch(`/api/users/${userId}`);
-        
+        const response = await fetch(`/api/users/${userId}`);
         if (!response.ok) {
             console.error('Failed to fetch user details from API');
             throw new Error('Failed to fetch user details');
         }
-        
         const userData = await response.json();
-        console.log('User details fetched successfully from API');
         
-        // Update with fresh data
         state.currentEditingUser = userData;
         populateEditForm(userData);
         
-        // Show the modal
-                const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
-                editModal.show();
-            } catch (error) {
+        const editModal = new bootstrap.Modal(document.getElementById('editUserModal'));
+        editModal.show();
+    } catch (error) {
         console.error('Error in handleEditUser:', error);
         showToast('Error loading user data', 'error');
     } finally {
-        // Re-enable form
         const form = document.getElementById('editUserForm');
-        if (form) {
-            form.classList.remove('loading');
-        }
+        if (form) form.classList.remove('loading');
     }
 }
 
@@ -517,28 +524,19 @@ async function handleEditUser(userId) {
  * Handle view user action
  */
 async function handleViewUser(userId) {
-    console.log('Viewing user details for:', userId);
     try {
-        // Try finding user in current data first
         const cachedUser = state.currentData.find(user => user.user_id == userId);
-        
         if (cachedUser) {
-            console.log('Using cached user data for view modal');
             showUserModal(cachedUser);
         }
         
-        // Then fetch fresh data from API
         const response = await fetch(`/api/users/${userId}`);
-        
         if (!response.ok) {
             console.error('Failed to fetch user details from API');
             throw new Error('Failed to fetch user details');
         }
-        
         const userData = await response.json();
-        console.log('User details fetched successfully for view modal');
         
-        // Update the modal with fresh data
         showUserModal(userData);
     } catch (error) {
         console.error('Error in handleViewUser:', error);
@@ -762,21 +760,15 @@ function updateUserStatusInUI(userId, isActive) {
 // Function to save user status (active/inactive)
 async function saveUserStatus(userId, isActive) {
     try {
-        // Validate userId more strictly
         if (!userId || userId === 'undefined' || userId === undefined) {
             console.error('Invalid user ID:', userId);
             showToast('Error: Invalid user ID. Please try again or reload the page.', 'error');
             return;
         }
-        
-        // Ensure isActive is a boolean
         isActive = Boolean(isActive === true || isActive === 'true');
         const statusValue = isActive ? 'Active' : 'Inactive';
         
-        // Show loading toast
-        showToast('Updating user status...', 'info');
         
-        // Make API call to update status
         const response = await fetch(`/api/users/${userId}/status`, {
             method: 'PUT',
             headers: {
@@ -794,25 +786,12 @@ async function saveUserStatus(userId, isActive) {
         
         const result = await response.json();
         
-        // Find user in current data and update
-        const userIndex = state.currentData.findIndex(user => 
-            user.user_id === userId || user.id === userId
-        );
+        const userIndex = state.currentData.findIndex(user => user.user_id === userId || user.id === userId);
+        if (userIndex >= 0) state.currentData[userIndex].status = statusValue;
         
-        if (userIndex >= 0) {
-            state.currentData[userIndex].status = statusValue;
-        }
-        
-        // Update UI directly for better performance
         updateUserStatusInUI(userId, isActive);
-
-        // Update statistics
         updateCardStatistics();
-
-        // Refresh the table to ensure UI is consistent
         updateTable();
-
-        // Show success message
         showToast(`User status updated to ${statusValue}`, 'success');
         return result;
     } catch (error) {

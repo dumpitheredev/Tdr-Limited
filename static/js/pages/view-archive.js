@@ -740,14 +740,9 @@ function generateTableRow(record, type) {
             return `
                 <tr>
                     <td>
-                        <div class="d-flex align-items-center">
-                            <div class="rounded-circle bg-warning-subtle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-                                <i class="bi bi-building" style="color: #fd7e14;"></i>
-                            </div>
-                            <div>
-                        <div class="fw-medium">${record.name}</div>
-                        <div class="text-muted small">${record.company_id}</div>
-                            </div>
+                        <div>
+                            <div class="fw-medium">${record.name}</div>
+                            <div class="text-muted small">${record.company_id}</div>
                         </div>
                     </td>
                     <td>${record.contact || ''}</td>
@@ -1065,9 +1060,16 @@ async function performRestore(id, type) {
         // Show success message
         showToast('Success', data.message || 'Record has been restored', 'success');
         
-        // Refresh data
+        // Refresh data - Load main table first
+        await loadArchiveData(currentState.folder);
+        // Then refresh counts
         await fetchArchiveCounts();
-        loadArchiveData(currentState.folder);
+
+        // Special handling for classes to prompt navigation
+        if (type === 'class' && data.id) {
+            showClassNavigationModal(data.id);
+        }
+
     } catch (error) {
         console.error('Error restoring record:', error);
         showToast('Error', error.message || 'Failed to restore record', 'error');
@@ -1087,9 +1089,10 @@ async function performDelete(id, type) {
         // Show success message
         showToast('Success', data.message || 'Record has been permanently deleted', 'success');
         
-        // Refresh data
+        // Refresh data - Load main table first, then counts
+        await loadArchiveData(currentState.folder);
         await fetchArchiveCounts();
-        loadArchiveData(currentState.folder);
+        
     } catch (error) {
         console.error('Error deleting record:', error);
         showToast('Error', error.message || 'Failed to delete record', 'error');

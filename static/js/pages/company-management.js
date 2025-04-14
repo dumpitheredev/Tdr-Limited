@@ -2,7 +2,6 @@
 function updateTable(companies) {
     const tableBody = document.querySelector('#companyTable tbody');
     if (!tableBody) {
-        console.error('Table body not found');
         return;
     }
     
@@ -16,8 +15,9 @@ function updateTable(companies) {
                 <div class="fw-medium">${company.name}</div>
                 <div class="text-muted small">${company.company_id}</div>
             </td>
-            <td class="align-middle">
-                <span class="badge ${company.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}">
+            <td class="align-middle status-cell">
+                <span class="badge ${company.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}" 
+                      style="padding: 0.4em 0.65em; font-size: 0.8rem; font-weight: 600; vertical-align: middle; display: inline-block;">
                     ${company.status}
                 </span>
             </td>
@@ -61,6 +61,8 @@ function setDefaultRows() {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Company management page loaded'); // Kept as requested previously
+
     // Get elements
     const elements = {
         rowsPerPage: document.getElementById('rowsPerPage'),
@@ -73,62 +75,62 @@ document.addEventListener('DOMContentLoaded', () => {
         searchInput: document.getElementById('searchInput'),
         prevPage: document.getElementById('prevPage'),
         nextPage: document.getElementById('nextPage'),
-        paginationInfo: document.getElementById('paginationInfo')
+        paginationInfo: document.getElementById('paginationInfo'),
+        exportBtn: document.getElementById('exportCSV')
     };
 
     // Initialize variables
-    let allCompanies = []; // Store all companies for pagination
+    let allCompanies = [];
     let currentPage = 1;
     let itemsPerPage = parseInt(elements.rowsPerPage?.value) || 5;
 
     // Define fetchAndUpdateData function
     function fetchAndUpdateData() {
-        const selectedStatus = elements.statusFilter ? elements.statusFilter.value : '';
-        
-        // Show loading state
+        const selectedStatus = elements.statusFilter ? elements.statusFilter.value : 'All';
         const tableBody = document.querySelector('#companyTable tbody');
         tableBody.innerHTML = '<tr><td colspan="4" class="text-center py-4">Loading...</td></tr>';
         
-        // Fetch data
-        fetch(`/api/companies-direct${selectedStatus ? `?status=${selectedStatus}` : ''}`)
+        fetch(`/api/companies-direct${selectedStatus === 'All' ? '' : `?status=${selectedStatus}`}`)
             .then(response => response.json())
             .then(data => {
-                allCompanies = data.companies;
+                allCompanies = data;
                 filterAndDisplay();
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('Error fetching company data:', error); // Kept error log
                 tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-danger py-4">Error loading data</td></tr>';
             });
     }
 
     // Function to filter and display companies
     function filterAndDisplay() {
-        const selectedStatus = elements.statusFilter ? elements.statusFilter.value : '';
-        
-        // Filter companies based on selected status
-        const filteredCompanies = selectedStatus ? 
-            allCompanies.filter(company => company.status === selectedStatus) : 
-            allCompanies;
+        const selectedStatus = elements.statusFilter ? elements.statusFilter.value : 'All';
+        let filteredCompanies;
+
+        // Filter logic based on status and archive state
+        if (selectedStatus === 'Archived') {
+            filteredCompanies = allCompanies.filter(company => company.is_archived == 1);
+        } else if (selectedStatus === 'Active') {
+            filteredCompanies = allCompanies.filter(company => company.status === 'Active' && company.is_archived == 0);
+        } else if (selectedStatus === 'Inactive') {
+            filteredCompanies = allCompanies.filter(company => company.status === 'Inactive' && company.is_archived == 0);
+        } else { 
+            filteredCompanies = allCompanies.filter(company => company.is_archived == 0);
+        }
 
         const startIdx = (currentPage - 1) * itemsPerPage;
         const endIdx = startIdx + itemsPerPage;
         const visibleCompanies = filteredCompanies.slice(startIdx, endIdx);
         
-        // Update table with visible companies
         updateTable(visibleCompanies);
         
-        // Calculate stats from all companies
+        // Stats calculation logic
         const stats = {
-            total_companies: allCompanies.length,
-            active_companies: allCompanies.filter(company => company.status === 'Active').length,
-            inactive_companies: allCompanies.filter(company => company.status === 'Inactive').length
+            total_companies: allCompanies.filter(c => c.is_archived == 0).length,
+            active_companies: allCompanies.filter(c => c.status === 'Active' && c.is_archived == 0).length,
+            inactive_companies: allCompanies.filter(c => c.status === 'Inactive' && c.is_archived == 0).length,
         };
-        
-        // Update stats display
         updateStats(stats);
-        
-        // Update pagination based on filtered companies
         updatePagination(filteredCompanies);
     }
 
@@ -208,135 +210,369 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.searchInput.addEventListener('input', filterTable);
     }
 
-    // Initial data load
-    fetch('/api/companies')
+    // Export Button Listener
+    if (elements.exportBtn) {
+        elements.exportBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const exportButton = this;
+            const originalButtonText = exportButton.innerHTML;
+            exportButton.disabled = true;
+            exportButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Preparing...';
+
+            const status = elements.statusFilter?.value || '';
+            const search = elements.searchInput?.value || '';
+            let baseUrl = '/api/companies/export';
+            const params = [];
+            if (status) params.push(`status=${encodeURIComponent(status)}`);
+            if (search) params.push(`search=${encodeURIComponent(search)}`);
+            const queryString = params.join('&');
+            const countUrl = `${baseUrl}/count?${queryString}`;
+            const exportUrl = `${baseUrl}?${queryString}`;
+            
+            fetch(countUrl)
         .then(response => response.json())
         .then(data => {
-            allCompanies = data.companies;
-            filterAndDisplay();
-        })
-        .catch(error => console.error('Error:', error));
-
-    // Export CSV handler
-    if (elements.exportCsv) {
-        elements.exportCsv.addEventListener('click', function() {
-            // Get visible rows (respecting current filters)
-            const rows = document.querySelectorAll('#companyTable tbody tr');
-            const visibleRows = Array.from(rows).filter(row => 
-                row.style.display !== 'none'
-            );
-
-            // Create CSV content
-            const headers = ['Contact Name', 'Email', 'Company Name', 'Company ID', 'Status'];
-            const csvContent = [
-                headers.join(','),
-                ...visibleRows.map(row => {
-                    const contact = row.querySelector('td:nth-child(1) .fw-medium').textContent.trim();
-                    const email = row.querySelector('td:nth-child(1) .text-muted.small').textContent.trim();
-                    const companyName = row.querySelector('td:nth-child(2) .fw-medium').textContent.trim();
-                    const companyId = row.querySelector('td:nth-child(2) .text-muted.small').textContent.trim();
-                    const status = row.querySelector('td:nth-child(3) .badge').textContent.trim();
-
-                    return [
-                        `"${contact}"`,
-                        `"${email}"`,
-                        `"${companyName}"`,
-                        `"${companyId}"`,
-                        `"${status}"`
-                    ].join(',');
+                    if (data.success) {
+                        const count = data.count;
+                        if (count > 0) {
+                            showToast('Success', `Exported ${count} ${count === 1 ? 'company' : 'companies'} to CSV`, 'success');
+                            window.location.href = exportUrl;
+                        } else {
+                            showToast('No Companies', 'No companies match the current filters for export.', 'info');
+                        }
+                    } else {
+                        showToast('Error', data.error || 'Failed to count companies for export.', 'error');
+                    }
                 })
-            ].join('\n');
-
-            // Create and trigger download
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'companies.csv';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+                .catch(error => {
+                    console.error('Error counting companies for export:', error); // Kept error log
+                    showToast('Error', 'An error occurred while preparing the export.', 'error');
+                })
+                .finally(() => {
+                    exportButton.disabled = false;
+                    exportButton.innerHTML = originalButtonText;
+                });
         });
     }
 
-    const addCompanyModal = document.getElementById('addCompanyModal');
-    const addCompanyForm = document.getElementById('addCompanyForm');
-    const companyIdInput = document.getElementById('companyId');
-    const emailInput = document.getElementById('contactEmail');
-    const confirmEmailInput = document.getElementById('confirmEmail');
+    // Initial data fetch
+    fetchAndUpdateData();
 
-    // Generate company ID when modal is shown
-    if (addCompanyModal) {
-        addCompanyModal.addEventListener('show.bs.modal', function() {
-            companyIdInput.value = generateCompanyId();
-        });
-    }
-
-    // Form validation and submission
-    if (addCompanyForm) {
-        addCompanyForm.addEventListener('submit', function(event) {
-            event.preventDefault();
-            
-            // Check if emails match
-            if (emailInput.value !== confirmEmailInput.value) {
-                confirmEmailInput.setCustomValidity('Email addresses do not match');
-                confirmEmailInput.reportValidity();
-                return;
+    // Listener for showing/hiding custom reason input in archive modal
+    const reasonSelect = document.getElementById('archiveCompanyReason');
+    const customReasonContainer = document.getElementById('archiveCompanyCustomReasonContainer');
+    if (reasonSelect && customReasonContainer) {
+        reasonSelect.addEventListener('change', function() {
+            if (this.value === 'other') {
+                customReasonContainer.classList.remove('d-none');
             } else {
-                confirmEmailInput.setCustomValidity('');
+                customReasonContainer.classList.add('d-none');
+            }
+        });
+    }
+
+    // Listener for the final confirmation button in the archive modal
+    const confirmArchiveBtn = document.getElementById('confirmArchiveCompanyBtn');
+    if (confirmArchiveBtn) {
+        confirmArchiveBtn.addEventListener('click', function() {
+            const companyIdToArchive = document.getElementById('archiveCompanyIdInput').value;
+            const reasonDropdown = document.getElementById('archiveCompanyReason');
+            let archiveReason = reasonDropdown.value;
+
+            if (archiveReason === 'other') {
+                archiveReason = document.getElementById('archiveCompanyCustomReason').value.trim();
             }
 
-            // Check form validity
-            if (!this.checkValidity()) {
-                event.stopPropagation();
-                this.classList.add('was-validated');
-                return;
+            if (!archiveReason) {
+                 // Show error toast if no reason selected/provided
+                 const toastTitle = document.getElementById('toastTitle');
+                 const toastMessage = document.getElementById('toastMessage');
+                 const statusToast = document.getElementById('statusToast');
+                 toastTitle.textContent = 'Validation Error';
+                 toastMessage.textContent = 'Please select or provide an archive reason.';
+                 const toast = new bootstrap.Toast(statusToast);
+                 toast.show();
+                 return; // Stop execution
             }
 
-            // Collect form data
-            const formData = {
-                company_id: companyIdInput.value,
-                name: document.getElementById('companyName').value,
-                contact: document.getElementById('contactName').value,
-                email: emailInput.value,
-                status: 'Active' // Default status for new companies
-            };
+            // Disable button to prevent double clicks
+            this.disabled = true; 
+            this.textContent = 'Archiving...';
 
-            // TODO: Send data to server
-            console.log('Form submitted:', formData);
-            
-            // Close modal and reset form
-            const modal = bootstrap.Modal.getInstance(addCompanyModal);
-            modal.hide();
-            this.reset();
-            this.classList.remove('was-validated');
-            
+            fetch(`/api/companies/${companyIdToArchive}/archive`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ reason: archiveReason }) // Send reason in body
+            })
+            .then(response => {
+                 // Check if response is ok, if not, attempt to parse as JSON for error
+                if (!response.ok) {
+                    // Try to parse the error response as JSON
+                    return response.json().then(errData => {
+                        // If JSON parsing is successful, create an error with message from JSON
+                        const error = new Error(errData.error || `HTTP error ${response.status}`);
+                        error.data = errData; // Attach the full error data
+                        error.status = response.status; // Attach the status code
+                        throw error;
+                    }).catch(() => { 
+                        // If response is not JSON (e.g., HTML error page), throw generic error
+                         const error = new Error(`HTTP error ${response.status}: Server returned non-JSON response.`);
+                         error.status = response.status;
+                         throw error;
+                    });
+                }
+                // If response is OK, parse JSON as usual
+                return response.json();
+            })
+            .then(data => {
+                const toastTitle = document.getElementById('toastTitle');
+                const toastMessage = document.getElementById('toastMessage');
+                const statusToast = document.getElementById('statusToast');
+
+                if (data.success) {
+                    toastTitle.textContent = 'Success';
+                    toastMessage.textContent = data.message || 'Company archived successfully';
             // Refresh table data
-            fetchAndUpdateData();
-        });
-
-        // Real-time email confirmation validation
-        confirmEmailInput.addEventListener('input', function() {
-            if (this.value !== emailInput.value) {
-                this.setCustomValidity('Email addresses do not match');
+                    if (window.fetchAndUpdateData) {
+                        window.fetchAndUpdateData(); 
+                    } else {
+                        console.error('fetchAndUpdateData function not found on window object.');
+                    }
+                    // Close the modal
+                    const archiveModalInstance = bootstrap.Modal.getInstance(document.getElementById('archiveCompanyModal'));
+                    if (archiveModalInstance) {
+                         archiveModalInstance.hide();
+                    }
+                    
+                    // Add link to archives in the toast
+                    setTimeout(() => {
+                        try {
+                            // Use a more specific selector if needed, e.g., within a specific toast container
+                            const toastElement = document.querySelector('.toast.show .toast-body'); 
+                            if (toastElement) {
+                                const archiveLink = document.createElement('div');
+                                archiveLink.className = 'mt-2';
+                                archiveLink.innerHTML = '<a href="/admin/archive-view?type=company" class="btn btn-sm btn-outline-secondary">View in Company Archives</a>';
+                                toastElement.appendChild(archiveLink);
             } else {
-                this.setCustomValidity('');
+                                console.warn('Could not find visible toast body to add archive link.');
             }
-        });
+                        } catch (error) {
+                            console.error('Error adding archive link to toast:', error);
+                        }
+                    }, 100); // Small delay to ensure toast is rendered
 
-        emailInput.addEventListener('input', function() {
-            if (confirmEmailInput.value && this.value !== confirmEmailInput.value) {
-                confirmEmailInput.setCustomValidity('Email addresses do not match');
             } else {
-                confirmEmailInput.setCustomValidity('');
-            }
+                    // Error message from backend JSON
+                    toastTitle.textContent = 'Error';
+                    toastMessage.textContent = data.error || 'Error archiving company';
+                    if (data.details) { // Show details if provided (e.g., active students)
+                        toastMessage.textContent += ` (${data.details})`;
+                    }
+                }
+                const toast = new bootstrap.Toast(statusToast);
+                toast.show();
+            })
+            .catch(error => {
+                console.error('Error during company archive fetch:', error);
+                const toastTitle = document.getElementById('toastTitle');
+                const toastMessage = document.getElementById('toastMessage');
+                const statusToast = document.getElementById('statusToast');
+                toastTitle.textContent = 'Error';
+
+                // Use the specific error message if available from parsed JSON
+                if (error.data && error.data.error) {
+                    toastMessage.textContent = error.data.error;
+                    if (error.data.details) {
+                        toastMessage.textContent += ` - ${error.data.details}`;
+                    }
+                } else {
+                    // Fallback to generic error message
+                    toastMessage.textContent = error.message || 'An error occurred while archiving the company.';
+                }
+                
+                const toast = new bootstrap.Toast(statusToast);
+                toast.show();
+            })
+            .finally(() => {
+                 // Re-enable button regardless of success/failure
+                 this.disabled = false;
+                 this.textContent = 'Archive Company';
+            });
         });
     }
 
-    // Make fetchAndUpdateData available to window for edit functionality
+    // Make fetchAndUpdateData available to window for edit/archive functionality
     window.fetchAndUpdateData = fetchAndUpdateData;
+
+    // Add listener for the save button in the new edit student status modal
+    const saveStudentStatusBtn = document.getElementById('saveStudentStatusBtn');
+    if (saveStudentStatusBtn) {
+        saveStudentStatusBtn.addEventListener('click', saveStudentStatusFromModal);
+    }
+
+    // Add listeners for bulk action dropdown items
+    const bulkMarkActive = document.getElementById('modalBulkMarkActive');
+    const bulkMarkInactive = document.getElementById('modalBulkMarkInactive');
+
+    if (bulkMarkActive) {
+        bulkMarkActive.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleModalBulkAction('active');
+        });
+    }
+    if (bulkMarkInactive) {
+        bulkMarkInactive.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleModalBulkAction('inactive');
+        });
+    }
+    
+    // Initial setup for select all checkbox state
+    const selectAllCheckbox = document.getElementById('modalSelectAllStudents');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.disabled = true;
+    }
+    toggleBulkActions(); // Ensure bulk actions are hidden initially
+
+    console.log('Company management initialized successfully'); // Added log
 });
 
-// Handle company actions (edit, view, archive)
+// --- State for View Modal Pagination --- 
+let viewModalCurrentPage = 1; // Track current page globally for refresh
+
+// --- Global Function to Load and Show View Modal --- 
+async function loadAndShowViewModal(companyId, targetPage = 1) { // Added targetPage argument
+    viewModalCurrentPage = targetPage; // Set the global tracker
+    try {
+        const response = await fetch(`/api/companies-direct/${companyId}`);
+        if (!response.ok) {
+             throw new Error(`HTTP error ${response.status}`);
+        }
+        const company = await response.json();
+
+        // --- Modal State (Use the global tracker) --- 
+        // let modalCurrentPage = 1; // Remove local variable
+        let modalItemsPerPage = 5; // Default (can keep local)
+        let modalAllStudents = company.students || [];
+        modalItemsPerPage = parseInt(document.getElementById('modalRowsPerPage')?.value || '5'); // Read current selection
+
+        // --- Populate Company Details --- 
+        document.getElementById('viewCompanyName').textContent = company.name;
+        document.getElementById('viewCompanyId').textContent = company.company_id;
+        document.getElementById('viewCompanyContact').textContent = company.contact;
+        document.getElementById('viewCompanyEmail').textContent = company.email;
+        const statusBadge = document.getElementById('viewCompanyStatus');
+        statusBadge.textContent = company.status;
+        statusBadge.className = `badge ${company.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}`;
+
+        // --- Student Count Header --- 
+        const studentsCount = modalAllStudents.length;
+        const activeCount = modalAllStudents.filter(s => s.status === 'Active').length;
+        const inactiveCount = modalAllStudents.filter(s => s.status === 'Inactive').length;
+        document.getElementById('companyStudentsHeader').innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0">Company Students (${studentsCount})</h6>
+                <div class="d-flex gap-3">
+                    <small class="text-success">Active: ${activeCount}</small>
+                    <small class="text-danger">Inactive: ${inactiveCount}</small>
+                </div>
+            </div>
+        `;
+
+        // --- Function to Update Modal Pagination Controls (Reads global viewModalCurrentPage) ---
+        function updateModalPagination() {
+            const totalStudents = modalAllStudents.length;
+            const totalPages = Math.ceil(totalStudents / modalItemsPerPage);
+            // Read global page state
+            const startIndex = (viewModalCurrentPage - 1) * modalItemsPerPage; 
+            const endIndex = Math.min(startIndex + modalItemsPerPage, totalStudents);
+
+            const infoEl = document.getElementById('modalPaginationInfo');
+            const prevBtn = document.getElementById('modalPrevPage');
+            const nextBtn = document.getElementById('modalNextPage');
+
+            if (infoEl) {
+                infoEl.textContent = totalStudents > 0 ? `${startIndex + 1}-${endIndex} of ${totalStudents}` : '0 students';
+            }
+            if (prevBtn) {
+                prevBtn.disabled = viewModalCurrentPage === 1;
+            }
+            if (nextBtn) {
+                nextBtn.disabled = viewModalCurrentPage === totalPages || totalStudents === 0;
+            }
+        }
+
+        // --- Initial Student Table Render (Based on targetPage) ---
+        const initialStartIndex = (viewModalCurrentPage - 1) * modalItemsPerPage;
+        const initialEndIndex = Math.min(initialStartIndex + modalItemsPerPage, modalAllStudents.length);
+        updateModalStudentTable(modalAllStudents.slice(initialStartIndex, initialEndIndex));
+        updateModalPagination(); // Initial pagination update
+
+        // --- Attach Event Listeners for Modal Pagination (Updates global viewModalCurrentPage) --- 
+        const rowsSelect = document.getElementById('modalRowsPerPage');
+        const prevBtn = document.getElementById('modalPrevPage');
+        const nextBtn = document.getElementById('modalNextPage');
+
+        // Use .replaceWith(clone) to ensure old listeners are removed before adding new ones
+        if (rowsSelect) {
+            rowsSelect.value = modalItemsPerPage;
+            const newRowsSelect = rowsSelect.cloneNode(true);
+            rowsSelect.parentNode.replaceChild(newRowsSelect, rowsSelect);
+            newRowsSelect.addEventListener('change', function() {
+                modalItemsPerPage = parseInt(this.value);
+                viewModalCurrentPage = 1; // Reset to page 1 on changing items per page
+                const startIndex = (viewModalCurrentPage - 1) * modalItemsPerPage;
+                const endIndex = Math.min(startIndex + modalItemsPerPage, modalAllStudents.length);
+                updateModalStudentTable(modalAllStudents.slice(startIndex, endIndex));
+                updateModalPagination();
+            });
+        }
+        if (prevBtn) {
+            const newPrevBtn = prevBtn.cloneNode(true);
+            prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
+            newPrevBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (viewModalCurrentPage > 1) {
+                    viewModalCurrentPage--; // Update global page
+                    const startIndex = (viewModalCurrentPage - 1) * modalItemsPerPage;
+                    const endIndex = Math.min(startIndex + modalItemsPerPage, modalAllStudents.length);
+                    updateModalStudentTable(modalAllStudents.slice(startIndex, endIndex));
+                    updateModalPagination();
+                }
+            });
+        }
+         if (nextBtn) {
+            const newNextBtn = nextBtn.cloneNode(true);
+            nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
+            newNextBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const totalPages = Math.ceil(modalAllStudents.length / modalItemsPerPage);
+                if (viewModalCurrentPage < totalPages) {
+                    viewModalCurrentPage++; // Update global page
+                    const startIndex = (viewModalCurrentPage - 1) * modalItemsPerPage;
+                    const endIndex = Math.min(startIndex + modalItemsPerPage, modalAllStudents.length);
+                    updateModalStudentTable(modalAllStudents.slice(startIndex, endIndex));
+                    updateModalPagination();
+                }
+            });
+        }
+        
+        // Show the modal if it's not already shown
+        const modalElement = document.getElementById('viewCompanyModal');
+        const modalInstance = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+        modalInstance.show();
+
+    } catch (error) {
+        console.error('Error loading or showing view modal:', error);
+        showToast('Error', `Could not load company details: ${error.message}`, 'error');
+    }
+}
+
+// --- Modify handleCompanyAction to call the new global function --- 
 window.handleCompanyAction = function(action, companyId) {
     switch(action) {
         case 'edit':
@@ -432,83 +668,203 @@ window.handleCompanyAction = function(action, companyId) {
                 });
             break;
         case 'view':
+            loadAndShowViewModal(companyId); // Call the new global function
+            break;
+        case 'archive':
+            showArchiveConfirmation(companyId);
+            break;
+        default:
+            console.log('Unknown action:', action);
+    }
+};
+
+function showArchiveConfirmation(companyId) {
+    const modalElement = document.getElementById('archiveCompanyModal');
+    const modalTitle = modalElement.querySelector('.modal-title');
+    const confirmButton = modalElement.querySelector('#confirmArchiveCompanyBtn');
+    const companyIdInput = document.getElementById('archiveCompanyIdInput'); // Get hidden input
+    const companyNameDisplay = document.getElementById('archiveCompanyNameDisplay'); // Element to display name
+    const companyIdDisplay = document.getElementById('archiveCompanyIdDisplay'); // Element to display ID
+
+    if (!modalElement || !modalTitle || !confirmButton || !companyIdInput || !companyNameDisplay || !companyIdDisplay) {
+        console.error('Archive confirmation modal elements missing (modal, title, button, hidden input, name/id display).');
+        showToast('Error', 'Cannot open archive dialog. UI elements missing.', 'error');
+        return;
+    }
+
+    // Store the companyId in the hidden input AND button dataset
+    companyIdInput.value = companyId;
+    confirmButton.dataset.companyId = companyId; // Keep for potential fallback, though input is preferred
+    companyIdDisplay.textContent = companyId; // Display the ID
+
+    // Fetch company name to display in the title and warning message
             fetch(`/api/companies-direct/${companyId}`)
                 .then(response => response.json())
                 .then(company => {
-                    // Update company details
-                    document.getElementById('viewCompanyName').textContent = company.name;
-                    document.getElementById('viewCompanyId').textContent = company.company_id;
-                    document.getElementById('viewCompanyContact').textContent = company.contact;
-                    document.getElementById('viewCompanyEmail').textContent = company.email;
-                    
-                    // Update status badge
-                    const statusBadge = document.getElementById('viewCompanyStatus');
-                    statusBadge.textContent = company.status;
-                    statusBadge.className = `badge ${company.status === 'Active' ? 
-                        'bg-success-subtle text-success' : 
-                        'bg-danger-subtle text-danger'}`;
+            const name = company?.name || 'this company'; // Use fetched name or default
+            modalTitle.textContent = `Archive Company: ${name}`;
+            companyNameDisplay.textContent = name; // Display the name in warning
+        })
+        .catch(error => {
+            console.error('Error fetching company name for archive modal:', error);
+            modalTitle.textContent = `Archive Company`; // Default title on error
+            companyNameDisplay.textContent = 'this company'; // Default name on error
+        });
 
-                    // Add student count header
-                    const studentsCount = company.students.length;
-                    const activeCount = company.students.filter(s => s.status === 'Active').length;
-                    const completedCount = company.students.filter(s => s.status === 'Completed').length;
-                    const inactiveCount = company.students.filter(s => s.status === 'Inactive').length;
+    // Reset reason dropdown and custom input before showing
+    const reasonSelect = document.getElementById('archiveCompanyReason');
+    const customReasonInput = document.getElementById('archiveCompanyCustomReason');
+    const customReasonContainer = document.getElementById('archiveCompanyCustomReasonContainer');
+    if(reasonSelect) reasonSelect.value = '';
+    if(customReasonInput) customReasonInput.value = '';
+    if(customReasonContainer) customReasonContainer.classList.add('d-none');
 
-                    document.getElementById('companyStudentsHeader').innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h6 class="mb-0">Company Students (${studentsCount})</h6>
-                            <div class="d-flex gap-3">
-                                <small class="text-success">Active: ${activeCount}</small>
-                                <small style="color: #0dcaf0;">Completed: ${completedCount}</small>
-                                <small class="text-danger">Inactive: ${inactiveCount}</small>
-                            </div>
-                        </div>
-                    `;
+    // Show the modal
+    const archiveModal = new bootstrap.Modal(modalElement);
+    archiveModal.show();
+}
 
-                    // Update students table
-                    const studentsTableBody = document.getElementById('companyStudentsTable');
-                    studentsTableBody.innerHTML = company.students.map(student => `
-                        <tr>
-                            <td>
-                                <div class="d-flex align-items-center">
-                                    <img src="/static/images/${student.profile_img}" 
-                                         class="rounded-circle me-3" 
-                                         width="40" 
-                                         height="40"
-                                         alt="${student.name}">
-                                    <div>
-                                        <div class="fw-medium">${student.name}</div>
-                                        <div class="text-muted small">${student.user_id}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="badge ${
-                                    student.status === 'Completed' ? 'bg-info-subtle' :
-                                    student.status === 'Active' ? 'bg-success-subtle text-success' : 
-                                    'bg-danger-subtle text-danger'
-                                }" ${student.status === 'Completed' ? 'style="color: #0dcaf0;"' : ''}>
-                                    ${student.status}
-                                </span>
-                            </td>
-                        </tr>
-                    `).join('');
+function archiveCompany() {
+    const confirmButton = document.getElementById('confirmArchiveCompanyBtn');
+    const reasonSelect = document.getElementById('archiveCompanyReason');
+    const customReasonInput = document.getElementById('archiveCompanyCustomReason');
+    const archiveModalElement = document.getElementById('archiveCompanyModal');
+    const companyIdInput = document.getElementById('archiveCompanyIdInput'); // Get the hidden input
 
-                    // Show the company modal
-                    const modal = new bootstrap.Modal(document.getElementById('viewCompanyModal'));
-                    modal.show();
-                })
-                .catch(error => {
-                    console.error('Error fetching company details:', error);
-                });
-            break;
-        case 'archive':
-            if (confirm('Are you sure you want to archive this company?')) {
-                console.log('Archiving company:', companyId);
-            }
-            break;
+    const companyId = companyIdInput?.value; // Get ID from hidden input
+
+    // Critical Check: Ensure Company ID exists
+    if (!companyId) {
+        showToast('Error', 'Could not determine Company ID. Please close the modal and try again.', 'error');
+        console.error('Company ID is missing or undefined in archiveCompany function.');
+        // Optionally re-enable button if it exists
+        if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.innerHTML = 'Archive Company'; // Restore original text
+        }
+        return; // Stop execution
     }
-};
+
+    if (!reasonSelect || !customReasonInput || !archiveModalElement) {
+        showToast('Error', 'Could not process archive request. Modal elements missing.', 'error');
+        return;
+    }
+
+    let reason = reasonSelect.value;
+    if (reason === 'other' && customReasonInput.value.trim() !== '') {
+        reason = customReasonInput.value.trim();
+    } else if (reason === 'other') {
+        showToast('Warning', 'Please specify a reason if you select Other.', 'warning');
+        return;
+    }
+
+    // Disable button
+    if (confirmButton) { // Check if button exists before disabling
+        confirmButton.disabled = true;
+        confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Archiving...';
+    }
+
+    // Construct URL with the retrieved companyId
+    fetch(`/api/companies/${companyId}/archive`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+        body: JSON.stringify({ reason: reason })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => {
+                throw new Error(err.error || `HTTP error! Status: ${response.status}`);
+            }).catch(() => {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            });
+        }
+        return response.json();
+    })
+            .then(data => {
+                if (data.success) {
+            showToast('Success', data.message || 'Company archived successfully.', 'success');
+            if (window.fetchAndUpdateData) { // Refresh the main table data
+                window.fetchAndUpdateData(); 
+            }
+            const archiveModal = bootstrap.Modal.getInstance(archiveModalElement);
+            if (archiveModal) {
+                archiveModal.hide();
+            }
+            // Reset the form elements within the modal
+            reasonSelect.value = '';
+            customReasonInput.value = '';
+            customReasonInput.style.display = 'none';
+            if (companyIdInput) companyIdInput.value = ''; // Clear hidden ID
+        } else {
+            showToast('Error', data.error || 'Failed to archive company.', 'error', 5000);
+        }
+    })
+    .catch(error => {
+        console.error('Error archiving company:', error); // Keep error log
+        showToast('Error', `Error archiving company: ${error.message}`, 'error', 5000);
+    })
+    .finally(() => {
+        // Re-enable button
+        if (confirmButton) {
+             confirmButton.disabled = false;
+             confirmButton.innerHTML = 'Confirm Archive'; // Use correct final text
+        }
+    });
+}
+
+function saveCompanyChanges() {
+    const form = document.getElementById('editCompanyForm');
+    const companyId = form.dataset.companyId; // Assuming company ID is stored in a data attribute
+    const saveButton = document.getElementById('saveCompanyBtn');
+
+    if (!form || !companyId || !saveButton) {
+        showToast('Error', 'Could not save changes. Form elements missing.', 'error');
+        return;
+    }
+
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    // Ensure status is included
+    data.status = document.getElementById('editCompanyStatus').value;
+
+    // Disable button
+    saveButton.disabled = true;
+    saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+
+            fetch(`/api/companies-direct/${companyId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+            // Add CSRF token header if needed
+                },
+        body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            showToast('Success', result.message || 'Company updated successfully.', 'success');
+            fetchAndUpdateData(); // Refresh the table
+            const editModal = bootstrap.Modal.getInstance(document.getElementById('editCompanyModal'));
+            if (editModal) {
+                editModal.hide();
+            }
+                } else {
+            showToast('Error', result.error || 'Failed to update company.', 'error');
+                }
+            })
+            .catch(error => {
+        console.error('Error updating company:', error);
+        showToast('Error', `Failed to update company: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Re-enable button
+        saveButton.disabled = false;
+        saveButton.innerHTML = 'Save Changes';
+    });
+}
 
 // Handle student view action
 function handleStudentView(studentId) {
@@ -605,21 +961,355 @@ tooltipTriggerList.map(function (tooltipTriggerEl) {
     return new bootstrap.Tooltip(tooltipTriggerEl);
 });
 
-// Function to generate company ID (ma + 2 numbers + 2 letters)
+// Function to generate company ID (ma + 2 digits + 2 letters)
 function generateCompanyId() {
-    const numbers = '0123456789';
-    const letters = 'abcdefghijklmnopqrstuvwxyz';
-    let id = 'ma';
-    
-    // Add 2 random numbers
-    for (let i = 0; i < 2; i++) {
-        id += numbers.charAt(Math.floor(Math.random() * numbers.length));
+    const digits = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+    const letters = String.fromCharCode(97 + Math.floor(Math.random() * 26)) + 
+                    String.fromCharCode(97 + Math.floor(Math.random() * 26));
+    return `ma${digits}${letters}`;
+}
+
+// Function to update the student table within the view modal
+function updateModalStudentTable(students) {
+    const tbody = document.getElementById('companyStudentsTable');
+    const selectAllCheckbox = document.getElementById('modalSelectAllStudents');
+    if (!tbody || !selectAllCheckbox) return;
+
+    tbody.innerHTML = ''; // Clear existing rows
+    selectAllCheckbox.checked = false; // Uncheck select all
+    toggleBulkActions(); // Hide bulk actions initially
+
+    if (!students || students.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">No students found for this company.</td></tr>'; // Updated colspan to 4
+        selectAllCheckbox.disabled = true;
+        return;
     }
-    
-    // Add 2 random letters
-    for (let i = 0; i < 2; i++) {
-        id += letters.charAt(Math.floor(Math.random() * letters.length));
+    selectAllCheckbox.disabled = false;
+
+    students.forEach(student => {
+        const row = document.createElement('tr');
+        const statusBadgeClass = student.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger';
+        
+        row.innerHTML = `
+            <td><input type="checkbox" class="form-check-input modal-student-checkbox" value="${student.user_id}"></td>
+            <td>
+                <div class="d-flex align-items-center">
+                    <img src="/static/images/${student.profile_img || 'profile.png'}" 
+                         alt="${student.name}" 
+                         class="rounded-circle me-2" 
+                         width="32" 
+                         height="32">
+                    <div>
+                        <div class="fw-medium">${student.name}</div>
+                        <div class="small text-muted">${student.user_id}</div>
+                    </div>
+                </div>
+            </td>
+            <td><span class="badge ${statusBadgeClass}">${student.status}</span></td>
+            <td class="text-end"> 
+                <button class="btn btn-sm btn-link text-primary p-0 edit-student-status-btn"
+                        data-student-id="${student.user_id}"
+                        data-student-name="${student.name}"
+                        data-current-status="${student.status}"
+                        title="Edit Status">
+                    <i class="bi bi-pencil" style="color: #191970;"></i>
+                </button>
+            </td> 
+        `;
+        tbody.appendChild(row);
+    });
+
+    // Re-add event listeners for the edit buttons
+    tbody.querySelectorAll('.edit-student-status-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            prepareEditStudentStatusModal(this.dataset.studentId, this.dataset.studentName, this.dataset.currentStatus);
+        });
+    });
+
+    // Add event listeners for checkboxes
+    tbody.querySelectorAll('.modal-student-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', () => {
+            toggleBulkActions();
+            // Check if all checkboxes are checked
+            const allChecked = Array.from(tbody.querySelectorAll('.modal-student-checkbox')).every(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+        });
+    });
+
+    // Listener for select all checkbox
+    selectAllCheckbox.addEventListener('change', function() {
+        tbody.querySelectorAll('.modal-student-checkbox').forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+        toggleBulkActions();
+    });
+}
+
+// Function to show/hide bulk actions dropdown
+function toggleBulkActions() {
+    const container = document.getElementById('modalBulkActionsContainer');
+    const checkboxes = document.querySelectorAll('#companyStudentsTable .modal-student-checkbox:checked');
+    if (container) {
+        container.style.display = checkboxes.length > 0 ? 'block' : 'none';
     }
+}
+
+// Function to handle bulk status updates
+async function handleModalBulkAction(action) {
+    const checkboxes = document.querySelectorAll('#companyStudentsTable .modal-student-checkbox:checked');
+    const studentIds = Array.from(checkboxes).map(cb => cb.value);
+    const newStatusIsActive = action === 'active';
+    const companyIdToRefresh = document.getElementById('editStudentStatusCompanyIdInput').value || document.getElementById('viewCompanyId').textContent;
+    const currentPageBeforeBulk = viewModalCurrentPage; // Capture current page
+
+    if (studentIds.length === 0) {
+        showToast('Info', 'Please select at least one student.', 'info');
+        return;
+    }
+
+    // Optional: Add a confirmation step here if desired
+    // if (!confirm(`Are you sure you want to mark ${studentIds.length} students as ${newStatusIsActive ? 'Active' : 'Inactive'}?`)) {
+    //     return;
+    // }
+
+    showToast('Processing', `Updating status for ${studentIds.length} students...`, 'info');
+
+    const promises = studentIds.map(studentId => 
+        fetch(`/api/users/${studentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ is_active: newStatusIsActive })
+        })
+        .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
+    );
+
+    try {
+        const results = await Promise.allSettled(promises);
+        const successfulUpdates = results.filter(r => r.status === 'fulfilled').length;
+        const failedUpdates = results.filter(r => r.status === 'rejected').length;
+
+        let message = '';
+        if (successfulUpdates > 0) {
+            message += `${successfulUpdates} student(s) updated successfully.`;
+        }
+        if (failedUpdates > 0) {
+            message += ` ${failedUpdates} update(s) failed.`;
+            console.error('Bulk update failures:', results.filter(r => r.status === 'rejected'));
+        }
+
+        showToast(failedUpdates > 0 ? 'Warning' : 'Success', message.trim(), failedUpdates > 0 ? 'warning' : 'success');
+
+        // Refresh the modal student list preserving the current page
+        if (companyIdToRefresh) {
+            await loadAndShowViewModal(companyIdToRefresh, currentPageBeforeBulk); // Pass current page
+        }
+
+    } catch (error) { // Should not happen with Promise.allSettled, but for safety
+        console.error('Unexpected error during bulk update:', error);
+        showToast('Error', 'An unexpected error occurred during bulk update.', 'error');
+    }
+}
+
+// Function to populate and show the edit student status modal
+function prepareEditStudentStatusModal(studentId, studentName, currentStatus) {
+    document.getElementById('editStudentStatusName').textContent = studentName;
+    document.getElementById('editStudentStatusIdDisplay').textContent = studentId;
+    document.getElementById('editStudentStatusIdInput').value = studentId;
+    document.getElementById('editStudentStatusSelect').value = currentStatus;
     
-    return id;
+    // Store the company ID currently being viewed so we know which company data to refresh
+    const currentCompanyId = document.getElementById('viewCompanyId').textContent;
+    document.getElementById('editStudentStatusCompanyIdInput').value = currentCompanyId;
+
+    const editModal = new bootstrap.Modal(document.getElementById('editStudentStatusModal'));
+    editModal.show();
+}
+
+// Function to save student status from the modal
+async function saveStudentStatusFromModal() {
+    const studentId = document.getElementById('editStudentStatusIdInput').value;
+    const newStatus = document.getElementById('editStudentStatusSelect').value;
+    const companyIdToRefresh = document.getElementById('editStudentStatusCompanyIdInput').value;
+    const saveBtn = document.getElementById('saveStudentStatusBtn');
+    const currentPageBeforeSave = viewModalCurrentPage; // Capture current page
+
+    // Disable button
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+
+    try {
+        const response = await fetch(`/api/users/${studentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                // Add CSRF token header if necessary
+            },
+            body: JSON.stringify({ is_active: newStatus === 'Active' }) // API expects boolean is_active
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error ${response.status}`);
+        }
+
+        showToast('Success', data.message || 'Student status updated successfully');
+
+        // Refresh the student list preserving the current page
+        if (companyIdToRefresh) {
+             await loadAndShowViewModal(companyIdToRefresh, currentPageBeforeSave); // Pass current page
+        }
+
+        // Hide the edit status modal
+        const editModal = bootstrap.Modal.getInstance(document.getElementById('editStudentStatusModal'));
+        if (editModal) {
+            editModal.hide();
+        }
+
+    } catch (error) {
+        console.error('Error saving student status:', error);
+        showToast('Error', error.message || 'Failed to update student status', 'error');
+    } finally {
+        // Re-enable button
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = 'Save Status';
+    }
+}
+
+// Event listener for Add Company form submission
+const addCompanyFormForListener = document.getElementById('addCompanyForm'); // Use a different var name if needed
+if (addCompanyFormForListener) {
+    addCompanyFormForListener.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        // console.log("Correct Add Company Form submit listener triggered."); // REMOVED LOG
+
+        // Define email inputs within this scope
+        const contactEmailInput = document.getElementById('contactEmail');
+        const confirmEmailInput = document.getElementById('confirmEmail');
+        const companyIdInput = document.getElementById('companyId'); // Also define here for consistency
+
+        let isFormValid = true;
+
+        // 1. Custom Email Confirmation Validation
+        if (contactEmailInput && confirmEmailInput) {
+            if (contactEmailInput.value !== confirmEmailInput.value) {
+                confirmEmailInput.setCustomValidity('Email addresses do not match');
+                isFormValid = false;
+                // console.log("Email validation FAILED."); // REMOVED LOG
+            } else {
+                confirmEmailInput.setCustomValidity(''); // Clear custom error
+                // console.log("Email validation PASSED."); // REMOVED LOG
+            }
+        }
+
+        // 2. Bootstrap Validation
+        const bootstrapValid = addCompanyFormForListener.checkValidity(); // Get result
+        // console.log("Bootstrap checkValidity():", bootstrapValid); // REMOVED LOG
+        if (!bootstrapValid) {
+            isFormValid = false;
+        }
+
+        // Add Bootstrap validation classes
+        addCompanyFormForListener.classList.add('was-validated');
+
+        // console.log("Final isFormValid check before fetch:", isFormValid); // REMOVED LOG
+        if (isFormValid) {
+            // console.log("Form is valid, proceeding to fetch..."); // REMOVED LOG
+            // Form is valid, proceed with submission
+            const formData = {
+                name: document.getElementById('companyName').value,
+                contact: document.getElementById('contactName').value,
+                email: contactEmailInput.value,
+                company_id: companyIdInput.value
+            };
+
+            // Select the button associated with the form, even if it's outside the form tag
+            const submitButton = document.querySelector('button[form="addCompanyForm"][type="submit"]'); 
+            const originalButtonText = submitButton.innerHTML;
+
+            fetch('/api/companies', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('Success', data.message || 'Company added successfully');
+                    // Reset form - REMOVED from here, will reset on hidden.bs.modal
+                    // addCompanyFormForListener.reset(); 
+                    
+                    // Close modal explicitly
+                    const modalInstance = bootstrap.Modal.getInstance(addCompanyModalElement);
+                    if (modalInstance) {
+                        modalInstance.hide();
+                    }
+                    // Refresh table data
+                    if (window.fetchAndUpdateData) {
+                        window.fetchAndUpdateData();
+                    } else {
+                        console.error('fetchAndUpdateData function not found on window object.');
+                    }
+                } else {
+                    showToast('Error', data.error || 'Error adding company', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Error', 'An error occurred while adding the company', 'error');
+            });
+        }
+    });
+} 
+
+// --- Add Company Modal Logic --- 
+
+// Get references to modal elements
+const addCompanyModalElement = document.getElementById('addCompanyModal');
+const addCompanyForm = document.getElementById('addCompanyForm'); // Can re-use this name here
+
+// Event listener for when the Add Company modal is ABOUT TO BE shown
+if (addCompanyModalElement) {
+    addCompanyModalElement.addEventListener('show.bs.modal', function () {
+        // console.log('Add Company Modal show.bs.modal event triggered.'); // REMOVED LOG
+        const companyIdInput = document.getElementById('companyId');
+        const confirmEmailInput = document.getElementById('confirmEmail'); // Need this for resetting validation
+        
+        // Generate and set the Company ID
+        if (companyIdInput) {
+            const newId = generateCompanyId();
+            companyIdInput.value = newId;
+            // console.log('Generated Company ID:', newId); // REMOVED LOG
+        } else {
+            console.error('#companyId input not found in modal show event.');
+        }
+        // Reset form validation state visually
+        if (addCompanyForm) {
+            addCompanyForm.classList.remove('was-validated');
+            // Clear previous custom validation errors on confirm email
+            if (confirmEmailInput) {
+                confirmEmailInput.setCustomValidity('');
+            }
+        }
+    });
+}
+
+// Event listener for when the Add Company modal IS hidden
+if (addCompanyModalElement) {
+    addCompanyModalElement.addEventListener('hidden.bs.modal', function () {
+        // console.log('Add Company Modal hidden.bs.modal event triggered.'); // REMOVED LOG
+        if (addCompanyForm) {
+            addCompanyForm.reset(); // Clear all form fields
+            addCompanyForm.classList.remove('was-validated'); // Reset validation state
+        }
+        const companyIdInput = document.getElementById('companyId');
+        if (companyIdInput) {
+             companyIdInput.value = ''; // Clear generated ID
+        }
+    });
 } 

@@ -38,6 +38,9 @@
            name="email"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">
+        Email addresses must match.
+    </div>
 </div>
 
 <!-- Confirm Email Address -->
@@ -49,6 +52,9 @@
            name="confirmEmail"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">
+        Email addresses must match.
+    </div>
 </div>
 
 <!-- Role Selection -->
@@ -66,6 +72,61 @@
     </select>
 </div>
 
+<!-- Date of Birth -->
+<div class="mb-3">
+    <label for="dateOfBirth" class="form-label fw-medium">Date of Birth</label>
+    <input type="date" 
+           class="form-control" 
+           id="dateOfBirth" 
+           name="dateOfBirth"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Department - Visible only for Instructors -->
+<div class="mb-3 instructor-field" style="display: none;">
+    <label for="department" class="form-label fw-medium">Department</label>
+    <input type="text" 
+           class="form-control" 
+           id="department" 
+           name="department"
+           placeholder="e.g., Computer Science, Mathematics"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Qualification - Visible only for Instructors -->
+<div class="mb-3 instructor-field" style="display: none;">
+    <label for="qualification" class="form-label fw-medium">Qualification</label>
+    <input type="text" 
+           class="form-control" 
+           id="qualification" 
+           name="qualification"
+           placeholder="e.g., Ph.D., Masters"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Specialization - Visible only for Instructors -->
+<div class="mb-3 instructor-field" style="display: none;">
+    <label for="specialization" class="form-label fw-medium">Specialization</label>
+    <input type="text" 
+           class="form-control" 
+           id="specialization" 
+           name="specialization"
+           placeholder="e.g., Machine Learning, Data Structures"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Company Selection - Visible only for Students -->
+<div class="mb-3 student-field" style="display: none;">
+    <label for="companyId" class="form-label fw-medium">Company</label>
+    <select class="form-select" 
+            id="companyId" 
+            name="companyId"
+            style="border-radius: 8px; border-color: #E5E7EB;">
+        <option value="">No Company / Individual Student</option>
+        <!-- Companies will be populated dynamically -->
+    </select>
+</div>
+
 <!-- User ID -->
 <div class="mb-4">
     <label for="userId" class="form-label fw-medium">User ID</label>
@@ -76,6 +137,23 @@
            disabled
            style="border-radius: 8px; border-color: #E5E7EB;">
 </div>
+
+<!-- Access Level - Visible only for Administrators -->
+<div class="mb-3 admin-field" style="display: none;">
+    <label for="accessLevel" class="form-label fw-medium">Access Level</label>
+    <select class="form-select" 
+            id="accessLevel" 
+            name="accessLevel"
+            style="border-radius: 8px; border-color: #E5E7EB;">
+        <option value="">No Access Level Specified</option>
+        <option value="full">Full Access</option>
+        <option value="limited">Limited Access</option>
+    </select>
+    <small class="form-text text-muted mt-2">
+        <i class="bi bi-info-circle"></i> Limited access restricts the ability to create, update, or delete records. 
+        Users with limited access can only view data.
+    </small>
+</div>
 {% endblock %}
 
 {% block modal_scripts %}
@@ -84,6 +162,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const roleSelect = document.getElementById('userRole');
     const userIdField = document.getElementById('userId');
     const createButton = document.getElementById('createUserBtn');
+    const studentFields = document.querySelectorAll('.student-field');
+    const instructorFields = document.querySelectorAll('.instructor-field');
+    const adminFields = document.querySelectorAll('.admin-field');
+    const companySelect = document.getElementById('companyId');
 
     // Function to generate random numbers (2 digits)
     function generateRandomNumbers() {
@@ -105,13 +187,64 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${prefix}${numbers}${letters}`; // e.g., bh72zf
     }
 
+    // Function to load companies
+    function loadCompanies() {
+        fetch('/api/companies')
+            .then(response => response.json())
+            .then(companies => {
+                // Clear existing options except the first one
+                companySelect.innerHTML = '<option value="">No Company / Individual Student</option>';
+                
+                // Add company options
+                companies.forEach(company => {
+                    const option = document.createElement('option');
+                    option.value = company.company_id;
+                    option.textContent = company.name;
+                    companySelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading companies:', error);
+            });
+    }
+
+    // Load companies when the page loads
+    loadCompanies();
+
     // Listen for role selection change
     roleSelect.addEventListener('change', function() {
         if (this.value) {
             const newUserId = generateUserId(this.value);
             userIdField.value = newUserId;
+            
+            // Show/hide role-specific fields
+            if (this.value === 'st') {
+                // Show student fields, hide instructor and admin fields
+                studentFields.forEach(field => field.style.display = 'block');
+                instructorFields.forEach(field => field.style.display = 'none');
+                adminFields.forEach(field => field.style.display = 'none');
+            } else if (this.value === 'ak') {
+                // Show instructor fields, hide student and admin fields
+                instructorFields.forEach(field => field.style.display = 'block');
+                studentFields.forEach(field => field.style.display = 'none');
+                adminFields.forEach(field => field.style.display = 'none');
+            } else if (this.value === 'bh') {
+                // Show admin fields, hide student and instructor fields
+                adminFields.forEach(field => field.style.display = 'block');
+                studentFields.forEach(field => field.style.display = 'none');
+                instructorFields.forEach(field => field.style.display = 'none');
+            } else {
+                // Hide all role-specific fields
+                studentFields.forEach(field => field.style.display = 'none');
+                instructorFields.forEach(field => field.style.display = 'none');
+                adminFields.forEach(field => field.style.display = 'none');
+            }
         } else {
             userIdField.value = 'Auto-generated';
+            // Hide all role-specific fields
+            studentFields.forEach(field => field.style.display = 'none');
+            instructorFields.forEach(field => field.style.display = 'none');
+            adminFields.forEach(field => field.style.display = 'none');
         }
     });
 
@@ -124,36 +257,136 @@ document.addEventListener('DOMContentLoaded', function() {
         const email = document.getElementById('email').value.trim();
         const confirmEmail = document.getElementById('confirmEmail').value.trim();
         
-        // Skip email validation for development/testing
-        // if (email !== confirmEmail) {
-        //     alert('Email addresses do not match!');
-        //     return;
-        // }
+        if (email !== confirmEmail) {
+            // Use toast notification instead of browser alert
+            if (typeof showToast === 'function') {
+                showToast('Error', 'Email addresses do not match!', 'error');
+            } else {
+                console.error('Email validation failed: Email addresses do not match');
+            }
+            
+            // Highlight the mismatched fields
+            document.getElementById('email').classList.add('is-invalid');
+            document.getElementById('confirmEmail').classList.add('is-invalid');
+            
+            // Re-enable form submission
+            createButton.disabled = false;
+            return;
+        }
+        
+        // Clear any previous validation errors if emails match
+        document.getElementById('email').classList.remove('is-invalid');
+        document.getElementById('confirmEmail').classList.remove('is-invalid');
 
         // Disable button to indicate processing
         createButton.disabled = true;
         createButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Creating...';
 
-        // Simulate API call with setTimeout (replace with actual API call)
-        setTimeout(function() {
-            // Here you would typically send the data to your backend
-            console.log('Form submitted with ID:', userIdField.value);
+        // Prepare data for API
+        const formData = {
+            firstName: document.getElementById('firstName').value.trim(),
+            lastName: document.getElementById('lastName').value.trim(),
+            email: email,
+            userId: userIdField.value,
+            userRole: roleSelect.value
+        };
+        
+        // Add optional fields if they have values
+        const dateOfBirth = document.getElementById('dateOfBirth').value;
+        if (dateOfBirth) {
+            formData.dateOfBirth = dateOfBirth;
+        }
+        
+        // Add department for instructors
+        if (roleSelect.value === 'ak') {
+            const department = document.getElementById('department').value.trim();
+            if (department) {
+                formData.department = department;
+            }
             
-            // Re-enable button
-            createButton.disabled = false;
-            createButton.innerHTML = 'Create User';
+            const qualification = document.getElementById('qualification').value.trim();
+            if (qualification) {
+                formData.qualification = qualification;
+            }
             
-            // Close the modal
+            const specialization = document.getElementById('specialization').value.trim();
+            if (specialization) {
+                formData.specialization = specialization;
+            }
+        }
+        
+        // Add access level for administrators
+        if (roleSelect.value === 'bh') {
+            const accessLevel = document.getElementById('accessLevel').value;
+            if (accessLevel) {
+                formData.accessLevel = accessLevel;
+            }
+        }
+        
+        // Add company for students
+        if (roleSelect.value === 'st') {
+            const companyId = document.getElementById('companyId').value;
+            if (companyId) {
+                formData.companyId = companyId;
+            }
+        }
+        
+        // Send data to API
+        fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to create user');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('User created successfully:', data);
+            
+            // Show success message
+            if (typeof showToast === 'function') {
+                showToast('Success', data.message || 'User created successfully', 'success');
+            }
+            
+            // Reset the form
+            form.reset();
+            
+            // Hide the modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
             if (modal) {
                 modal.hide();
             }
             
-            // Show success message (if you have a toast component)
-            if (typeof showToast === 'function') {
-                showToast('Success', 'User created successfully', 'success');
+            // Reload the page to show the new user in the list
+            // Only do this if we're on a user management page
+            if (window.location.pathname.includes('user-management') || 
+                window.location.pathname.includes('student-management') || 
+                window.location.pathname.includes('instructor-management')) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             }
-        }, 1000); // Simulating a 1-second API call
+        })
+        .catch(error => {
+            console.error('Error creating user:', error);
+            
+            // Show error message
+            if (typeof showToast === 'function') {
+                showToast('Error', error.message || 'Failed to create user', 'error');
+            }
+        })
+        .finally(() => {
+            // Re-enable button
+            createButton.disabled = false;
+            createButton.innerHTML = 'Create User';
+        });
     });
 });
 </script>

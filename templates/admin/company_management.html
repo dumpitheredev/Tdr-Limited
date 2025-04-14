@@ -173,50 +173,46 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="row g-3 mb-4">
-                    <!-- Company Name -->
-                    <div class="col-12">
-                        <label class="form-label text-muted">Company Name</label>
+                <!-- Company Info Section -->
+                <div class="row mb-4">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted small mb-1">Company Name</label>
                         <p id="viewCompanyName" class="fw-medium mb-0">-</p>
                     </div>
-
-                    <!-- Company ID -->
-                    <div class="col-md-6">
-                        <label class="form-label text-muted">Company ID</label>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted small mb-1">Company ID</label>
                         <p id="viewCompanyId" class="fw-medium mb-0">-</p>
                     </div>
-
-                    <!-- Status -->
-                    <div class="col-md-6">
-                        <label class="form-label text-muted">Status</label>
-                        <p class="mb-0">
-                            <span id="viewCompanyStatus" class="badge">-</span>
-                        </p>
-                    </div>
-
-                    <!-- Contact Person -->
-                    <div class="col-12">
-                        <label class="form-label text-muted">Contact Person</label>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted small mb-1">Contact Person</label>
                         <p id="viewCompanyContact" class="fw-medium mb-0">-</p>
                     </div>
-
-                    <!-- Email -->
-                    <div class="col-12">
-                        <label class="form-label text-muted">Email</label>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted small mb-1">Email</label>
                         <p id="viewCompanyEmail" class="fw-medium mb-0">-</p>
+                    </div>
+                     <div class="col-md-6 mb-3">
+                        <label class="form-label text-muted small mb-1">Status</label>
+                        <p class="mb-0">
+                            <span id="viewCompanyStatus" class="badge status-badge-tdr">-</span>
+                        </p>
                     </div>
                 </div>
 
+                <!-- Separator -->
+                <hr class="my-4">
+
                 <!-- Students Table Section -->
-                <div class="mt-4">
-                    <div id="companyStudentsHeader"></div>
-                    <h6 class="mb-3">Company Students</h6>
+                <div>
+                    <div id="companyStudentsHeader" class="mb-3"></div> 
                     <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr class="bg-light">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 1%;"><input type="checkbox" class="form-check-input" id="modalSelectAllStudents"></th>
                                     <th>Name</th>
                                     <th>Status</th>
+                                    <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="companyStudentsTable">
@@ -224,6 +220,49 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- Bulk Actions Dropdown -->
+                    <div class="mt-3" id="modalBulkActionsContainer" style="display: none;">
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-secondary dropdown-toggle" type="button" id="modalBulkActionBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                Bulk Actions
+                            </button>
+                            <ul class="dropdown-menu" aria-labelledby="modalBulkActionBtn">
+                                <li><a class="dropdown-item" href="#" id="modalBulkMarkActive">Mark Selected Active</a></li>
+                                <li><a class="dropdown-item" href="#" id="modalBulkMarkInactive">Mark Selected Inactive</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <!-- End Bulk Actions Dropdown -->
+
+                    <!-- Modal Pagination Controls -->
+                    <div class="d-flex align-items-center gap-3 mt-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-body-secondary small">Rows per page:</span>
+                            <select id="modalRowsPerPage" class="form-select form-select-sm" style="width: 70px;">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                            </select>
+                        </div>
+                        <div class="ms-auto d-flex align-items-center gap-2">
+                            <button id="modalPrevPage" 
+                                    class="btn btn-sm btn-outline-secondary px-2" 
+                                    disabled>
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <span class="text-body-secondary small" id="modalPaginationInfo" style="min-width: 80px; text-align: center;">
+                                -
+                            </span>
+                            <button id="modalNextPage" 
+                                    class="btn btn-sm btn-outline-secondary px-2"
+                                    disabled>
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- End Modal Pagination Controls -->
+
                 </div>
             </div>
             <div class="modal-footer">
@@ -287,82 +326,82 @@
     </div>
 </div>
 
+<!-- Edit Student Status Modal (New) -->
+<div class="modal fade" id="editStudentStatusModal" tabindex="-1" aria-labelledby="editStudentStatusModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editStudentStatusModalLabel">Edit Student Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Update status for <strong id="editStudentStatusName"></strong> (<span id="editStudentStatusIdDisplay"></span>):</p>
+                <select class="form-select" id="editStudentStatusSelect" required>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                </select>
+                <input type="hidden" id="editStudentStatusIdInput">
+                <input type="hidden" id="editStudentStatusCompanyIdInput"> <!-- To know which company modal to refresh -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveStudentStatusBtn" style="background-color: #191970; border-color: #191970;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- End Edit Student Status Modal -->
+
 {{ view_student_modal() }}
+
+<!-- Archive Company Confirmation Modal -->
+<div class="modal fade" id="archiveCompanyModal" tabindex="-1" aria-labelledby="archiveCompanyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="archiveCompanyModalLabel">Confirm Archive Company</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <strong>Warning:</strong> Are you sure you want to archive company <strong id="archiveCompanyNameDisplay"></strong> (<span id="archiveCompanyIdDisplay"></span>)?
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Archiving will mark the company as inactive. Ensure all associated students are inactive or reassigned first.</p>
+                
+                <!-- Archive Reason Section -->
+                <div class="mt-3">
+                    <label for="archiveCompanyReason" class="form-label fw-medium">Archive Reason:</label>
+                    <select class="form-select" id="archiveCompanyReason" required>
+                        <option value="" selected disabled>Select a reason...</option>
+                        <option value="Business closed">Business closed</option>
+                        <option value="Contract ended">Contract ended</option>
+                        <option value="No longer participating">No longer participating</option>
+                        <option value="Duplicate record">Duplicate record</option>
+                        <option value="Testing/Cleanup">Testing/Cleanup</option>
+                        <option value="other">Other (specify)</option>
+                    </select>
+                    <div class="mt-2 d-none" id="archiveCompanyCustomReasonContainer">
+                        <label for="archiveCompanyCustomReason" class="form-label small">Specify reason:</label>
+                        <input type="text" class="form-control form-control-sm" id="archiveCompanyCustomReason" placeholder="Enter reason">
+                    </div>
+                </div>
+                <input type="hidden" id="archiveCompanyIdInput">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmArchiveCompanyBtn">Archive Company</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- End Archive Modal -->
 
 {% endblock %}
 
 {% block scripts %}
-<script>
-    var currentPage = 1;
-    var currentStatus = "";
-    var currentPerPage = 10;
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        // Basic filter functionality
-        const searchInput = document.getElementById('searchInput');
-        const statusFilter = document.getElementById('statusFilter');
-        const exportBtn = document.getElementById('exportCSV');
-        
-        if (searchInput) {
-            searchInput.addEventListener('input', filterCompanies);
-        }
-        
-        if (statusFilter) {
-            statusFilter.addEventListener('change', filterCompanies);
-        }
-        
-        if (exportBtn) {
-            exportBtn.addEventListener('click', function() {
-                alert('Export functionality will be implemented in future updates');
-            });
-        }
-        
-        // Basic form handling
-        const addCompanyForm = document.getElementById('addCompanyForm');
-        if (addCompanyForm) {
-            addCompanyForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                alert('Company creation will be implemented in future updates');
-                const modal = bootstrap.Modal.getInstance(document.getElementById('addCompanyModal'));
-                modal.hide();
-            });
-        }
-    });
-    
-    function filterCompanies() {
-        // Basic client-side filtering
-        const searchValue = document.getElementById('searchInput').value.toLowerCase();
-        const statusValue = document.getElementById('statusFilter').value;
-        
-        const rows = document.querySelectorAll('#companyTable tbody tr');
-        let visibleCount = 0;
-        
-        rows.forEach(row => {
-            const companyName = row.querySelector('td:first-child .fw-medium').textContent.toLowerCase();
-            const contactName = row.querySelector('td:nth-child(2) div:first-child').textContent.toLowerCase();
-            const status = row.querySelector('td:nth-child(3) .badge').textContent;
-            
-            const matchesSearch = searchValue === '' || 
-                                  companyName.includes(searchValue) || 
-                                  contactName.includes(searchValue);
-                                  
-            const matchesStatus = statusValue === '' || status === statusValue;
-            
-            if (matchesSearch && matchesStatus) {
-                row.style.display = '';
-                visibleCount++;
-            } else {
-                row.style.display = 'none';
-            }
-        });
-        
-        // Update pagination info
-        document.getElementById('paginationInfo').textContent = visibleCount > 0 ? 
-            `1-${visibleCount} of ${visibleCount}` : '0-0 of 0';
-    }
-    
-    function handleCompanyAction(action, id) {
-        alert(`${action} action for company ${id} will be implemented in future updates`);
-    }
-</script>
+
+<!-- Load the external JavaScript file -->
+<script src="{{ url_for('static', filename='js/pages/company-management.js') }}"></script>
+
 {% endblock %} 

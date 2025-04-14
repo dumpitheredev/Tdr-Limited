@@ -83,7 +83,7 @@
 
 <div class="container-fluid">
     <!-- Stats Cards -->
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 archive-summary-cards">
         <div class="col-12 col-sm-6 col-md-3">
             <div class="card border-0 shadow-sm archive-stat-card" id="studentArchiveCard"
                 onClick="switchArchiveType('student')">
@@ -91,7 +91,7 @@
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Student Archives</h6>
-                            <h2 class="mb-0 archive-stat-count" id="studentCount">-</h2>
+                            <h2 class="mb-0 archive-stat-count" id="studentCount">0</h2>
                         </div>
                         <div class="p-2 bg-primary-subtle rounded card-icon">
                             <i class="bi bi-person" style="color: #0d6efd;"></i>
@@ -107,7 +107,7 @@
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Class Archives</h6>
-                            <h2 class="mb-0 archive-stat-count" id="classCount">-</h2>
+                            <h2 class="mb-0 archive-stat-count" id="classCount">0</h2>
                         </div>
                         <div class="p-2 bg-success-subtle rounded card-icon">
                             <i class="bi bi-book" style="color: #198754;"></i>
@@ -123,7 +123,7 @@
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Company Archives</h6>
-                            <h2 class="mb-0 archive-stat-count" id="companyCount">-</h2>
+                            <h2 class="mb-0 archive-stat-count" id="companyCount">0</h2>
                         </div>
                         <div class="p-2 bg-warning-subtle rounded card-icon">
                             <i class="bi bi-building" style="color: #fd7e14;"></i>
@@ -139,10 +139,26 @@
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Instructor Archives</h6>
-                            <h2 class="mb-0 archive-stat-count" id="instructorCount">-</h2>
+                            <h2 class="mb-0 archive-stat-count" id="instructorCount">0</h2>
                         </div>
                         <div class="p-2 bg-primary-subtle rounded card-icon">
                             <i class="bi bi-person-video3" style="color: #0d6efd;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card border-0 shadow-sm archive-stat-card" id="adminArchiveCard"
+                onClick="switchArchiveType('admin')">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between">
+                        <div>
+                            <h6 class="text-muted mb-2">Administrator Archives</h6>
+                            <h2 class="mb-0 archive-stat-count" id="adminCount">0</h2>
+                        </div>
+                        <div class="p-2 bg-info-subtle rounded card-icon">
+                            <i class="bi bi-shield-lock" style="color: #0dcaf0;"></i>
                         </div>
                     </div>
                 </div>
@@ -155,7 +171,7 @@
                     <div class="d-flex align-items-start justify-content-between">
                         <div>
                             <h6 class="text-muted mb-2">Attendance Archives</h6>
-                            <h2 class="mb-0 archive-stat-count" id="attendanceCount">-</h2>
+                            <h2 class="mb-0 archive-stat-count" id="attendanceCount">0</h2>
                         </div>
                         <div class="p-2 bg-danger-subtle rounded card-icon">
                             <i class="bi bi-calendar-check" style="color: #dc3545;"></i>
@@ -172,12 +188,13 @@
             <div class="d-flex align-items-center justify-content-between mb-4">
                 <!-- Left side: Archive Type Filter and Search -->
                 <div class="d-flex gap-3 flex-grow-1">
-                    <select id="archiveTypeFilter" class="form-select" style="width: 200px;">
+                    <select id="archiveTypeFilter" class="form-select" style="width: 220px;">
                         <option value="" selected>Select Archive Type</option>
                         <option value="student">Student Archives</option>
                         <option value="class">Class Archives</option>
                         <option value="company">Company Archives</option>
                         <option value="instructor">Instructor Archives</option>
+                        <option value="admin">Administrator Archives</option>
                         <option value="attendance">Attendance Archives</option>
                     </select>
 
@@ -356,6 +373,32 @@
                         </table>
                     </div>
 
+                    <!-- Admin Archive Table -->
+                    <div id="adminArchiveTable" class="archive-table table-responsive d-none">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th scope="col"><i class="bi bi-shield-lock me-1"></i> Administrator</th>
+                                    <th scope="col"><i class="bi bi-envelope me-1"></i> Email</th>
+                                    <th scope="col"><i class="bi bi-calendar-date me-1"></i> Archived Date</th>
+                                    <th scope="col"><i class="bi bi-info-circle me-1"></i> Status</th>
+                                    <th scope="col"><i class="bi bi-info-circle me-1"></i> Reason</th>
+                                    <th scope="col" class="text-end">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminArchiveBody">
+                                <!-- Loading skeleton -->
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                                        </div>
+                                        <span>Loading administrator archives...</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
                     <!-- Pagination -->
                     <div class="d-flex align-items-center mt-3">
                         <div class="d-flex align-items-center gap-2">
@@ -392,7 +435,7 @@
     // Server-side variable detected, will initialize after load
     window.addEventListener('load', function () {
         const archiveType = "{{ archive_type }}";
-        const validTypes = ['student', 'class', 'company', 'instructor', 'attendance'];
+        const validTypes = ['student', 'class', 'company', 'instructor', 'admin', 'attendance'];
 
         // URL parameter has precedence
         const urlParams = new URLSearchParams(window.location.search);
@@ -420,7 +463,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const typeParam = urlParams.get('type');
 
-        if (typeParam && ['student', 'class', 'company', 'instructor', 'attendance'].includes(typeParam)) {
+        if (typeParam && ['student', 'class', 'company', 'instructor', 'admin', 'attendance'].includes(typeParam)) {
             const dropdown = document.getElementById('archiveTypeFilter');
             if (dropdown) dropdown.value = typeParam;
 
