@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response, abort
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response, abort, current_app
 from flask_login import login_required, current_user
 from models import db, User, Class, Enrollment, Attendance, Company
 from datetime import datetime, timedelta
@@ -7,6 +7,7 @@ from io import StringIO
 from sqlalchemy import text, or_, func, case
 import time
 from functools import wraps
+import traceback
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -71,14 +72,21 @@ def export_query_to_csv(query, filename_prefix, headers, row_formatter):
     
     return response
 
-def safe_query_execution(func, error_fallback):
+def safe_query_execution(func, error_fallback, context="database operation"):
     """Execute a database query function with error handling"""
     try:
         return func()
     except Exception as e:
-        print(f"Error in database query: {e}")
+        error_details = traceback.format_exc()
+        print(f"Error in {context}: {e}")
+        print(f"Detailed traceback: {error_details}")
+        # Log the error with more context
+        app_logger = getattr(current_app, 'logger', None)
+        if app_logger:
+            app_logger.error(f"Database error in {context}: {e}")
+            app_logger.debug(f"Traceback: {error_details}")
         # Show error message but still use fallback data for rendering
-        flash(f"Database error: {str(e)}", "error")
+        flash(f"Database error in {context}: {str(e)}", "error")
         # Return the fallback data instead of None
         return error_fallback
 
@@ -95,17 +103,20 @@ def dashboard():
     # Get dashboard stats with error handling using the helper functions
     student_count = safe_query_execution(
         lambda: filter_by_role(User.query, 'student').count(),
-        0
+        0,
+        "student count query"
     )
     
     instructor_count = safe_query_execution(
         lambda: filter_by_role(User.query, 'instructor').count(),
-        0
+        0,
+        "instructor count query"
     )
     
     class_count = safe_query_execution(
         lambda: Class.query.count(),
-        0
+        0,
+        "class count query"
     )
     
     return render_template('admin/dashboard.html', 
@@ -274,50 +285,65 @@ def user_management():
 @admin_bp.route('/student-management')
 @login_required
 def student_management():
+    # Get filter parameters from request once
+    status_filter = request.args.get('status', '')
+    search_term = request.args.get('search', '')
+    
+    # Add timestamp for cache busting
+    now = int(time.time())
+    
+    # Get student data with proper error handling
+    student_data = safe_query_execution(
+        lambda: get_student_data(),
+        {'students': [], 'total_students': 0, 'active_students': 0, 'inactive_students': 0},
+        "student management data query"
+    )
+    
+    return render_template('admin/student_management.html',
+                          active_page='student_management',
+                          students=student_data['students'],
+                          total_students=student_data['total_students'],
+                          active_students=student_data['active_students'],
+                          inactive_students=student_data['inactive_students'],
+                          status_filter=status_filter,
+                          search_term=search_term,
+                          now=now)
+
+def get_student_data():
     # Get filter parameters
     status_filter = request.args.get('status', '')
     search_term = request.args.get('search', '')
     
-    def get_student_data():
-        # Get all students for stats
-        all_students = filter_by_role(User.query, 'student').all()
-        total_students = len(all_students)
-        active_students = len([s for s in all_students if s.is_active])
-        inactive_students = total_students - active_students
-        
-        # Get filtered students using the helper function
-        query = apply_user_filters(User.query, 
-                                  status_filter=status_filter, 
-                                  search_term=search_term, 
-                                  role='student')
-        
-        students = query.all()
-        
-        return {
-            'students': students,
-            'total_students': total_students,
-            'active_students': active_students,
-            'inactive_students': inactive_students
-        }
+    # Query students with role filter applied at database level
+    query = User.query.filter(User.role.ilike('%student%'))
     
-    # Use safe execution with fallback empty values
-    fallback = {
-        'students': [],
-        'total_students': 0,
-        'active_students': 0,
-        'inactive_students': 0
+    # Apply filters directly in the database query
+    if status_filter:
+        is_active = status_filter == 'Active'
+        query = query.filter(User.is_active == is_active)
+    
+    if search_term:
+        query = query.filter(or_(
+            User.first_name.ilike(f'%{search_term}%'),
+            User.last_name.ilike(f'%{search_term}%'),
+            User.email.ilike(f'%{search_term}%'),
+            User.id.ilike(f'%{search_term}%')
+        ))
+        
+    # Execute the query with all filters applied
+    students = query.all()
+    
+    # Count totals for statistics
+    total_students = User.query.filter(User.role.ilike('%student%')).count()
+    active_students = User.query.filter(User.role.ilike('%student%'), User.is_active == True).count()
+    inactive_students = User.query.filter(User.role.ilike('%student%'), User.is_active == False).count()
+    
+    return {
+        'students': students,
+        'total_students': total_students,
+        'active_students': active_students,
+        'inactive_students': inactive_students
     }
-    
-    result = safe_query_execution(get_student_data, fallback)
-    
-    return render_template('admin/student_management.html',
-                           active_page='student_management',
-                          students=result['students'],
-                          total_students=result['total_students'],
-                          active_students=result['active_students'],
-                          inactive_students=result['inactive_students'],
-                           status_filter=status_filter,
-                          search_term=search_term)
 
 @admin_bp.route('/class-management')
 @login_required
@@ -367,7 +393,6 @@ def enrollment_management():
         total_students = filter_by_role(User.query, 'student').count()
         
         # Call our own API endpoint internally
-        from flask import current_app
         with current_app.test_client() as client:
             api_url = f"/admin/enrollment-management/data?status={status_filter}&search={search_term}&per_page={per_page}&page={page}"
             response = client.get(api_url)
@@ -841,7 +866,7 @@ def company_management():
         # Get all companies for stats
         all_companies = Company.query.all()
         total_companies = len(all_companies)
-        active_companies = len([c for c in all_companies if c.is_active])
+        active_companies = len([c for c in all_companies if c.is_active == 'Active'])
         inactive_companies = total_companies - active_companies
         
         # Format company data for template
@@ -850,8 +875,7 @@ def company_management():
             formatted_companies.append({
                 'id': company.id,
                 'name': company.name,
-                'address': company.address,
-                'status': 'Active' if company.is_active else 'Inactive'
+                'status': company.is_active
             })
         
         return {

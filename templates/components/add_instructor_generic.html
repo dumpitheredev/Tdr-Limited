@@ -9,11 +9,11 @@
 {% block modal_content %}
 <!-- First Name -->
 <div class="mb-3">
-    <label for="instructorFirstName" class="form-label fw-medium">First Name</label>
+    <label for="firstName" class="form-label fw-medium">First Name</label>
     <input type="text" 
            class="form-control" 
-           id="instructorFirstName" 
-           name="instructorFirstName"
+           id="firstName" 
+           name="firstName"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
 </div>
@@ -38,6 +38,9 @@
            name="email"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">
+        Email addresses must match.
+    </div>
 </div>
 
 <!-- Confirm Email Address -->
@@ -49,17 +52,63 @@
            name="confirmEmail"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">
+        Email addresses must match.
+    </div>
 </div>
 
 <!-- Hidden Role Field -->
-<input type="hidden" id="userRole" name="userRole" value="instructor">
+<input type="hidden" id="userRole" name="userRole" value="ak">
+
+<!-- Date of Birth -->
+<div class="mb-3">
+    <label for="dateOfBirth" class="form-label fw-medium">Date of Birth</label>
+    <input type="date" 
+           class="form-control" 
+           id="dateOfBirth" 
+           name="dateOfBirth"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Department -->
+<div class="mb-3">
+    <label for="department" class="form-label fw-medium">Department</label>
+    <input type="text" 
+           class="form-control" 
+           id="department" 
+           name="department"
+           placeholder="e.g., Computer Science, Mathematics"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Qualification -->
+<div class="mb-3">
+    <label for="qualification" class="form-label fw-medium">Qualification</label>
+    <input type="text" 
+           class="form-control" 
+           id="qualification" 
+           name="qualification"
+           placeholder="e.g., Ph.D., Masters"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Specialization -->
+<div class="mb-3">
+    <label for="specialization" class="form-label fw-medium">Specialization</label>
+    <input type="text" 
+           class="form-control" 
+           id="specialization" 
+           name="specialization"
+           placeholder="e.g., Machine Learning, Data Structures"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
 
 <!-- Instructor ID -->
 <div class="mb-4">
-    <label for="instructorId" class="form-label fw-medium">Instructor ID</label>
+    <label for="userId" class="form-label fw-medium">Instructor ID</label>
     <input type="text" 
            class="form-control bg-light" 
-           id="instructorId" 
+           id="userId" 
            value="Auto-generated" 
            disabled
            style="border-radius: 8px; border-color: #E5E7EB;">
@@ -69,7 +118,7 @@
 {% block modal_scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const instructorIdField = document.getElementById('instructorId');
+    const userIdField = document.getElementById('userId');
     const prefix = 'ak'; // Fixed prefix for instructors
     const createButton = document.getElementById('createInstructorBtn');
 
@@ -94,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Generate ID when modal opens
-    instructorIdField.value = generateInstructorId();
+    userIdField.value = generateInstructorId();
 
     // Form submission handler
     const form = document.getElementById('addInstructorForm');
@@ -105,36 +154,116 @@ document.addEventListener('DOMContentLoaded', function() {
         const email = document.getElementById('email').value.trim();
         const confirmEmail = document.getElementById('confirmEmail').value.trim();
         
-        // Skip email validation for development/testing
-        // if (email !== confirmEmail) {
-        //     alert('Email addresses do not match!');
-        //     return;
-        // }
+        if (email !== confirmEmail) {
+            // Use toast notification instead of browser alert
+            if (typeof showToast === 'function') {
+                showToast('Error', 'Email addresses do not match!', 'error');
+            } else {
+                console.error('Email validation failed: Email addresses do not match');
+            }
+            
+            // Highlight the mismatched fields
+            document.getElementById('email').classList.add('is-invalid');
+            document.getElementById('confirmEmail').classList.add('is-invalid');
+            
+            // Re-enable form submission
+            createButton.disabled = false;
+            return;
+        }
+        
+        // Clear any previous validation errors if emails match
+        document.getElementById('email').classList.remove('is-invalid');
+        document.getElementById('confirmEmail').classList.remove('is-invalid');
 
         // Disable button to indicate processing
         createButton.disabled = true;
         createButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Creating...';
 
-        // Simulate API call with setTimeout (replace with actual API call)
-        setTimeout(function() {
-            // Here you would typically send the data to your backend
-            console.log('Form submitted with ID:', instructorIdField.value);
+        // Prepare data for API
+        const formData = {
+            firstName: document.getElementById('firstName').value.trim(),
+            lastName: document.getElementById('lastName').value.trim(),
+            email: email,
+            userId: userIdField.value,
+            userRole: 'ak' // instructor role
+        };
+        
+        // Add optional fields if they have values
+        const dateOfBirth = document.getElementById('dateOfBirth').value;
+        if (dateOfBirth) {
+            formData.dateOfBirth = dateOfBirth;
+        }
+        
+        // Add instructor-specific fields
+        const department = document.getElementById('department').value.trim();
+        if (department) {
+            formData.department = department;
+        }
+        
+        const qualification = document.getElementById('qualification').value.trim();
+        if (qualification) {
+            formData.qualification = qualification;
+        }
+        
+        const specialization = document.getElementById('specialization').value.trim();
+        if (specialization) {
+            formData.specialization = specialization;
+        }
+        
+        // Send data to API
+        fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Failed to create instructor');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Instructor created successfully:', data);
             
-            // Re-enable button
-            createButton.disabled = false;
-            createButton.innerHTML = 'Create Instructor';
+            // Show success message
+            if (typeof showToast === 'function') {
+                showToast('Success', data.message || 'Instructor created successfully', 'success');
+            }
             
-            // Close the modal
+            // Reset the form
+            form.reset();
+            
+            // Hide the modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addInstructorModal'));
             if (modal) {
                 modal.hide();
             }
             
-            // Show success message (if you have a toast component)
-            if (typeof showToast === 'function') {
-                showToast('Success', 'Instructor created successfully', 'success');
+            // Reload the page to show the new instructor in the list
+            if (window.location.pathname.includes('instructor-management') || 
+                window.location.pathname.includes('user-management')) {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             }
-        }, 1000); // Simulating a 1-second API call
+        })
+        .catch(error => {
+            console.error('Error creating instructor:', error);
+            
+            // Show error message
+            if (typeof showToast === 'function') {
+                showToast('Error', error.message || 'Failed to create instructor', 'error');
+            }
+        })
+        .finally(() => {
+            // Re-enable button
+            createButton.disabled = false;
+            createButton.innerHTML = 'Create Instructor';
+        });
     });
 });
 </script>
