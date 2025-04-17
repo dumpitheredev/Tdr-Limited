@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Maintenance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .maintenance-container {
+            max-width: 600px;
+            padding: 2rem;
+            text-align: center;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .maintenance-icon {
+            font-size: 5rem;
+            color: #dc3545;
+            margin-bottom: 2rem;
+        }
+        .maintenance-title {
+            font-size: 2rem;
+            color: #191970;
+            margin-bottom: 1rem;
+        }
+        .maintenance-content {
+            margin-bottom: 2rem;
+            color: #6c757d;
+        }
+        .maintenance-footer {
+            font-size: 0.9rem;
+            margin-top: 3rem;
+            color: #6c757d;
+        }
+        .maintenance-time {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            margin-top: 20px;
+        }
+        .btn-system {
+            background-color: #191970;
+            border-color: #191970;
+            color: white;
+        }
+        .btn-system:hover {
+            background-color: #13135a;
+            border-color: #13135a;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <div class="maintenance-icon">
+            <i class="bi bi-gear-fill"></i>
+        </div>
+        <h1 class="maintenance-title">System Maintenance</h1>
+        <div class="maintenance-content">
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                The system is currently undergoing maintenance.
+            </div>
+            
+            <p>We apologize for the inconvenience. The TDR system is temporarily unavailable while we perform necessary maintenance.</p>
+            <p>Please try again later. Thank you for your patience.</p>
+            
+            {% if maintenance_end %}
+            <div class="maintenance-time">
+                <strong>Scheduled End Time:</strong> 
+                <span id="end-time">{{ maintenance_end }}</span>
+                <span class="small text-muted">(UK Time)</span>
+                <div class="mt-2">
+                    <span id="countdown"></span>
+                </div>
+            </div>
+            {% endif %}
+            
+            <div class="mt-4">
+                <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>Return to Login
+                </a>
+                <button id="refresh-btn" class="btn btn-system ms-2">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Refresh Page
+                </button>
+            </div>
+        </div>
+        <div class="maintenance-footer">
+            <p>&copy; {{ current_year if current_year else '2024' }} TDR - Training and Development Resources</p>
+            <p class="text-muted small">Page will refresh automatically every 30 seconds</p>
+        </div>
+    </div>
+
+    <!-- Common JavaScript for all maintenance pages -->
+    <script>
+        // Auto-refresh the page every 30 seconds
+        setTimeout(function() {
+            window.location.reload();
+        }, 30000);
+        
+        // Refresh button handler
+        document.getElementById('refresh-btn').addEventListener('click', function() {
+            window.location.reload();
+        });
+    </script>
+    
+    <!-- Conditional JavaScript for countdown timer -->
+    {% if maintenance_end %}
+    <script>
+        // Format date function for displaying in a user-friendly way
+        function formatDate(date) {
+            const options = { 
+                weekday: 'long',
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            return date.toLocaleDateString('en-GB', options);
+        }
+
+        // On page load, format the displayed date to be more user-friendly
+        document.addEventListener('DOMContentLoaded', function() {
+            const endTimeElement = document.getElementById('end-time');
+            const endTimeStr = endTimeElement.textContent.trim();
+            const endTime = new Date(endTimeStr);
+            
+            if (!isNaN(endTime.getTime())) {
+                // Store the original ISO date string in a data attribute
+                endTimeElement.setAttribute('data-original-date', endTime.toISOString());
+                
+                // Format the date for display
+                endTimeElement.textContent = formatDate(endTime);
+            } else {
+                console.error('Invalid date on page load:', endTimeStr);
+            }
+        });
+
+        // Countdown timer function
+        function updateCountdown() {
+            const endTimeElement = document.getElementById('end-time');
+            if (!endTimeElement) return;
+            
+            const endTimeStr = endTimeElement.textContent;
+            
+            // Get the original date from a data attribute instead of trying to parse the formatted text
+            let endTime;
+            
+            // Store the original ISO date in a data attribute on first load
+            if (!endTimeElement.hasAttribute('data-original-date')) {
+                // Try to extract original date from the text content
+                try {
+                    // Get original value from text content before it was formatted
+                    const origDate = new Date(endTimeStr.trim());
+                    if (!isNaN(origDate.getTime())) {
+                        endTimeElement.setAttribute('data-original-date', origDate.toISOString());
+                        endTime = origDate;
+                    } else {
+                        throw new Error('Invalid date');
+                    }
+                } catch(e) {
+                    console.error('Error parsing date:', e);
+                    document.getElementById('countdown').innerHTML = 
+                        '<strong>Error:</strong> Unable to calculate remaining time.';
+                    return;
+                }
+            } else {
+                // Use the stored original date
+                endTime = new Date(endTimeElement.getAttribute('data-original-date'));
+            }
+            
+            if (isNaN(endTime.getTime())) {
+                console.error('Invalid date time:', endTimeStr);
+                document.getElementById('countdown').innerHTML = 
+                    '<strong>Error:</strong> Unable to calculate remaining time.';
+                return;
+            }
+            
+            const now = new Date();
+            
+            // Calculate time difference
+            const diff = endTime - now;
+            
+            if (diff <= 0) {
+                // Time has passed, but DON'T auto-refresh more than 3 times
+                const endTimeRefreshCount = localStorage.getItem('endTimeRefreshCount') || 0;
+                if (parseInt(endTimeRefreshCount) < 3) {
+                    localStorage.setItem('endTimeRefreshCount', parseInt(endTimeRefreshCount) + 1);
+                    window.location.reload();
+                } else {
+                    // Just show a message instead of refreshing
+                    document.getElementById('countdown').innerHTML = 
+                        '<strong>Maintenance period ended.</strong> Please try logging in again.';
+                }
+                return;
+            }
+            
+            // Calculate hours, minutes, seconds
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            
+            // Update the countdown element
+            document.getElementById('countdown').innerHTML = 
+                '<strong>Time remaining:</strong> ' + hours + 'h ' + minutes + 'm ' + seconds + 's';
+        }
+        
+        // Update the countdown immediately and then every second
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+    </script>
+    {% endif %}
+</body>
+</html> 
