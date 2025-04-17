@@ -72,8 +72,12 @@
                 The system is currently undergoing maintenance.
             </div>
             
+            {% if maintenance_message %}
+            <p>{{ maintenance_message }}</p>
+            {% else %}
             <p>We apologize for the inconvenience. The TDR system is temporarily unavailable while we perform necessary maintenance.</p>
             <p>Please try again later. Thank you for your patience.</p>
+            {% endif %}
             
             {% if maintenance_end %}
             <div class="maintenance-time">
