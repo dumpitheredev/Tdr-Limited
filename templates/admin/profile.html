@@ -2,26 +2,65 @@
 {% block title %}Admin Profile{% endblock %}
 
 {% block content %}
+<!-- Include Toast Notification Component -->
+{% include 'components/toast_notification.html' %}
+
+<!-- Hidden JSON data for flash messages -->
+<script id="flash-messages-data" type="application/json">
+[
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            {"category": "{{ category }}", "message": "{{ message|escape }}"}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+]
+</script>
+
 <div class="container-fluid">
     <div class="row">
         <!-- Profile Information Card -->
         <div class="col-lg-8 mb-4">
             <div class="card border-0 shadow-sm">
-
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h3 class="h5 mb-0" style="color: #191970;">
+                        <i class="bi bi-person-circle me-2"></i>Profile Information
+                    </h3>
+                    {% if is_super_admin %}
+                        <span class="badge bg-danger">Super Administrator</span>
+                    {% endif %}
+                </div>
                 <div class="card-body">
                     <form id="profileForm" method="post" action="{{ url_for('admin.admin_profile') }}">
+                        <input type="hidden" name="form_type" value="profile">
                         <div class="row mb-4">
                             <div class="col-md-4 text-center mb-4 mb-md-0">
                                 <div class="position-relative mx-auto" style="width: 150px; height: 150px;">
-                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                    <img src="{{ url_for('static', filename='images/' ~ (admin.profile_img if admin.profile_img else 'profile.png')) }}" 
                                          alt="Profile Photo" 
                                          class="rounded-circle img-thumbnail w-100 h-100"
                                          style="object-fit: cover;">
-                                    <button type="button" class="btn btn-sm position-absolute bottom-0 end-0 bg-white rounded-circle p-1" style="color: #191970;">
+                                    <button type="button" class="btn btn-sm position-absolute bottom-0 end-0 bg-white rounded-circle p-1" 
+                                            style="color: #191970;"
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#changeProfilePictureModal">
                                         <i class="bi bi-camera-fill"></i>
                                     </button>
                                 </div>
                                 <p class="text-muted mt-2 small">Click the camera icon to update your photo</p>
+                                
+                                {% if is_super_admin %}
+                                <div class="mt-2">
+                                    <h6 class="text-center">Super Admin Privileges</h6>
+                                    <ul class="list-unstyled small text-start">
+                                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> System Settings</li>
+                                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> User Management</li>
+                                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> Maintenance Mode</li>
+                                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> All Administrative Functions</li>
+                                    </ul>
+                                </div>
+                                {% endif %}
                             </div>
                             <div class="col-md-8">
                                 <div class="row mb-3">
@@ -38,28 +77,28 @@
                                     <label for="email" class="form-label">Email Address</label>
                                     <input type="email" class="form-control" id="email" name="email" value="{{ admin.email }}">
                                 </div>
-                                <div class="mb-3">
-                                    <label for="phone" class="form-label">Phone Number</label>
-                                    <input type="tel" class="form-control" id="phone" name="phone" value="{{ admin.phone }}">
-                                </div>
                             </div>
                         </div>
                         
                         <h4 class="h6 mb-3" style="color: #191970;">Administrative Information</h4>
                         <div class="mb-3">
                             <label for="department" class="form-label">Department</label>
-                            <input type="text" class="form-control" id="department" name="department" value="{{ admin.department }}">
+                            <input type="text" class="form-control" id="department" name="department" value="{{ admin.department or '' }}">
                         </div>
                         
                         <div class="mb-3">
-                            <label for="position" class="form-label">Position</label>
-                            <input type="text" class="form-control" id="position" name="position" value="{{ admin.position }}">
+                            <label for="access_level" class="form-label">Access Level</label>
+                            <input type="text" class="form-control" id="access_level" name="access_level" 
+                                   value="{% if is_super_admin %}Super Administrator{% else %}Administrator{% endif %}" readonly>
+                            <small class="form-text text-muted">This field is managed by the system administrator.</small>
                         </div>
                         
+                        {% if admin.last_login %}
                         <div class="mb-3">
-                            <label for="bio" class="form-label">Professional Bio</label>
-                            <textarea class="form-control" id="bio" name="bio" rows="4">{{ admin.bio }}</textarea>
+                            <label class="form-label">Last Login</label>
+                            <p class="form-control-static">{{ admin.last_login.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                         </div>
+                        {% endif %}
                         
                         <div class="d-flex justify-content-end">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
@@ -84,15 +123,15 @@
                         <input type="hidden" name="form_type" value="password">
                         <div class="mb-3">
                             <label for="currentPassword" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="currentPassword" name="currentPassword">
+                            <input type="password" class="form-control" id="currentPassword" name="currentPassword" required>
                         </div>
                         <div class="mb-3">
                             <label for="newPassword" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="newPassword" name="newPassword">
+                            <input type="password" class="form-control" id="newPassword" name="newPassword" required>
                         </div>
                         <div class="mb-3">
                             <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword">
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
@@ -114,19 +153,87 @@
                     <form id="systemSettingsForm" method="post" action="{{ url_for('admin.admin_profile') }}">
                         <input type="hidden" name="form_type" value="system_settings">
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" checked>
+                            <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" 
+                                   {% if settings.email_notifications|default(false) %}checked{% endif %}>
                             <label class="form-check-label" for="emailNotifications">Email Notifications</label>
                             <div class="text-muted small">Receive system alerts and notifications</div>
                         </div>
-                        <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="maintenanceMode" name="maintenanceMode">
+                        
+                        {% if is_super_admin %}
+                        <div class="form-check form-switch mb-3 d-flex justify-content-between align-items-center">
+                            <div>
+                                <input class="form-check-input" type="checkbox" id="maintenanceMode" name="maintenanceMode" 
+                                       {% if settings.maintenance_mode|default(false) %}checked{% endif %}>
                             <label class="form-check-label" for="maintenanceMode">Maintenance Mode</label>
                             <div class="text-muted small">Put the system in maintenance mode</div>
+                            </div>
+                            {% if settings.maintenance_start_time %}
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="clearScheduleBtn" 
+                                    data-bs-toggle="modal" data-bs-target="#clearScheduleModal">
+                                <i class="bi bi-calendar-x me-1"></i> Clear Schedule
+                            </button>
+                            {% endif %}
                         </div>
+
+                        <!-- Maintenance Schedule and Message - shown when maintenance mode is enabled -->
+                        <div id="maintenanceOptions" class="card mb-3 p-3 bg-light" {% if not settings.maintenance_mode|default(false) %}style="display:none;"{% endif %}>
+                            <div class="mb-3">
+                                <label for="maintenanceMessage" class="form-label">Maintenance Message</label>
+                                <textarea class="form-control" id="maintenanceMessage" name="maintenanceMessage" rows="3">{{ settings.maintenance_message|default('System maintenance in progress. We apologize for the inconvenience.') }}</textarea>
+                                <div class="form-text">Message to display to users during maintenance.</div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="maintenanceStartTime" class="form-label">Start Time (UTC)</label>
+                                    <input type="datetime-local" class="form-control" id="maintenanceStartTime" name="maintenanceStartTime" 
+                                           {% if settings.maintenance_start_time %}
+                                               {% if settings.maintenance_start_time is string %}
+                                                   value="{{ settings.maintenance_start_time }}"
+                                               {% else %}
+                                                   value="{{ settings.maintenance_start_time.strftime('%Y-%m-%dT%H:%M') }}"
+                                               {% endif %}
+                                           {% endif %}>
+                                    <div class="form-text">
+                                        <strong>Note:</strong> All times are in UTC timezone. When set to a future time, maintenance mode 
+                                        will activate automatically at this time, forcing all users to the maintenance page.
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="maintenanceEndTime" class="form-label">End Time (UTC)</label>
+                                    <input type="datetime-local" class="form-control" id="maintenanceEndTime" name="maintenanceEndTime" 
+                                           {% if settings.maintenance_end_time %}
+                                               {% if settings.maintenance_end_time is string %}
+                                                   value="{{ settings.maintenance_end_time }}"
+                                               {% else %}
+                                                   value="{{ settings.maintenance_end_time.strftime('%Y-%m-%dT%H:%M') }}"
+                                               {% endif %}
+                                           {% endif %}>
+                                    <div class="form-text">
+                                        <strong>Note:</strong> All times are in UTC timezone. Maintenance mode will deactivate 
+                                        automatically at this time, restoring normal access for all users.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <strong>How Maintenance Mode Works:</strong>
+                                <ul class="mb-0 mt-1">
+                                    <li><strong>Schedule Future Maintenance:</strong> Set a future start time to schedule maintenance</li>
+                                    <li><strong>Scheduled Mode:</strong> When start time is in the future, users will see warnings but can still access the system</li>
+                                    <li><strong>Automatic Start:</strong> At the start time, all users will be redirected to the maintenance page</li>
+                                    <li><strong>Automatic End:</strong> At the end time, maintenance mode will turn off automatically</li>
+                                    <li><strong>Current UTC time:</strong> <span id="currentUtcTime" class="fw-bold"></span></li>
+                                </ul>
+                            </div>
+                        </div>
+
                         <div class="mb-3">
                             <label for="dataRetention" class="form-label">Data Retention (days)</label>
-                            <input type="number" class="form-control" id="dataRetention" name="dataRetention" value="90">
+                            <input type="number" class="form-control" id="dataRetention" name="dataRetention" 
+                                   value="{{ settings.data_retention|default(90) }}">
                         </div>
+                        {% endif %}
+                        
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
                                 <i class="bi bi-save me-1"></i> Save Settings
@@ -138,11 +245,170 @@
         </div>
     </div>
 </div>
+
+<!-- Change Profile Picture Modal -->
+<div class="modal fade" id="changeProfilePictureModal" tabindex="-1" aria-labelledby="changeProfilePictureModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="changeProfilePictureModalLabel">Change Profile Picture</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="profilePictureForm" method="post" action="{{ url_for('admin.admin_profile') }}" enctype="multipart/form-data">
+                <input type="hidden" name="form_type" value="profile_picture">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="profilePicture" class="form-label">Select a new profile picture</label>
+                        <input class="form-control" type="file" id="profilePicture" name="profilePicture" accept="image/png, image/jpeg, image/gif" required>
+                        <div class="form-text">Accepted file types: JPG, PNG, GIF. Maximum file size: 5MB.</div>
+                    </div>
+                    <div class="mb-3 text-center">
+                        <img id="previewImage" src="{{ url_for('static', filename='images/' ~ (admin.profile_img if admin.profile_img else 'profile.png')) }}"
+                             class="img-thumbnail rounded-circle" style="width: 150px; height: 150px; object-fit: cover; display: none;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
+                        <i class="bi bi-cloud-upload me-1"></i> Upload
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Maintenance Mode Confirmation Modal -->
+<div class="modal fade" id="maintenanceModeModal" tabindex="-1" aria-labelledby="maintenanceModeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="maintenanceModeModalLabel">Enable Maintenance Mode</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Warning:</strong> Enabling maintenance mode will log out all users.
+                </div>
+                <p>In maintenance mode, only administrators will be able to access the system.</p>
+                <p>Are you sure you want to enable maintenance mode?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelMaintenanceMode" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmMaintenanceMode" class="btn btn-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i> Enable Maintenance Mode
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Disable Maintenance Mode Confirmation Modal -->
+<div class="modal fade" id="disableMaintenanceModeModal" tabindex="-1" aria-labelledby="disableMaintenanceModeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="disableMaintenanceModeModalLabel">Disable Maintenance Mode</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Note:</strong> Disabling maintenance mode will allow all users to access the system again.
+                </div>
+                <p>Are you sure you want to disable maintenance mode?</p>
+                <p>This will cancel any scheduled maintenance if it hasn't started yet.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelDisableMaintenanceMode" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmDisableMaintenanceMode" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i> Disable Maintenance Mode
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Clear Schedule Confirmation Modal -->
+<div class="modal fade" id="clearScheduleModal" tabindex="-1" aria-labelledby="clearScheduleModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clearScheduleModalLabel">Clear Scheduled Maintenance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Warning:</strong> This will clear all scheduled maintenance times.
+                </div>
+                <p>Are you sure you want to clear the scheduled maintenance times?</p>
+                <p>This action will not affect the current maintenance mode state.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" action="{{ url_for('admin.admin_profile') }}">
+                    <input type="hidden" name="form_type" value="clear_schedule">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-calendar-x me-1"></i> Clear Schedule
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Display toast notification function
+    function displayToast(category, message) {
+        const toast = document.getElementById('statusToast');
+        const toastTitle = document.getElementById('toastTitle');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastHeader = toast.querySelector('.toast-header i');
+        
+        // Set title and icon based on message category
+        if (category === 'success') {
+            toastTitle.textContent = 'Success';
+            toastHeader.className = 'bi bi-check-circle-fill text-success me-2';
+        } else if (category === 'error' || category === 'danger') {
+            toastTitle.textContent = 'Error';
+            toastHeader.className = 'bi bi-exclamation-triangle-fill text-danger me-2';
+        } else if (category === 'warning') {
+            toastTitle.textContent = 'Warning';
+            toastHeader.className = 'bi bi-exclamation-circle-fill text-warning me-2';
+        } else {
+            toastTitle.textContent = 'Information';
+            toastHeader.className = 'bi bi-info-circle-fill text-info me-2';
+        }
+        
+        // Set message content
+        toastMessage.textContent = message;
+        
+        // Initialize and show the toast
+        const bsToast = new bootstrap.Toast(toast);
+        bsToast.show();
+    }
+
+    // Process flash messages from the JSON data
+    try {
+        const flashMessagesElement = document.getElementById('flash-messages-data');
+        if (flashMessagesElement) {
+            const flashMessages = JSON.parse(flashMessagesElement.textContent);
+            // Display each flash message
+            flashMessages.forEach(function(message) {
+                if (message && message.category && message.message) {
+                    displayToast(message.category, message.message);
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error parsing flash messages:', error);
+    }
+
     // Form validation for password update
     const passwordForm = document.getElementById('passwordForm');
     if (passwordForm) {
@@ -152,19 +418,171 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (newPass !== confirmPass) {
                 e.preventDefault();
-                alert('New password and confirmation do not match');
+                displayToast('error', 'New password and confirmation do not match');
             }
         });
     }
     
-    // Confirmation for maintenance mode
+    // Maintenance mode toggle handling with confirmation dialogs
     const maintenanceCheckbox = document.getElementById('maintenanceMode');
-    if (maintenanceCheckbox) {
-        maintenanceCheckbox.addEventListener('change', function() {
-            if (this.checked) {
-                if (!confirm('Enabling maintenance mode will log out all users. Are you sure?')) {
+    const maintenanceOptions = document.getElementById('maintenanceOptions');
+    const maintenanceStartTime = document.getElementById('maintenanceStartTime');
+    
+    if (maintenanceCheckbox && maintenanceOptions) {
+        // Store the original state when the page loads
+        let originalState = maintenanceCheckbox.checked;
+        
+        // Initialize the modals
+        const enableMaintenanceModeModal = new bootstrap.Modal(document.getElementById('maintenanceModeModal'));
+        const disableMaintenanceModeModal = new bootstrap.Modal(document.getElementById('disableMaintenanceModeModal'));
+        
+        // Toggle maintenance options visibility when checkbox changes (after confirmation)
+        function updateMaintenanceOptionsVisibility() {
+            if (maintenanceCheckbox.checked) {
+                maintenanceOptions.style.display = 'block';
+            } else {
+                maintenanceOptions.style.display = 'none';
+            }
+        }
+        
+        // Function to check if a future maintenance time is set
+        function hasFutureMaintenanceTime() {
+            if (!maintenanceStartTime || !maintenanceStartTime.value) {
+                return false;
+            }
+            
+            try {
+                const startDate = new Date(maintenanceStartTime.value);
+                const now = new Date();
+                return startDate > now;
+            } catch (e) {
+                console.error("Error parsing maintenance start time:", e);
+                return false;
+            }
+        }
+        
+        // Handle checkbox change with confirmation
+        maintenanceCheckbox.addEventListener('change', function(event) {
+            // If trying to enable maintenance mode
+            if (this.checked && !originalState) {
+                // If a future start time is set, just show the options without the confirmation
+                if (hasFutureMaintenanceTime()) {
+                    // Simply update UI for scheduling future maintenance
+                    originalState = true;
+                    maintenanceOptions.style.display = 'block';
+                } else {
+                    // Prevent the default toggle behavior temporarily for immediate activation
                     this.checked = false;
+                    // Show the confirmation modal
+                    enableMaintenanceModeModal.show();
                 }
+            } 
+            // If trying to disable maintenance mode
+            else if (!this.checked && originalState) {
+                // Prevent the default toggle behavior temporarily
+                this.checked = true;
+                // Show the confirmation modal
+                disableMaintenanceModeModal.show();
+            }
+        });
+        
+        // Handle enable maintenance mode confirmation
+        document.getElementById('confirmMaintenanceMode').addEventListener('click', function() {
+            // Update the checkbox state
+            maintenanceCheckbox.checked = true;
+            originalState = true;
+            
+            // Update UI
+            updateMaintenanceOptionsVisibility();
+            
+            // Hide the modal
+            enableMaintenanceModeModal.hide();
+        });
+        
+        // Handle cancel enable maintenance mode
+        document.getElementById('cancelMaintenanceMode').addEventListener('click', function() {
+            // Keep checkbox unchecked
+            maintenanceCheckbox.checked = false;
+            originalState = false;
+            
+            // Update UI
+            updateMaintenanceOptionsVisibility();
+        });
+        
+        // Handle disable maintenance mode confirmation
+        document.getElementById('confirmDisableMaintenanceMode').addEventListener('click', function() {
+            // Update the checkbox state
+            maintenanceCheckbox.checked = false;
+            originalState = false;
+            
+            // Update UI
+            updateMaintenanceOptionsVisibility();
+            
+            // Hide the modal
+            disableMaintenanceModeModal.hide();
+        });
+        
+        // Handle cancel disable maintenance mode
+        document.getElementById('cancelDisableMaintenanceMode').addEventListener('click', function() {
+            // Keep checkbox checked
+            maintenanceCheckbox.checked = true;
+            originalState = true;
+            
+            // Update UI
+            updateMaintenanceOptionsVisibility();
+        });
+        
+        // Also show maintenance options if start time is set, even if toggle is off
+        // This makes scheduling future maintenance more intuitive
+        document.addEventListener('DOMContentLoaded', function() {
+            if (hasFutureMaintenanceTime() && maintenanceOptions.style.display === 'none') {
+                maintenanceOptions.style.display = 'block';
+            }
+        });
+
+        // Add event listener to maintenance start time to show appropriate UI
+        if (maintenanceStartTime) {
+            maintenanceStartTime.addEventListener('change', function() {
+                // If a future time is set, show the maintenance options
+                if (hasFutureMaintenanceTime()) {
+                    maintenanceOptions.style.display = 'block';
+                    
+                    // Set default end time if none is set
+                    const maintenanceEndTime = document.getElementById('maintenanceEndTime');
+                    if (maintenanceEndTime && !maintenanceEndTime.value) {
+                        // Default to start time + 2 hours
+                        const startDate = new Date(this.value);
+                        const endDate = new Date(startDate.getTime() + (2 * 60 * 60 * 1000));
+                        
+                        // Format for datetime-local input
+                        const year = endDate.getFullYear();
+                        const month = String(endDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(endDate.getDate()).padStart(2, '0');
+                        const hours = String(endDate.getHours()).padStart(2, '0');
+                        const minutes = String(endDate.getMinutes()).padStart(2, '0');
+                        
+                        maintenanceEndTime.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+                    }
+                }
+            });
+        }
+    }
+    
+    // Image preview for profile picture upload
+    const profilePictureInput = document.getElementById('profilePicture');
+    const previewImage = document.getElementById('previewImage');
+    
+    if (profilePictureInput && previewImage) {
+        profilePictureInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewImage.style.display = 'block';
+                }
+                
+                reader.readAsDataURL(this.files[0]);
             }
         });
     }

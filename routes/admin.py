@@ -1,13 +1,17 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response, abort, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, make_response, abort, current_app, session
 from flask_login import login_required, current_user
-from models import db, User, Class, Enrollment, Attendance, Company
-from datetime import datetime, timedelta
+from models import db, User, Class, Enrollment, Attendance, Company, AdminSettings
+from datetime import datetime, timedelta, timezone
 import csv
 from io import StringIO
 from sqlalchemy import text, or_, func, case
 import time
+import flask  # Add this import for direct access to flask module
 from functools import wraps
 import traceback
+import os
+from werkzeug.utils import secure_filename
+import uuid
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -81,14 +85,51 @@ def safe_query_execution(func, error_fallback, context="database operation"):
         print(f"Error in {context}: {e}")
         print(f"Detailed traceback: {error_details}")
         # Log the error with more context
-        app_logger = getattr(current_app, 'logger', None)
+        app_logger = getattr(flask.current_app, 'logger', None)
         if app_logger:
             app_logger.error(f"Database error in {context}: {e}")
             app_logger.debug(f"Traceback: {error_details}")
         # Show error message but still use fallback data for rendering
         flash(f"Database error in {context}: {str(e)}", "error")
+        
         # Return the fallback data instead of None
+        if isinstance(error_fallback, dict):
+            # Check if the fallback contains SQLAlchemy objects
+            cleaned_fallback = {}
+            for key, value in error_fallback.items():
+                if value is not None:
+                    try:
+                        # Safely check for SQLAlchemy attributes
+                        if hasattr(value, '__dict__') and '_sa_instance_state' in value.__dict__:
+                            # Convert SQLAlchemy objects to dictionaries to avoid session issues
+                            if isinstance(value, list):
+                                cleaned_fallback[key] = []
+                                for item in value:
+                                    if hasattr(item, '__dict__') and '_sa_instance_state' in item.__dict__:
+                                        item_dict = item.__dict__.copy()
+                                        if '_sa_instance_state' in item_dict:
+                                            del item_dict['_sa_instance_state']
+                                        cleaned_fallback[key].append(item_dict)
+                                    else:
+                                        cleaned_fallback[key].append(item)
+                            else:
+                                cleaned_fallback[key] = value.__dict__.copy()
+                                if '_sa_instance_state' in cleaned_fallback[key]:
+                                    del cleaned_fallback[key]['_sa_instance_state']
+                        else:
+                            cleaned_fallback[key] = value
+                    except (AttributeError, TypeError):
+                        # If there's any error accessing attributes, just use the value as is
+                        cleaned_fallback[key] = value
+                else:
+                    cleaned_fallback[key] = value
+            return cleaned_fallback
         return error_fallback
+
+def allowed_file(filename):
+    """Check if file has an allowed extension"""
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Middleware to check if user is admin
 @admin_bp.before_request
@@ -119,20 +160,575 @@ def dashboard():
         "class count query"
     )
     
+    # Check for maintenance announcement
+    announcements = []
+    try:
+        from models import AdminSettings
+        from datetime import timedelta
+        now = datetime.utcnow()
+        settings = AdminSettings.query.first()
+        
+        if settings:
+            # Scenario 1: During active maintenance
+            if settings.maintenance_mode:
+                # Format time range if available
+                time_info = ""
+                if settings.maintenance_start_time and settings.maintenance_end_time:
+                    start_time = settings.maintenance_start_time.strftime('%B %d, %Y at %I:%M %p')
+                    end_time = settings.maintenance_end_time.strftime('%B %d, %Y at %I:%M %p')
+                    time_info = f" from {start_time} to {end_time}"
+                elif settings.maintenance_start_time:
+                    start_time = settings.maintenance_start_time.strftime('%B %d, %Y at %I:%M %p')
+                    time_info = f" starting at {start_time}"
+                
+                # Create announcement object for active maintenance
+                announcements.append({
+                    'id': 'maintenance',
+                    'title': 'System Maintenance',
+                    'created_at': datetime.now(),
+                    'content': settings.maintenance_message or f'The system is currently undergoing maintenance{time_info}. We apologize for any inconvenience caused at this time.',
+                    'is_maintenance': True,
+                    'type': 'warning'
+                })
+            
+            # Scenario 2: Upcoming scheduled maintenance
+            elif settings.maintenance_start_time and not settings.maintenance_mode:
+                # Check if maintenance is scheduled within the next 48 hours
+                if now < settings.maintenance_start_time and settings.maintenance_start_time - now <= timedelta(hours=48):
+                    # Format time range
+                    start_time = settings.maintenance_start_time.strftime('%B %d, %Y at %I:%M %p')
+                    time_info = f" on {start_time}"
+                    if settings.maintenance_end_time:
+                        end_time = settings.maintenance_end_time.strftime('%B %d, %Y at %I:%M %p')
+                        time_info = f" from {start_time} to {end_time}"
+                    
+                    # Create announcement object for upcoming maintenance
+                    announcements.append({
+                        'id': 'upcoming_maintenance',
+                        'title': 'Upcoming System Maintenance',
+                        'created_at': datetime.now(),
+                        'content': f"{settings.maintenance_message or 'The system will be undergoing scheduled maintenance'}{time_info}. IMPORTANT: When maintenance begins, all users except super administrators will be automatically logged out. Instructors will still be able to view their dashboard. Please inform users to save their work before this scheduled maintenance.",
+                        'is_maintenance': False,
+                        'type': 'info'
+                    })
+            
+            # Scenario 3: Additional announcement for active maintenance with scheduled end time
+            elif settings.maintenance_mode and settings.maintenance_end_time and now < settings.maintenance_end_time:
+                end_time = settings.maintenance_end_time.strftime('%B %d, %Y at %I:%M %p')
+                announcements.append({
+                    'id': 'maintenance_end',
+                    'title': 'Maintenance End Time',
+                    'created_at': datetime.now(),
+                    'content': f"The current maintenance is scheduled to end at {end_time}. The system will automatically become available to all users at that time.",
+                    'is_maintenance': True,
+                    'type': 'info'
+                })
+    except Exception as e:
+        # Log the error but don't break the page
+        current_app.logger.error(f"Error retrieving maintenance settings: {str(e)}")
+    
     return render_template('admin/dashboard.html', 
                            active_page='dashboard',
                            student_count=student_count,
                            instructor_count=instructor_count,
-                           class_count=class_count)
+                           class_count=class_count,
+                           announcements=announcements)
 
-@admin_bp.route('/admin-profile')
+@admin_bp.route('/admin-profile', methods=['GET', 'POST'])
 @login_required
+@admin_required
 def admin_profile():
-    # Get the current admin user data
-    admin = User.query.filter_by(id=current_user.id).first()
+    """Handle admin profile page and form submissions."""
+    # Fetch or create settings from database
+    settings = None
+    try:
+        settings = AdminSettings.query.first()
+        if not settings:
+            current_app.logger.warning("No settings found, creating default settings")
+            settings = AdminSettings(
+                user_id=current_user.id,
+                email_notifications=True,
+                maintenance_mode=False,
+                data_retention=90
+            )
+            db.session.add(settings)
+            db.session.commit()
+            flash('Created default system settings', 'info')
+    except Exception as e:
+        current_app.logger.error(f"Error fetching settings: {str(e)}\n{traceback.format_exc()}")
+        flash('Could not load settings from database. Using defaults.', 'warning')
+        # Create a fallback settings dictionary if we couldn't load from database
+        settings = {
+            'email_notifications': True,
+            'maintenance_mode': False,
+            'maintenance_message': '',
+            'data_retention': 90,
+            'maintenance_start_time': None,
+            'maintenance_end_time': None
+        }
+
+    # Handle form submissions
+    if request.method == 'POST':
+        form_type = request.form.get('form_type', '')
+
+        if form_type == 'profile':
+            try:
+                current_user.first_name = request.form.get('firstName', current_user.first_name)
+                current_user.last_name = request.form.get('lastName', current_user.last_name)
+                current_user.email = request.form.get('email', current_user.email)
+                current_user.department = request.form.get('department', current_user.department)
+                db.session.commit()
+                flash('Profile updated successfully!', 'success')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error updating profile: {str(e)}\n{traceback.format_exc()}")
+                flash('Error updating profile. Please try again.', 'danger')
+
+        elif form_type == 'password':
+            try:
+                current_password = request.form.get('currentPassword', '')
+                new_password = request.form.get('newPassword', '')
+                confirm_password = request.form.get('confirmPassword', '')
+
+                if not current_user.check_password(current_password):
+                    flash('Current password is incorrect.', 'danger')
+                elif new_password != confirm_password:
+                    flash('New passwords do not match.', 'danger')
+                else:
+                    current_user.set_password(new_password)
+                    db.session.commit()
+                    flash('Password changed successfully!', 'success')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error changing password: {str(e)}\n{traceback.format_exc()}")
+                flash('Error changing password. Please try again.', 'danger')
+
+        elif form_type == 'system_settings' and not isinstance(settings, dict):
+            try:
+                # Fetch or create settings
+                db_settings = AdminSettings.query.first()
+                if not db_settings:
+                    current_app.logger.warning("No settings found, creating new settings")
+                    db_settings = AdminSettings(
+                        user_id=current_user.id,
+                        email_notifications='emailNotifications' in request.form,
+                        maintenance_mode=False,
+                        maintenance_message='',
+                        data_retention=90
+                    )
+                    db.session.add(db_settings)
+                else:
+                    # Update existing settings
+                    # Email notifications can be updated by any admin
+                    db_settings.email_notifications = 'emailNotifications' in request.form
+                    
+                    # Only super admins can update maintenance mode and data retention
+                    is_super_admin = str(current_user.id).endswith('1') or current_user.id in ['bh9c0j', 'bh93dx']
+                    if is_super_admin:
+                        # Process maintenance start and end times first
+                        has_future_start_time = False
+                        start_time = None
+                        
+                        # Add timezone information to dates to ensure reliable comparisons
+                        try:
+                            if request.form.get('maintenanceStartTime'):
+                                # Parse the input string to a datetime object  
+                                try:
+                                    # Get the input value
+                                    start_time_input = request.form.get('maintenanceStartTime')
+                                    current_app.logger.info(f"Setting maintenance start time from input: {start_time_input}")
+                                    
+                                    # Parse the time in various formats
+                                    try:
+                                        start_time = datetime.strptime(start_time_input, '%Y-%m-%dT%H:%M')
+                                    except ValueError:
+                                        try:
+                                            start_time = datetime.strptime(start_time_input, '%Y-%m-%d %H:%M:%S')
+                                        except ValueError:
+                                            start_time = datetime.fromisoformat(start_time_input.replace('Z', '+00:00'))
+                                    
+                                    # Explicitly add UTC timezone if missing
+                                    if start_time.tzinfo is None:
+                                        start_time = start_time.replace(tzinfo=timezone.utc)
+                                        
+                                    # Store in database with timezone info
+                                    db_settings.maintenance_start_time = start_time
+                                    current_app.logger.info(f"Maintenance start time set to: {start_time} UTC")
+                                    
+                                    # Check if start time is in the future
+                                    now = datetime.now(timezone.utc)
+                                    time_diff = (start_time - now).total_seconds()
+                                    
+                                    if time_diff > 0:  # Future schedule
+                                        has_future_start_time = True
+                                        current_app.logger.info(f"Future maintenance scheduled: {time_diff} seconds from now")
+                                        flash(f"Maintenance scheduled to begin on {start_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                        
+                                        # If maintenance mode is on but start time is in future, show notice
+                                        if 'maintenanceMode' in request.form:
+                                            flash(f"Users will see a warning about upcoming maintenance but can still access the system until the scheduled time.", 'info')
+                                            
+                                        # If no end time is set, default to start_time + 2 hours
+                                        if not request.form.get('maintenanceEndTime'):
+                                            default_end_time = start_time + timedelta(hours=2)
+                                            db_settings.maintenance_end_time = default_end_time
+                                            current_app.logger.info(f"Default maintenance end time set to: {default_end_time} UTC")
+                                            flash(f"No end time provided. Setting default end time to {default_end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                    else:
+                                        # Start time is in the past, activate immediately
+                                        current_app.logger.warning(f"Maintenance start time is in the past. Activating immediately.")
+                                        flash(f"The provided start time is in the past. Maintenance mode will activate immediately.", 'warning')
+                                except Exception as e:
+                                    current_app.logger.error(f"Error parsing maintenance start time: {str(e)}\n{traceback.format_exc()}")
+                                    flash(f"Error parsing start time: {str(e)}", 'danger')
+                            else:
+                                db_settings.maintenance_start_time = None
+                            
+                            if request.form.get('maintenanceEndTime'):
+                                # Parse the input string to a datetime object
+                                try:
+                                    # Get the input value
+                                    end_time_input = request.form.get('maintenanceEndTime')
+                                    current_app.logger.info(f"Setting maintenance end time from input: {end_time_input}")
+                                    
+                                    # Parse the time in various formats
+                                    try:
+                                        end_time = datetime.strptime(end_time_input, '%Y-%m-%dT%H:%M')
+                                    except ValueError:
+                                        try:
+                                            end_time = datetime.strptime(end_time_input, '%Y-%m-%d %H:%M:%S')
+                                        except ValueError:
+                                            end_time = datetime.fromisoformat(end_time_input.replace('Z', '+00:00'))
+                                    
+                                    # Explicitly add UTC timezone if missing
+                                    if end_time.tzinfo is None:
+                                        end_time = end_time.replace(tzinfo=timezone.utc)
+                                        
+                                    # Store in database with timezone info
+                                    db_settings.maintenance_end_time = end_time
+                                    current_app.logger.info(f"Maintenance end time set to: {end_time} UTC")
+                                    
+                                    # Validate against start time
+                                    if start_time and end_time <= start_time:
+                                        flash('Warning: Maintenance end time must be after start time.', 'warning')
+                                        end_time = start_time + timedelta(hours=2)
+                                        db_settings.maintenance_end_time = end_time
+                                        current_app.logger.info(f"Adjusted end time to be after start time: {end_time} UTC")
+                                        flash(f"End time adjusted to {end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                    else:
+                                        flash(f"Maintenance will end at {end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                except Exception as e:
+                                    current_app.logger.error(f"Error parsing maintenance end time: {str(e)}\n{traceback.format_exc()}")
+                                    flash(f"Error parsing end time: {str(e)}", 'danger')
+                            else:
+                                db_settings.maintenance_end_time = None
+                        except Exception as e:
+                            current_app.logger.error(f"Error processing maintenance times: {str(e)}\n{traceback.format_exc()}")
+                            flash("Error processing maintenance times", 'danger')
+
+                        # Set maintenance message and data retention
+                        db_settings.maintenance_message = request.form.get('maintenanceMessage', '')
+                        db_settings.data_retention = int(request.form.get('dataRetention', 90))
+                        
+                        # Set maintenance mode based on checkbox and timing
+                        maintenance_mode_checked = 'maintenanceMode' in request.form
+                        
+                        # Always respect the checkbox state for maintenance mode
+                        db_settings.maintenance_mode = maintenance_mode_checked
+                        
+                        # Show appropriate messages based on timing and toggle state
+                        if has_future_start_time and maintenance_mode_checked:
+                            # Only show message about automatic activation if it's a new schedule
+                            if not db_settings.maintenance_mode:
+                                flash(f'Maintenance mode enabled. Note that maintenance is also scheduled to start automatically at {start_time.strftime("%B %d, %Y at %I:%M %p")}.', 'info')
+                            current_app.logger.info(f"Maintenance mode enabled. Also scheduled future maintenance at {start_time}")
+                        elif has_future_start_time and not maintenance_mode_checked:
+                            # Keep the scheduled time but maintenance is off
+                            flash(f'Maintenance mode is off. A scheduled maintenance is still set for {start_time.strftime("%B %d, %Y at %I:%M %p")} and will activate automatically at that time.', 'info')
+                            current_app.logger.info(f"Maintenance mode disabled but future schedule remains at {start_time}")
+                        elif maintenance_mode_checked:
+                            # Regular maintenance mode activation
+                            flash('Maintenance mode has been enabled. All non-admin users will be logged out.', 'warning')
+                            current_app.logger.info(f"Maintenance mode enabled with no scheduled end time")
+                        else:
+                            # Maintenance mode turned off
+                            if db_settings.maintenance_start_time:
+                                # If turning off maintenance with a scheduled time, ask if they want to clear the schedule
+                                flash('Maintenance mode disabled. Note that any scheduled maintenance times are still set and will activate automatically.', 'info')
+                            else:
+                                # Regular maintenance mode deactivation
+                                flash('Maintenance mode has been disabled.', 'success')
+                            current_app.logger.info("Maintenance mode disabled")
+
+                # Log for debugging
+                current_app.logger.info(f"Settings before commit: {type(db_settings)}")
+
+                # Commit changes
+                db.session.commit()
+                
+                # Update our local settings variable
+                settings = db_settings
+
+                flash('System settings updated successfully!', 'success')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error updating settings: {str(e)}\n{traceback.format_exc()}")
+                flash('Error updating system settings. Please try again.', 'danger')
+        elif form_type == 'system_settings' and isinstance(settings, dict):
+            try:
+                # Update the dictionary directly since we don't have a database model
+                # Email notifications can be updated by any admin
+                settings['email_notifications'] = 'emailNotifications' in request.form
+                
+                # Only super admins can update maintenance mode and data retention
+                is_super_admin = str(current_user.id).endswith('1') or current_user.id in ['bh9c0j', 'bh93dx']
+                if is_super_admin:
+                    # Process maintenance start and end times first
+                    has_future_start_time = False
+                    start_time = None
+
+                    # Add timezone information to dates to ensure reliable comparisons
+                    try:
+                        if request.form.get('maintenanceStartTime'):
+                            # Parse the input string to a datetime object
+                            try:
+                                # Get the input value
+                                start_time_input = request.form.get('maintenanceStartTime')
+                                current_app.logger.info(f"Setting maintenance start time from input: {start_time_input}")
+
+                                # Parse the time in various formats
+                                try:
+                                    start_time = datetime.strptime(start_time_input, '%Y-%m-%dT%H:%M')
+                                except ValueError:
+                                    try:
+                                        start_time = datetime.strptime(start_time_input, '%Y-%m-%d %H:%M:%S')
+                                    except ValueError:
+                                        start_time = datetime.fromisoformat(start_time_input.replace('Z', '+00:00'))
+
+                                # Explicitly add UTC timezone if missing
+                                if start_time.tzinfo is None:
+                                    start_time = start_time.replace(tzinfo=timezone.utc)
+
+                                # Store in database with timezone info
+                                settings['maintenance_start_time'] = start_time
+                                current_app.logger.info(f"Maintenance start time set to: {start_time} UTC")
+
+                                # Check if start time is in the future
+                                now = datetime.now(timezone.utc)
+                                time_diff = (start_time - now).total_seconds()
+
+                                if time_diff > 0:  # Future schedule
+                                    has_future_start_time = True
+                                    current_app.logger.info(f"Future maintenance scheduled: {time_diff} seconds from now")
+                                    flash(f"Maintenance scheduled to begin on {start_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+
+                                    # If maintenance mode is on but start time is in future, show notice
+                                    if 'maintenanceMode' in request.form:
+                                        flash(f"Users will see a warning about upcoming maintenance but can still access the system until the scheduled time.", 'info')
+
+                                    # If no end time is set, default to start_time + 2 hours
+                                    if not request.form.get('maintenanceEndTime'):
+                                        default_end_time = start_time + timedelta(hours=2)
+                                        settings['maintenance_end_time'] = default_end_time
+                                        current_app.logger.info(f"Default maintenance end time set to: {default_end_time} UTC")
+                                        flash(f"No end time provided. Setting default end time to {default_end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                else:
+                                    # Start time is in the past, activate immediately
+                                    current_app.logger.warning(f"Maintenance start time is in the past. Activating immediately.")
+                                    flash(f"The provided start time is in the past. Maintenance mode will activate immediately.", 'warning')
+                            except Exception as e:
+                                current_app.logger.error(f"Error parsing maintenance start time: {str(e)}\n{traceback.format_exc()}")
+                                flash(f"Error parsing start time: {str(e)}", 'danger')
+                        else:
+                            settings['maintenance_start_time'] = None
+
+                        if request.form.get('maintenanceEndTime'):
+                            # Parse the input string to a datetime object
+                            try:
+                                # Get the input value
+                                end_time_input = request.form.get('maintenanceEndTime')
+                                current_app.logger.info(f"Setting maintenance end time from input: {end_time_input}")
+
+                                # Parse the time in various formats
+                                try:
+                                    end_time = datetime.strptime(end_time_input, '%Y-%m-%dT%H:%M')
+                                except ValueError:
+                                    try:
+                                        end_time = datetime.strptime(end_time_input, '%Y-%m-%d %H:%M:%S')
+                                    except ValueError:
+                                        end_time = datetime.fromisoformat(end_time_input.replace('Z', '+00:00'))
+
+                                # Explicitly add UTC timezone if missing
+                                if end_time.tzinfo is None:
+                                    end_time = end_time.replace(tzinfo=timezone.utc)
+
+                                # Store in database with timezone info
+                                settings['maintenance_end_time'] = end_time
+                                current_app.logger.info(f"Maintenance end time set to: {end_time} UTC")
+
+                                # Validate against start time
+                                if start_time and end_time <= start_time:
+                                    flash('Warning: Maintenance end time must be after start time.', 'warning')
+                                    end_time = start_time + timedelta(hours=2)
+                                    settings['maintenance_end_time'] = end_time
+                                    current_app.logger.info(f"Adjusted end time to be after start time: {end_time} UTC")
+                                    flash(f"End time adjusted to {end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                                else:
+                                    flash(f"Maintenance will end at {end_time.strftime('%B %d, %Y at %I:%M %p')} UTC", 'info')
+                            except Exception as e:
+                                current_app.logger.error(f"Error parsing maintenance end time: {str(e)}\n{traceback.format_exc()}")
+                                flash(f"Error parsing end time: {str(e)}", 'danger')
+                        else:
+                            settings['maintenance_end_time'] = None
+                    except Exception as e:
+                        current_app.logger.error(f"Error processing maintenance times: {str(e)}\n{traceback.format_exc()}")
+                        flash("Error processing maintenance times", 'danger')
+                    # Set maintenance message and data retention
+                    settings['maintenance_message'] = request.form.get('maintenanceMessage', '')
+                    settings['data_retention'] = int(request.form.get('dataRetention', 90))
+                    
+                    # Set maintenance mode based on checkbox and timing
+                    maintenance_mode_checked = 'maintenanceMode' in request.form
+                    
+                    # Always respect the checkbox state for maintenance mode
+                    settings['maintenance_mode'] = maintenance_mode_checked
+                    
+                    # Show appropriate messages based on timing and toggle state
+                    if has_future_start_time and maintenance_mode_checked:
+                        # Only show message about automatic activation if it's a new schedule
+                        if not settings.get('maintenance_mode', False):
+                            flash(f'Maintenance mode enabled. Note that maintenance is also scheduled to start automatically at {start_time.strftime("%B %d, %Y at %I:%M %p")}.', 'info')
+                        current_app.logger.info(f"Maintenance mode enabled. Also scheduled future maintenance at {start_time}")
+                    elif has_future_start_time and not maintenance_mode_checked:
+                        # Keep the scheduled time but maintenance is off
+                        flash(f'Maintenance mode is off. A scheduled maintenance is still set for {start_time.strftime("%B %d, %Y at %I:%M %p")} and will activate automatically at that time.', 'info')
+                        current_app.logger.info(f"Maintenance mode disabled but future schedule remains at {start_time}")
+                    elif maintenance_mode_checked:
+                        # Regular maintenance mode activation
+                        flash('Maintenance mode has been enabled. All non-admin users will be logged out.', 'warning')
+                        current_app.logger.info(f"Maintenance mode enabled with no scheduled end time")
+                    else:
+                        # Maintenance mode turned off
+                        if settings.get('maintenance_start_time'):
+                            # If turning off maintenance with a scheduled time, ask if they want to clear the schedule
+                            flash('Maintenance mode disabled. Note that any scheduled maintenance times are still set and will activate automatically.', 'info')
+                        else:
+                            # Regular maintenance mode deactivation
+                            flash('Maintenance mode has been disabled.', 'success')
+                        current_app.logger.info("Maintenance mode disabled")
+
+                # Since this is a dictionary, there's no need to commit to the database
+                flash('Settings updated in memory (database unavailable).', 'warning')
+            except Exception as e:
+                current_app.logger.error(f"Error updating settings dictionary: {str(e)}\n{traceback.format_exc()}")
+                flash('Error updating settings in memory. Please try again.', 'danger')
+
+        elif form_type == 'profile_picture':
+            try:
+                if 'profilePicture' in request.files:
+                    file = request.files['profilePicture']
+                    if file and allowed_file(file.filename):
+                        filename = secure_filename(f"user_{current_user.id}_{int(time.time())}.{file.filename.rsplit('.', 1)[1].lower()}")
+                        file_path = os.path.join(current_app.static_folder, 'images', filename)
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                        file.save(file_path)
+                        
+                        current_user.profile_img = filename
+                        db.session.commit()
+                        
+                        # Update session with new profile image
+                        session['profile_img'] = filename
+                        
+                        flash('Profile picture updated successfully!', 'success')
+                    else:
+                        flash('Invalid file type. Please upload an image.', 'danger')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error updating profile picture: {str(e)}\n{traceback.format_exc()}")
+                flash('Error updating profile picture. Please try again.', 'danger')
+
+        elif form_type == 'clear_schedule' and not isinstance(settings, dict):
+            try:
+                # Fetch settings
+                db_settings = AdminSettings.query.first()
+                if db_settings:
+                    # Save current maintenance mode state
+                    current_maintenance_mode = db_settings.maintenance_mode
+                    
+                    # Clear scheduled times
+                    db_settings.maintenance_start_time = None
+                    db_settings.maintenance_end_time = None
+                    
+                    # Keep the current maintenance mode state
+                    db_settings.maintenance_mode = current_maintenance_mode
+                    
+                    # Commit changes
+                    db.session.commit()
+                    
+                    # Update our local settings variable
+                    settings = db_settings
+                    
+                    # Show success message
+                    flash('Scheduled maintenance times have been cleared.', 'success')
+                    current_app.logger.info("Scheduled maintenance times cleared")
+                else:
+                    flash('No settings found to update.', 'warning')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error clearing maintenance schedule: {str(e)}\n{traceback.format_exc()}")
+                flash('Error clearing maintenance schedule. Please try again.', 'danger')
+                
+        elif form_type == 'clear_schedule' and isinstance(settings, dict):
+            try:
+                # Save current maintenance mode state
+                current_maintenance_mode = settings.get('maintenance_mode', False)
+                
+                # Clear scheduled times
+                settings['maintenance_start_time'] = None
+                settings['maintenance_end_time'] = None
+                
+                # Keep the current maintenance mode state
+                settings['maintenance_mode'] = current_maintenance_mode
+                
+                # Show success message
+                flash('Scheduled maintenance times have been cleared (in memory).', 'success')
+                current_app.logger.info("Scheduled maintenance times cleared (in memory)")
+            except Exception as e:
+                current_app.logger.error(f"Error clearing maintenance schedule in dictionary: {str(e)}\n{traceback.format_exc()}")
+                flash('Error clearing maintenance schedule. Please try again.', 'danger')
+
+    # Always fetch the latest settings for the template if we're using the database
+    if not isinstance(settings, dict):
+        try:
+            settings = AdminSettings.query.first()
+            if not settings:
+                # Create a default settings dictionary if no database record exists
+                settings = {
+                    'email_notifications': True,
+                    'maintenance_mode': False,
+                    'maintenance_message': '',
+                    'data_retention': 90,
+                    'maintenance_start_time': None,
+                    'maintenance_end_time': None
+                }
+        except Exception as e:
+            current_app.logger.error(f"Error fetching latest settings: {str(e)}")
+            # Fall back to a dictionary if database query fails
+            settings = {
+                'email_notifications': True,
+                'maintenance_mode': False,
+                'maintenance_message': '',
+                'data_retention': 90,
+                'maintenance_start_time': None,
+                'maintenance_end_time': None
+            }
+    
+    # Render the template with the settings (either model or dictionary)
     return render_template('admin/profile.html', 
+                          settings=settings, 
+                          admin=current_user,
                            active_page='admin_profile',
-                           admin=admin)
+                          is_super_admin=str(current_user.id).endswith('1') or current_user.id in ['bh9c0j', 'bh93dx'])
 
 @admin_bp.route('/user-management')
 @login_required
@@ -170,7 +766,8 @@ def user_management():
         # Enhance user data with related information
         enhanced_users = []
         for user in users:
-            enhanced_user = user  # Use the actual user object
+            # Convert user to dictionary using the to_dict method
+            user_dict = user.to_dict()
             
             # For students, add enrollment data
             if user.role == 'student':
@@ -190,8 +787,8 @@ def user_management():
                         'status': enrollment.status
                     })
                 
-                # Store enrollments on the user object
-                enhanced_user.enrollments = formatted_enrollments
+                # Add enrollments to the user dictionary
+                user_dict['enrollments'] = formatted_enrollments
                 
                 # Get attendance statistics
                 attendance_stats = db.session.query(
@@ -200,7 +797,7 @@ def user_management():
                 ).filter(Attendance.student_id == user.id).first()
                 
                 # Add attendance data
-                enhanced_user.attendance = {
+                user_dict['attendance'] = {
                     'present': attendance_stats.present or 0,
                     'absent': attendance_stats.absent or 0
                 }
@@ -228,8 +825,8 @@ def user_management():
                         'is_active': class_obj.is_active
                     })
                 
-                # Store classes on the user object
-                enhanced_user.classes_taught = formatted_classes
+                # Add classes taught to the user dictionary
+                user_dict['classes_taught'] = formatted_classes
                 
             # For admins, add mock permissions (replace with real permissions when implemented)
             elif user.role == 'admin':
@@ -241,21 +838,25 @@ def user_management():
                     'report_generation'
                 ]
                 
-                # Add super_admin for first admin
-                if str(user.id).endswith('1'):
+                # Add super_admin for specific admin users
+                if str(user.id).endswith('1') or user.id in ['bh9c0j', 'bh93dx']:
                     permissions.append('super_admin')
                     permissions.append('system_settings')
-                    enhanced_user.admin_role = 'Super Administrator'
+                    user_dict['admin_role'] = 'Super Administrator'
                 else:
-                    enhanced_user.admin_role = 'Administrator'
+                    user_dict['admin_role'] = 'Administrator'
                 
-                # Store permissions on the user object
-                enhanced_user.permissions = permissions
+                # Add permissions to the user dictionary
+                user_dict['permissions'] = permissions
             
-            enhanced_users.append(enhanced_user)
+            # Add the dictionary to our enhanced users list
+            enhanced_users.append(user_dict)
+        
+        # Log for debugging
+        current_app.logger.info(f"Returning enhanced_users: type={type(enhanced_users)}, count={len(enhanced_users)}")
         
         return {
-            'users': enhanced_users,
+            'users': enhanced_users,  # List of dictionaries, not SQLAlchemy objects
             'total_users': total_users,
             'active_users': active_users,
             'inactive_users': inactive_users
@@ -330,14 +931,48 @@ def get_student_data():
             User.id.ilike(f'%{search_term}%')
         ))
         
-    # Execute the query with all filters applied
-    students = query.all()
+    # Execute the query with all filters applied (fixed indentation)
+    students_query_result = query.all()
+    
+    # Convert SQLAlchemy objects to dictionaries to avoid session issues
+    students = []
+    for student in students_query_result:
+        # Create a safe dictionary representation of the student
+        student_dict = {
+            'id': student.id,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
+            'email': student.email,
+            'profile_img': student.profile_img,
+            'is_active': student.is_active,
+            'role': student.role,
+            'created_at': student.created_at.strftime('%Y-%m-%d') if getattr(student, 'created_at', None) else None,
+            # Add other needed attributes here
+        }
+        
+        # Get enrollment data
+        try:
+            enrollments = Enrollment.query.filter_by(student_id=student.id).all()
+            student_dict['enrollments'] = [
+                {
+                    'id': e.id,
+                    'class_id': e.class_id,
+                    'status': e.status,
+                    'enrollment_date': e.enrollment_date.strftime('%Y-%m-%d') if e.enrollment_date else None
+                } for e in enrollments
+            ]
+        except Exception as e:
+            current_app.logger.error(f"Error getting enrollments for student {student.id}: {str(e)}")
+            student_dict['enrollments'] = []
+        
+        students.append(student_dict)
     
     # Count totals for statistics
     total_students = User.query.filter(User.role.ilike('%student%')).count()
     active_students = User.query.filter(User.role.ilike('%student%'), User.is_active == True).count()
     inactive_students = User.query.filter(User.role.ilike('%student%'), User.is_active == False).count()
     
+    # Return the data dictionary with safe dictionaries instead of SQLAlchemy objects
     return {
         'students': students,
         'total_students': total_students,
@@ -812,7 +1447,7 @@ def export_students_to_csv():
     query = filter_by_role(User.query, 'student')
     
     # Define CSV headers
-    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status']
+    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Status']
     
     # Define row formatter function
     def format_student_row(student):
@@ -821,7 +1456,6 @@ def export_students_to_csv():
             student.first_name,
             student.last_name,
             student.email,
-            student.phone or '',
             'Active' if student.is_active else 'Inactive'
         ]
     
@@ -839,7 +1473,7 @@ def export_instructors_to_csv():
     query = filter_by_role(User.query, 'instructor')
     
     # Define CSV headers
-    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Phone', 'Status']
+    headers = ['ID', 'First Name', 'Last Name', 'Email', 'Status']
     
     # Define row formatter function
     def format_instructor_row(instructor):
@@ -848,7 +1482,6 @@ def export_instructors_to_csv():
             instructor.first_name,
             instructor.last_name,
             instructor.email,
-            instructor.phone or '',
             'Active' if instructor.is_active else 'Inactive'
         ]
     

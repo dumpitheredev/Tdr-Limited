@@ -3,9 +3,37 @@
 {% block content %}
 <div class="container-fluid">
     <!-- Welcome Message -->
-    <div class="mb-4">
-        <h2 class="welcome-heading mb-4">Hello {{ session.name }}!</h2>
+    <div class="mb-3">
+        <h2 class="welcome-heading mb-3">Hello {{ session.name }}!</h2>
     </div>
+
+    <!-- Announcements Section -->
+    {% if announcements %}
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <h3 class="h5 mb-0" style="color: #191970;">
+                <i class="bi bi-megaphone me-2"></i>Announcements
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="list-group list-group-flush">
+                {% for announcement in announcements %}
+                    <div class="announcement-item mb-3 p-3 border-start border-4 {{ 'border-warning' if announcement.is_maintenance else 'border-primary' }}">
+                        <h5 class="{{ 'text-warning' if announcement.is_maintenance else 'text-primary' }}">
+                            {% if announcement.is_maintenance %}
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            {% endif %}
+                            {{ announcement.title }}
+                        </h5>
+                        <p id="announcement-{{ loop.index }}" class="announcement-content {{ 'text-warning' if announcement.is_maintenance else '' }} mb-2">{{ announcement.content }}</p>
+                        <button onclick="toggleAnnouncement('announcement-{{ loop.index }}')" class="btn btn-sm btn-outline-secondary">Read more</button>
+                        <small class="text-muted">Posted on {{ announcement.created_at.strftime('%Y-%m-%d') }}</small>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Management Cards Grid -->
     <div class="row g-4">
@@ -80,4 +108,33 @@
         {% endfor %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Function to toggle announcement content expansion
+    function toggleAnnouncement(id) {
+        const element = document.getElementById(id);
+        const button = element.nextElementSibling;
+        
+        if (!element.classList.contains('expanded')) {
+            element.classList.add('expanded');
+            button.textContent = 'Show less';
+        } else {
+            element.classList.remove('expanded');
+            button.textContent = 'Read more';
+        }
+    }
+</script>
+<style>
+    .announcement-content {
+        max-height: 3rem;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+    
+    .announcement-content.expanded {
+        max-height: 20rem;
+    }
+</style>
 {% endblock %}
