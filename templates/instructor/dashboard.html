@@ -60,6 +60,9 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Include Toast Notification Component -->
+    {% include 'components/toast_notification.html' %}
+    
     <div class="mb-3">
         <h2 class="h4 mb-3" style="color: #191970;">Hello {{ session.get('name', 'Instructor') }}!</h2>
     </div>
