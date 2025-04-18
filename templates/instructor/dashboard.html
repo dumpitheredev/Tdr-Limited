@@ -38,19 +38,30 @@
     .announcement-content {
         max-height: 3rem;
         overflow: hidden;
-        transition: max-height 0.3s ease;
+        transition: max-height 0.5s ease;
+        position: relative;
     }
     
-    .announcement-expanded {
-        max-height: 20rem;
+    .announcement-content.expanded {
+        max-height: 1000px;
+    }
+    
+    .announcement-item {
+        background-color: rgba(248, 249, 250, 0.5);
+        border-radius: 0.25rem;
+        transition: all 0.3s ease;
+    }
+    
+    .toggle-btn {
+        transition: all 0.3s ease;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="mb-4">
-        <h2 class="h4 mb-3" style="color: #191970;">Hello {{ session.get('name', 'Instructor') }}</h2>
+    <div class="mb-3">
+        <h2 class="h4 mb-3" style="color: #191970;">Hello {{ session.get('name', 'Instructor') }}!</h2>
     </div>
     
     <!-- Announcements Section -->
@@ -64,12 +75,18 @@
             {% if announcements %}
                 <div class="list-group list-group-flush">
                     {% for announcement in announcements %}
-                        <div class="list-group-item px-0">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <h4 class="h6 mb-0" style="color: #191970;">{{ announcement.title }}</h4>
-                                <small class="text-muted">{{ announcement.date }}</small>
-                            </div>
-                            <p class="mb-0">{{ announcement.content }}</p>
+                        <div class="announcement-item mb-4 p-3 border-start border-4 {{ 'border-warning' if announcement.type == 'warning' else 'border-info' }}">
+                            <h5 class="{{ 'text-warning' if announcement.type == 'warning' else 'text-info' }}">
+                                {% if announcement.type == 'warning' %}
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                {% else %}
+                                <i class="bi bi-info-circle me-2"></i>
+                                {% endif %}
+                                {{ announcement.title }}
+                            </h5>
+                            <div id="announcement-{{ loop.index }}" class="announcement-content {{ 'text-warning' if announcement.type == 'warning' else '' }} mb-2">{{ announcement.content }}</div>
+                            <button onclick="toggleAnnouncement('announcement-{{ loop.index }}')" class="btn btn-sm btn-outline-secondary toggle-btn">Read more</button>
+                            <small class="text-muted d-block mt-2">Posted on {{ announcement.date if announcement.date else announcement.created_at.strftime('%B %d, %Y') }}</small>
                         </div>
                     {% endfor %}
                 </div>
@@ -87,16 +104,18 @@
                 <h3 class="h5" style="color: #191970;">Monday</h3>
             </div>
             <div class="row g-3 mb-4">
-                {% for class in instructor_classes %}
-                    {% if class.day == 'Monday' %}
+                {% if schedule.Monday %}
+                    {% for class in schedule.Monday %}
                     <div class="col">
-                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;" data-class-id="{{ class.id|default('') }}">
                             <div style="color: #191970;">{{ class.name }}</div>
                             <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
                         </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <div class="col text-muted">No classes scheduled for Monday</div>
+                {% endif %}
             </div>
             
             <!-- Tuesday -->
@@ -104,16 +123,18 @@
                 <h3 class="h5" style="color: #191970;">Tuesday</h3>
             </div>
             <div class="row g-3 mb-4">
-                {% for class in instructor_classes %}
-                    {% if class.day == 'Tuesday' %}
+                {% if schedule.Tuesday %}
+                    {% for class in schedule.Tuesday %}
                     <div class="col">
-                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;" data-class-id="{{ class.id|default('') }}">
                             <div style="color: #191970;">{{ class.name }}</div>
                             <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
                         </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <div class="col text-muted">No classes scheduled for Tuesday</div>
+                {% endif %}
             </div>
             
             <!-- Wednesday -->
@@ -121,16 +142,18 @@
                 <h3 class="h5" style="color: #191970;">Wednesday</h3>
             </div>
             <div class="row g-3 mb-4">
-                {% for class in instructor_classes %}
-                    {% if class.day == 'Wednesday' %}
+                {% if schedule.Wednesday %}
+                    {% for class in schedule.Wednesday %}
                     <div class="col">
-                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;" data-class-id="{{ class.id|default('') }}">
                             <div style="color: #191970;">{{ class.name }}</div>
                             <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
                         </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <div class="col text-muted">No classes scheduled for Wednesday</div>
+                {% endif %}
             </div>
             
             <!-- Thursday -->
@@ -138,16 +161,18 @@
                 <h3 class="h5" style="color: #191970;">Thursday</h3>
             </div>
             <div class="row g-3 mb-4">
-                {% for class in instructor_classes %}
-                    {% if class.day == 'Thursday' %}
+                {% if schedule.Thursday %}
+                    {% for class in schedule.Thursday %}
                     <div class="col">
-                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;" data-class-id="{{ class.id|default('') }}">
                             <div style="color: #191970;">{{ class.name }}</div>
                             <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
                         </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <div class="col text-muted">No classes scheduled for Thursday</div>
+                {% endif %}
             </div>
             
             <!-- Friday -->
@@ -155,16 +180,18 @@
                 <h3 class="h5" style="color: #191970;">Friday</h3>
             </div>
             <div class="row g-3 mb-4">
-                {% for class in instructor_classes %}
-                    {% if class.day == 'Friday' %}
+                {% if schedule.Friday %}
+                    {% for class in schedule.Friday %}
                     <div class="col">
-                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;">
+                        <div class="p-3 rounded h-100" style="background-color: #E6E6FA;" data-class-id="{{ class.id|default('') }}">
                             <div style="color: #191970;">{{ class.name }}</div>
                             <div class="small text-muted">{{ class.start_time }} - {{ class.end_time }}</div>
                         </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
+                    {% endfor %}
+                {% else %}
+                    <div class="col text-muted">No classes scheduled for Friday</div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -174,4 +201,39 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="{{ url_for('static', filename='js/pages/instructor-dashboard.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize any announcement content that's too long
+        document.querySelectorAll('.announcement-content').forEach(function(el) {
+            if (el.scrollHeight > el.clientHeight) {
+                // Content is truncated, so show the toggle button
+                const button = el.nextElementSibling;
+                if (button && button.classList.contains('toggle-btn')) {
+                    button.style.display = 'inline-block';
+                }
+            } else {
+                // Content is short, hide the toggle button
+                const button = el.nextElementSibling;
+                if (button && button.classList.contains('toggle-btn')) {
+                    button.style.display = 'none';
+                }
+            }
+        });
+    });
+
+    function toggleAnnouncement(id) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        
+        const button = element.nextElementSibling;
+        
+        if (element.classList.contains('expanded')) {
+            element.classList.remove('expanded');
+            button.textContent = 'Read more';
+        } else {
+            element.classList.add('expanded');
+            button.textContent = 'Show less';
+        }
+    }
+</script>
 {% endblock %} 
