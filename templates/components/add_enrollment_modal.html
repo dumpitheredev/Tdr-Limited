@@ -17,17 +17,17 @@
                             <input type="text" id="studentSearchInput" class="form-control" placeholder="Search for a student...">
                         </div>
                         
-                        <!-- Use standard select with size attribute for scrolling -->
-                        <select class="form-select" id="studentSelect" multiple size="6">
-                            <!-- Will be populated dynamically -->
-                        </select>
-                        <small class="text-muted">Hold Ctrl or Cmd to select multiple students. All students are shown here.</small>
+                        <!-- Student checkboxes container -->
+                        <div class="border rounded p-4" id="studentCheckboxes" style="max-height: 250px; overflow-y: auto;">
+                            <!-- Will be populated dynamically with checkboxes -->
+                        </div>
+                        <small class="text-muted">Check the boxes to select multiple students.</small>
                     </div>
 
                     <!-- Classes Selection -->
                     <div class="mb-3">
                         <label class="form-label">Select Classes</label>
-                        <div class="border rounded p-3" id="classCheckboxes" style="max-height: 300px; overflow-y: auto;">
+                        <div class="border rounded p-4" id="classCheckboxes" style="max-height: 300px; overflow-y: auto;">
                             <!-- Will be populated dynamically -->
                         </div>
                         <small class="text-muted">Students will not be re-enrolled in classes they're already enrolled in.</small>
@@ -79,19 +79,28 @@
         color: white;
     }
     
-    /* Checkbox styling */
+    /* Checkbox styling for both students and classes */
+    #studentCheckboxes .form-check,
     #classCheckboxes .form-check {
         padding: 8px;
         border-radius: 4px;
         transition: background-color 0.2s ease;
+        margin-bottom: 8px;
     }
     
+    #studentCheckboxes .form-check:hover,
     #classCheckboxes .form-check:hover {
         background-color: #f8f9fa;
     }
     
+    #studentCheckboxes .form-check-input:checked + .form-check-label,
     #classCheckboxes .form-check-input:checked + .form-check-label {
         color: #191970;
         font-weight: 500;
     }
-</style> 
+    
+    /* Consistent spacing for labels */
+    .form-check-label {
+        padding-left: 4px;
+    }
+</style>

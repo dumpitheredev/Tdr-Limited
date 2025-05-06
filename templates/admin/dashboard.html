@@ -112,6 +112,11 @@
 
 {% block scripts %}
 <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Admin Dashboard page loaded');
+        console.log('Admin Dashboard initialized successfully');
+    });
+
     // Function to toggle announcement content expansion
     function toggleAnnouncement(id) {
         const element = document.getElementById(id);

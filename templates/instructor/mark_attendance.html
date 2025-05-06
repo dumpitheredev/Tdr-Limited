@@ -41,7 +41,11 @@
             <h3 class="h5 mb-0" style="color: #191970;">
                 <i class="bi bi-people me-2"></i><span id="selected-class-name">Class Name</span> - Attendance
             </h3>
-            <div>
+            <div class="d-flex align-items-center">
+                <div id="network-status" class="me-3 small"></div>
+                <button id="clear-cache-btn" class="btn btn-outline-secondary btn-sm me-2" title="Clear cache to get fresh data">
+                    <i class="bi bi-arrow-clockwise"></i> Clear Cache
+                </button>
                 <button type="button" id="saveAttendanceBtn" class="btn btn-sm" style="background-color: #191970; color: white;">
                     <i class="bi bi-save me-1"></i> Save Attendance
                 </button>
@@ -101,368 +105,42 @@
 <!-- Include toast notification component -->
 {% include "components/toast_notification.html" %}
 
-<!-- Add JavaScript to show table when a class is selected -->
+<!-- Confirmation Modal for Clear Table -->
+<div class="modal fade" id="clearTableModal" tabindex="-1" aria-labelledby="clearTableModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clearTableModalLabel">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center mb-3">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-3" style="font-size: 1.5rem;"></i>
+                    <p class="mb-0">Are you sure you want to clear all attendance data? This will reset all selections.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmClearBtn">Clear Table</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% block scripts %}
+<!-- Include offline database utility -->
+<script src="/offline-db.js"></script>
+<!-- Include the external JavaScript file for mark attendance functionality -->
+<script src="{{ url_for('static', filename='js/pages/instructor-mark-attendance-new.js') }}"></script>
+{% endblock %}
+
+<!-- Add global function for status styling that's called from the JS file -->
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const markAttendanceButtons = document.querySelectorAll('.mark-attendance-btn');
-        const attendanceTableSection = document.getElementById('attendance-table-section');
-        const selectedClassName = document.getElementById('selected-class-name');
-        const attendanceTableBody = document.getElementById('attendanceTableBody');
-        const saveAttendanceBtn = document.getElementById('saveAttendanceBtn');
-        
-        // Toast elements and initialization
-        const statusToast = document.getElementById('statusToast');
-        const toastTitle = document.getElementById('toastTitle');
-        const toastMessage = document.getElementById('toastMessage');
-        const toastIcon = statusToast.querySelector('.toast-header i');
-        const toast = new bootstrap.Toast(statusToast);
-        
-        let selectedClassId = null;
-        let selectedClassNameText = '';
-        
-        // Mock data for students enrolled in each class
-        const classEnrollments = {
-            '1': [ // Engineering Fundamentals
-                { id: 'st89mn', name: 'Michael Chen', profile_img: 'profile.png' },
-                { id: 'st12qw', name: 'Liu Wei', profile_img: 'profile2.png' },
-                { id: 'st45ty', name: 'David Smith', profile_img: 'profile3.png' }
-            ],
-            '2': [ // CAD Design
-                { id: 'st45ty', name: 'David Smith', profile_img: 'profile3.png' },
-                { id: 'st78gh', name: 'Sophie Martin', profile_img: 'profile4.png' },
-                { id: 'st34mm', name: 'Emily Brown', profile_img: 'profile5.png' },
-                { id: 'st67kl', name: 'James Wilson', profile_img: 'profile.png' }
-            ],
-            '3': [ // Materials Science
-                { id: 'st89mn', name: 'Michael Chen', profile_img: 'profile.png' },
-                { id: 'st78gh', name: 'Sophie Martin', profile_img: 'profile4.png' },
-                { id: 'st34mm', name: 'Emily Brown', profile_img: 'profile5.png' },
-                { id: 'st91ab', name: 'Sarah Johnson', profile_img: 'profile2.png' },
-                { id: 'st23cd', name: 'Robert Lee', profile_img: 'profile3.png' }
-            ]
-        };
-        
-        markAttendanceButtons.forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                // Get the class ID and name from the button
-                selectedClassId = this.dataset.classId;
-                selectedClassNameText = this.dataset.className;
-                selectedClassName.textContent = selectedClassNameText;
-                
-                // Show the attendance table
-                attendanceTableSection.style.display = 'block';
-                
-                // Load students for this class
-                loadStudentsForClass(selectedClassId);
-                
-                // Scroll to the table
-                attendanceTableSection.scrollIntoView({ behavior: 'smooth' });
-            });
-        });
-        
-        function loadStudentsForClass(classId) {
-            // Clear the table first
-            attendanceTableBody.innerHTML = '';
-            
-            // Get students enrolled in this class
-            const students = classEnrollments[classId] || [];
-            
-            if (students.length === 0) {
-                // No students enrolled
-                const noStudentsRow = document.createElement('tr');
-                noStudentsRow.innerHTML = `
-                    <td colspan="3" class="text-center py-4">
-                        <p class="text-muted mb-0">No students enrolled in this class.</p>
-                    </td>
-                `;
-                attendanceTableBody.appendChild(noStudentsRow);
-                return;
-            }
-            
-            // Add student rows
-            students.forEach(student => {
-                const studentRow = document.createElement('tr');
-                studentRow.className = 'student-row';
-                
-                studentRow.innerHTML = `
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <img src="${window.location.origin}/static/images/${student.profile_img}" 
-                                 alt="Profile" class="rounded-circle me-2" width="35" height="35">
-                            <div>
-                                <h6 class="mb-0">${student.name}</h6>
-                                <small class="text-muted">${student.id}</small>
-                            </div>
-                        </div>
-                    </td>
-                    <td>
-                        <select class="form-select form-select-sm attendance-status" 
-                                name="status_${student.id}" 
-                                data-student-id="${student.id}"
-                                aria-label="Attendance status"
-                                onchange="updateStatusStyle(this)">
-                            <option value="" selected disabled>Select status</option>
-                            <option value="Present" class="text-success">Present</option>
-                            <option value="Absent" class="text-danger">Absent</option>
-                            <option value="Late" class="text-warning">Late</option>
-                        </select>
-                    </td>
-                    <td>
-                        <input type="text" class="form-control form-control-sm attendance-comment" 
-                               data-student-id="${student.id}"
-                               name="comment_${student.id}" placeholder="Add comment (optional)">
-                    </td>
-                `;
-                
-                attendanceTableBody.appendChild(studentRow);
-            });
-            
-            // Initialize pagination after loading students
-            initializePagination();
-            
-            // Set up search after loading students
-            const searchInput = document.getElementById('searchInput');
-            searchInput.value = ''; // Clear search on new class selection
-            searchInput.addEventListener('input', filterTable);
-        }
-
-        // Save Attendance button click handler
-        saveAttendanceBtn.addEventListener('click', function() {
-            // Validate that all students have a status selected
-            const statusSelects = document.querySelectorAll('.attendance-status');
-            let allValid = true;
-            let incompleteCount = 0;
-            
-            statusSelects.forEach(select => {
-                if (!select.value) {
-                    select.classList.add('is-invalid');
-                    allValid = false;
-                    incompleteCount++;
-                } else {
-                    select.classList.remove('is-invalid');
-                }
-            });
-            
-            if (!allValid) {
-                // Show error toast
-                toastTitle.textContent = "Error";
-                toastMessage.textContent = `Please select a status for all students. ${incompleteCount} status(es) missing.`;
-                toastIcon.classList.remove('bi-check-circle-fill', 'text-success');
-                toastIcon.classList.add('bi-exclamation-circle-fill', 'text-danger');
-                toast.show();
-                return;
-            }
-            
-            // Collect attendance data
-            const attendanceData = {
-                class_id: selectedClassId,
-                class_name: selectedClassNameText,
-                date: new Date().toISOString().split('T')[0], // Today's date
-                records: []
-            };
-            
-            // Get all student rows
-            document.querySelectorAll('.student-row').forEach(row => {
-                const statusSelect = row.querySelector('.attendance-status');
-                if (statusSelect) {
-                    const studentId = statusSelect.dataset.studentId;
-                    const status = statusSelect.value;
-                    const comment = row.querySelector('.attendance-comment').value;
-                    
-                    attendanceData.records.push({
-                        student_id: studentId,
-                        status: status,
-                        comment: comment
-                    });
-                }
-            });
-            
-            // Send data to server
-            console.log("Sending attendance data:", attendanceData);
-            
-            // Simulate API call with a timeout (replace with actual fetch in production)
-            setTimeout(() => {
-                // Show success toast with class name
-                toastTitle.textContent = "Success";
-                toastMessage.textContent = `Attendance for ${selectedClassNameText} has been successfully saved.`;
-                toastIcon.classList.remove('bi-exclamation-circle-fill', 'text-danger');
-                toastIcon.classList.add('bi-check-circle-fill', 'text-success');
-                toast.show();
-                
-                // Reset all dropdowns to make them read-only (simulation of saved state)
-                statusSelects.forEach(select => {
-                    select.disabled = true;
-                });
-                
-                // Disable all comment inputs
-                document.querySelectorAll('.attendance-comment').forEach(input => {
-                    input.disabled = true;
-                });
-                
-                // Change save button to indicate saved state
-                saveAttendanceBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Saved';
-                saveAttendanceBtn.disabled = true;
-                
-            }, 1000);
-            
-            /* 
-            // Actual implementation would use fetch API
-            fetch('/api/save-attendance', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(attendanceData),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Show success toast with class name
-                    toastTitle.textContent = "Success";
-                    toastMessage.textContent = `Attendance for ${selectedClassNameText} has been successfully saved.`;
-                    toastIcon.classList.remove('bi-exclamation-circle-fill', 'text-danger');
-                    toastIcon.classList.add('bi-check-circle-fill', 'text-success');
-                    toast.show();
-                } else {
-                    // Show error toast
-                    toastTitle.textContent = "Error";
-                    toastMessage.textContent = data.message || "Failed to save attendance. Please try again.";
-                    toastIcon.classList.remove('bi-check-circle-fill', 'text-success');
-                    toastIcon.classList.add('bi-exclamation-circle-fill', 'text-danger');
-                    toast.show();
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                // Show error toast
-                toastTitle.textContent = "Error";
-                toastMessage.textContent = "Network error. Please try again.";
-                toastIcon.classList.remove('bi-check-circle-fill', 'text-success');
-                toastIcon.classList.add('bi-exclamation-circle-fill', 'text-danger');
-                toast.show();
-            });
-            */
-        });
-
-        // Search functionality
-        function filterTable() {
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-            const tableRows = document.querySelectorAll('.student-row');
-            let visibleCount = 0;
-            
-            tableRows.forEach(row => {
-                const studentName = row.querySelector('h6').textContent.toLowerCase();
-                const studentId = row.querySelector('small').textContent.toLowerCase();
-                
-                const matchesSearch = studentName.includes(searchTerm) || 
-                                     studentId.includes(searchTerm);
-                
-                // Mark as filtered for pagination use
-                if (matchesSearch) {
-                    visibleCount++;
-                    row.classList.remove('d-none');
-                } else {
-                    row.classList.add('d-none');
-                }
-            });
-            
-            // Reset to first page when searching
-            currentPage = 1;
-            updatePagination();
-        }
-        
-        // Pagination functionality
-        const rowsPerPage = document.getElementById('rowsPerPage');
-        const prevPageBtn = document.getElementById('prevPage');
-        const nextPageBtn = document.getElementById('nextPage');
-        const paginationInfo = document.getElementById('paginationInfo');
-        
-        let currentPage = 1;
-        
-        function initializePagination() {
-            // Reset page
-            currentPage = 1;
-            
-            // Remove existing event listeners and add new ones
-            rowsPerPage.removeEventListener('change', handleRowsPerPageChange);
-            prevPageBtn.removeEventListener('click', handlePrevPage);
-            nextPageBtn.removeEventListener('click', handleNextPage);
-            
-            rowsPerPage.addEventListener('change', handleRowsPerPageChange);
-            prevPageBtn.addEventListener('click', handlePrevPage);
-            nextPageBtn.addEventListener('click', handleNextPage);
-            
-            updatePagination();
-        }
-        
-        function handleRowsPerPageChange() {
-            currentPage = 1;
-            updatePagination();
-        }
-        
-        function handlePrevPage() {
-            if (currentPage > 1) {
-                currentPage--;
-                updatePagination();
-            }
-        }
-        
-        function handleNextPage() {
-            const totalPages = Math.ceil(getVisibleRows().length / parseInt(rowsPerPage.value));
-            if (currentPage < totalPages) {
-                currentPage++;
-                updatePagination();
-            }
-        }
-        
-        function getVisibleRows() {
-            return Array.from(document.querySelectorAll('.student-row')).filter(row => !row.classList.contains('d-none'));
-        }
-        
-        function updatePagination() {
-            const visibleRows = getVisibleRows();
-            const rowsPerPageValue = parseInt(rowsPerPage.value);
-            const totalRows = visibleRows.length;
-            const totalPages = Math.ceil(totalRows / rowsPerPageValue);
-            
-            // Update pagination buttons state
-            prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage === totalPages || totalRows === 0;
-            
-            // Show/hide rows based on current page
-            const startIdx = (currentPage - 1) * rowsPerPageValue;
-            const endIdx = Math.min(startIdx + rowsPerPageValue, totalRows);
-            
-            // First hide all rows that should be visible
-            visibleRows.forEach(row => {
-                row.style.display = 'none';
-            });
-            
-            // Show only the rows for current page
-            visibleRows.forEach((row, index) => {
-                if (index >= startIdx && index < endIdx) {
-                    row.style.display = '';
-                }
-            });
-            
-            // Special case: If no rows to display after filtering
-            if (totalRows === 0) {
-                paginationInfo.textContent = `0 of 0`;
-            } else {
-                // Update pagination info text
-                paginationInfo.textContent = `${startIdx + 1}-${endIdx} of ${totalRows}`;
-            }
-        }
-    });
-    
-    // Function to update status select styling
     function updateStatusStyle(select) {
-        // Remove all previous styling classes
+        // Remove any existing classes
         select.classList.remove('text-success', 'text-danger', 'text-warning', 'border-success', 'border-danger', 'border-warning');
         
-        // Add appropriate styling based on selected value
+        // Add appropriate class based on selection
         switch(select.value) {
             case 'Present':
                 select.classList.add('text-success', 'border-success');
@@ -476,5 +154,5 @@
         }
     }
 </script>
-{% endblock %}
-{% endblock %} 
+
+{% endblock %} <!-- End of content block -->

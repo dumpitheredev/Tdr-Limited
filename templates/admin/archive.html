@@ -2,6 +2,12 @@
 {% block title %}View Archive{% endblock %}
 {% block active_page %}view_archive{% endblock %}
 
+{% block head %}
+{{ super() }}
+<!-- Add CSRF token for form submissions -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
 {% block header %}
 <h1 style="color: #191970;">System Archives</h1>
 {% endblock %}

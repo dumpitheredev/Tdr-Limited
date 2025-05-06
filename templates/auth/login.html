@@ -28,7 +28,8 @@
                     </div>
                     {% endif %}
                     
-                    <form action="{{ url_for('auth.login') }}" method="post">
+                    <form action="{{ url_for('auth.login') }}" method="post" class="needs-validation" id="loginForm" novalidate>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3">
                             <label for="email" class="form-label">Email Address</label>
                             <input type="email" class="form-control" id="email" name="email" required>
@@ -70,16 +71,24 @@
     document.addEventListener('DOMContentLoaded', function() {
         const togglePassword = document.getElementById('togglePassword');
         const password = document.getElementById('password');
+        const loginForm = document.getElementById('loginForm');
         
-        togglePassword.addEventListener('click', function() {
-            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
-            password.setAttribute('type', type);
-            
-            // Toggle eye icon
-            const icon = this.querySelector('i');
-            icon.classList.toggle('bi-eye');
-            icon.classList.toggle('bi-eye-slash');
-        });
+        // Handle password visibility toggle
+        if (togglePassword) {
+            togglePassword.addEventListener('click', function() {
+                const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+                password.setAttribute('type', type);
+                
+                // Toggle eye icon
+                const icon = this.querySelector('i');
+                icon.classList.toggle('bi-eye');
+                icon.classList.toggle('bi-eye-slash');
+            });
+        }
+        
+        // We're going to use the standard form submission instead of fetch API
+        // This ensures proper handling of redirects and error messages
+        // The form will submit normally with the CSRF token included
     });
 </script>
-{% endblock %} 
+{% endblock %}

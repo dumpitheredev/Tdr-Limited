@@ -205,7 +205,18 @@
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="{{ url_for('static', filename='js/pages/instructor-dashboard.js') }}"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+// Create a global variable to track initialization
+if (window.dashboardPageInitialized) {
+    // Skip initialization if already done
+} else {
+    // Set the flag and log the initial load
+    window.dashboardPageInitialized = true;
+    console.log('Instructor Dashboard page loaded');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Log successful initialization
+    console.log('Instructor Dashboard initialized successfully');
         // Initialize any announcement content that's too long
         document.querySelectorAll('.announcement-content').forEach(function(el) {
             if (el.scrollHeight > el.clientHeight) {

@@ -2,22 +2,47 @@
 {% block title %}Instructor Profile{% endblock %}
 
 {% block content %}
+<!-- Include Toast Notification Component -->
+{% include 'components/toast_notification.html' %}
+
+<!-- Hidden JSON data for flash messages -->
+<script id="flash-messages-data" type="application/json">
+[
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            {"category": "{{ category }}", "message": "{{ message|escape }}"}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+]
+</script>
+
 <div class="container-fluid">
     <div class="row">
         <!-- Profile Information Card -->
         <div class="col-lg-8 mb-4">
             <div class="card border-0 shadow-sm">
-
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h3 class="h5 mb-0" style="color: #191970;">
+                        <i class="bi bi-person-circle me-2"></i>Profile Information
+                    </h3>
+                </div>
                 <div class="card-body">
-                    <form id="profileForm" method="post" action="{{ url_for('instructor.instructor_profile') }}">
+                    <form id="profileForm" method="post" action="{{ url_for('instructor.update_profile') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="form_type" value="profile">
                         <div class="row mb-4">
                             <div class="col-md-4 text-center mb-4 mb-md-0">
                                 <div class="position-relative mx-auto" style="width: 150px; height: 150px;">
-                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
+                                    <img src="{{ url_for('static', filename='images/' ~ (instructor.profile_img if instructor.profile_img else 'profile.png')) }}" 
                                          alt="Profile Photo" 
                                          class="rounded-circle img-thumbnail w-100 h-100"
                                          style="object-fit: cover;">
-                                    <button type="button" class="btn btn-sm position-absolute bottom-0 end-0 bg-white rounded-circle p-1" style="color: #191970;">
+                                    <button type="button" class="btn btn-sm position-absolute bottom-0 end-0 bg-white rounded-circle p-1" 
+                                            style="color: #191970;"
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#changeProfilePictureModal">
                                         <i class="bi bi-camera-fill"></i>
                                     </button>
                                 </div>
@@ -38,28 +63,31 @@
                                     <label for="email" class="form-label">Email Address</label>
                                     <input type="email" class="form-control" id="email" name="email" value="{{ instructor.email }}">
                                 </div>
-                                <div class="mb-3">
-                                    <label for="phone" class="form-label">Phone Number</label>
-                                    <input type="tel" class="form-control" id="phone" name="phone" value="{{ instructor.phone }}">
-                                </div>
                             </div>
                         </div>
                         
                         <h4 class="h6 mb-3" style="color: #191970;">Professional Information</h4>
                         <div class="mb-3">
+                            <label for="department" class="form-label">Department</label>
+                            <input type="text" class="form-control" id="department" name="department" value="{{ instructor.department or '' }}">
+                        </div>
+                        
+                        <div class="mb-3">
                             <label for="qualification" class="form-label">Qualifications</label>
-                            <input type="text" class="form-control" id="qualification" name="qualification" value="{{ instructor.qualification }}">
+                            <input type="text" class="form-control" id="qualification" name="qualification" value="{{ instructor.qualification or '' }}">
                         </div>
                         
                         <div class="mb-3">
                             <label for="specialization" class="form-label">Specialization</label>
-                            <input type="text" class="form-control" id="specialization" name="specialization" value="{{ instructor.specialization }}">
+                            <input type="text" class="form-control" id="specialization" name="specialization" value="{{ instructor.specialization or '' }}">
                         </div>
                         
+                        {% if instructor.last_login %}
                         <div class="mb-3">
-                            <label for="bio" class="form-label">Professional Bio</label>
-                            <textarea class="form-control" id="bio" name="bio" rows="4">{{ instructor.bio }}</textarea>
+                            <label class="form-label">Last Login</label>
+                            <p class="form-control-static">{{ instructor.last_login.strftime('%Y-%m-%d %H:%M:%S') }}</p>
                         </div>
+                        {% endif %}
                         
                         <div class="d-flex justify-content-end">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
@@ -80,19 +108,35 @@
                     </h3>
                 </div>
                 <div class="card-body">
-                    <form id="passwordForm" method="post" action="{{ url_for('instructor.instructor_profile') }}">
+                    {% if change_password %}
+                    <div class="alert alert-warning mb-3">
+                        <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Password Change Required</h5>
+                        <p>This is your first login. You must change your password before continuing to use the system.</p>
+                    </div>
+                    {% endif %}
+                    <form id="passwordForm" method="post" action="{{ url_for('instructor.update_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="form_type" value="password">
+                        <!-- Visible but visually hidden username field for accessibility -->
+                        <div class="visually-hidden" aria-hidden="true">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" name="username" autocomplete="username" value="{{ instructor.email }}">
+                        </div>
                         <div class="mb-3">
                             <label for="currentPassword" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="currentPassword" name="currentPassword">
+                            <input type="password" class="form-control" id="currentPassword" name="currentPassword" {% if not change_password %}required{% endif %} autocomplete="current-password" {% if change_password %}disabled{% endif %}>
+                            {% if change_password %}
+                            <input type="hidden" name="currentPassword" value="first-login-bypass">
+                            <div class="form-text text-info">Current password not required for first-time login</div>
+                            {% endif %}
                         </div>
                         <div class="mb-3">
                             <label for="newPassword" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="newPassword" name="newPassword">
+                            <input type="password" class="form-control" id="newPassword" name="newPassword" required autocomplete="new-password">
                         </div>
                         <div class="mb-3">
                             <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword">
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
@@ -114,15 +158,28 @@
                     <form id="notificationForm" method="post" action="{{ url_for('instructor.instructor_profile') }}">
                         <input type="hidden" name="form_type" value="notifications">
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" checked>
+                            <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" 
+                                   {% if instructor.settings.email_notifications|default(true) %}checked{% endif %}>
                             <label class="form-check-label" for="emailNotifications">Email Notifications</label>
                             <div class="text-muted small">Receive emails about announcements and attendance reminders</div>
                         </div>
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="smsNotifications" name="smsNotifications">
+                            <input class="form-check-input" type="checkbox" id="smsNotifications" name="smsNotifications" 
+                                   {% if instructor.settings.sms_notifications|default(false) %}checked{% endif %}>
                             <label class="form-check-label" for="smsNotifications">SMS Notifications</label>
                             <div class="text-muted small">Receive text messages for urgent updates</div>
                         </div>
+                        
+                        <div class="mb-3">
+                            <label for="notificationFrequency" class="form-label">Notification Frequency</label>
+                            <select class="form-select" id="notificationFrequency" name="notificationFrequency">
+                                <option value="immediate" {% if instructor.settings.notification_frequency|default('immediate') == 'immediate' %}selected{% endif %}>Immediate</option>
+                                <option value="daily" {% if instructor.settings.notification_frequency|default('immediate') == 'daily' %}selected{% endif %}>Daily Digest</option>
+                                <option value="weekly" {% if instructor.settings.notification_frequency|default('immediate') == 'weekly' %}selected{% endif %}>Weekly Summary</option>
+                            </select>
+                            <div class="text-muted small">How often you want to receive non-urgent notifications</div>
+                        </div>
+                        
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
                                 <i class="bi bi-save me-1"></i> Save Preferences
@@ -134,11 +191,53 @@
         </div>
     </div>
 </div>
+
+<!-- Change Profile Picture Modal -->
+<div class="modal fade" id="changeProfilePictureModal" tabindex="-1" aria-labelledby="changeProfilePictureModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="changeProfilePictureModalLabel">Update Profile Picture</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="profilePictureForm" action="{{ url_for('instructor.upload_profile_picture') }}" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="text-center mb-3">
+                        <img id="profilePreview" src="{{ url_for('static', filename='images/' ~ (instructor.profile_img if instructor.profile_img else 'profile.png')) }}" 
+                             alt="Profile Preview" class="rounded-circle img-thumbnail" style="width: 150px; height: 150px; object-fit: cover;">
+                    </div>
+                    <div class="mb-3">
+                        <label for="profileImage" class="form-label">Choose Image</label>
+                        <input class="form-control" type="file" id="profileImage" name="profileImage" accept="image/*">
+                        <div class="form-text">Recommended size: 300x300 pixels. Max file size: 2MB.</div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
+                            <i class="bi bi-upload me-1"></i> Upload Picture
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// Create a global variable to track initialization
+if (window.profilePageInitialized) {
+    // Skip initialization if already done
+} else {
+    // Set the flag and log the initial load
+    window.profilePageInitialized = true;
+    console.log('Instructor Profile page loaded');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Log successful initialization
+    console.log('Instructor Profile initialized successfully');
     // Form validation for password update
     const passwordForm = document.getElementById('passwordForm');
     if (passwordForm) {
@@ -148,7 +247,55 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (newPass !== confirmPass) {
                 e.preventDefault();
-                alert('New password and confirmation do not match');
+                // Use notification.js functions directly
+                showError('New password and confirmation do not match');
+            }
+        });
+    }
+    
+    // Display flash messages as toast notifications
+    try {
+        const flashMessagesData = document.getElementById('flash-messages-data');
+        if (flashMessagesData) {
+            const messages = JSON.parse(flashMessagesData.textContent);
+            if (messages.length > 0) {
+                messages.forEach(msg => {
+                    const msgCategory = msg.category || 'info';
+                    // Map flash message categories to notification types
+                    switch(msgCategory) {
+                        case 'success':
+                            showSuccess(msg.message);
+                            break;
+                        case 'error':
+                            showError(msg.message);
+                            break;
+                        case 'warning':
+                            showWarning(msg.message);
+                            break;
+                        default:
+                            showInfo(msg.message);
+                            break;
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.error('Error displaying flash messages:', e);
+    }
+    
+    // Profile image preview
+    const profileImage = document.getElementById('profileImage');
+    const profilePreview = document.getElementById('profilePreview');
+    
+    if (profileImage && profilePreview) {
+        profileImage.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    profilePreview.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
             }
         });
     }

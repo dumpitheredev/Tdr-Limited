@@ -156,8 +156,185 @@
 </div>
 {% endblock %}
 
+<!-- Password Display Modal -->
+<div class="modal fade" id="passwordDisplayModal" tabindex="-1" aria-labelledby="passwordDisplayModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background-color: #191970;">
+                <h5 class="modal-title" id="passwordDisplayModalLabel">Temporary Password</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Important:</strong> This is the only time this password will be shown. Please copy it now.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User</label>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-person-fill me-2"></i>
+                        <span id="passwordUserName" class="fw-bold"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User ID</label>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-person-badge me-2"></i>
+                        <span id="passwordUserId" class="fw-bold"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Temporary Password</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="tempPasswordField" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="copyPasswordBtn">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                    </div>
+                    <small class="text-muted mt-2">The user will be required to change this password on first login.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn text-white" id="passwordDoneBtn" data-bs-dismiss="modal" style="background-color: #191970;">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% block modal_scripts %}
 <script>
+// Function to show the password modal with the temporary password
+function showPasswordModal(userName, userId, tempPassword) {
+    try {
+        // Create the modal if it doesn't exist
+        let modalElement = document.getElementById('passwordDisplayModal');
+        if (!modalElement) {
+            // Create the modal dynamically if it doesn't exist
+            const modalHTML = `
+            <div class="modal fade" id="passwordDisplayModal" tabindex="-1" aria-labelledby="passwordDisplayModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header text-white" style="background-color: #191970;">
+                            <h5 class="modal-title" id="passwordDisplayModalLabel">Temporary Password</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <strong>Important:</strong> This is the only time this password will be shown. Please copy it now.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">User</label>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-person-fill me-2"></i>
+                                    <span id="passwordUserName" class="fw-bold"></span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">User ID</label>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-person-badge me-2"></i>
+                                    <span id="passwordUserId" class="fw-bold"></span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Temporary Password</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control font-monospace" id="tempPasswordField" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" id="copyPasswordBtn">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                                <small class="text-muted mt-2">The user will be required to change this password on first login.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn text-white" id="passwordDoneBtn" data-bs-dismiss="modal" style="background-color: #191970;">Done</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `;
+            
+            // Append the modal to the body
+            const modalContainer = document.createElement('div');
+            modalContainer.innerHTML = modalHTML;
+            document.body.appendChild(modalContainer.firstElementChild);
+            
+            // Get the newly created modal element
+            modalElement = document.getElementById('passwordDisplayModal');
+        }
+        
+        // Now set the values in the modal (after ensuring it exists)
+        const nameElement = document.getElementById('passwordUserName');
+        const idElement = document.getElementById('passwordUserId');
+        const passwordField = document.getElementById('tempPasswordField');
+        
+        if (nameElement) nameElement.textContent = userName;
+        if (idElement) idElement.textContent = userId;
+        if (passwordField) passwordField.value = tempPassword;
+        
+        // Show the modal
+        const passwordModal = new bootstrap.Modal(modalElement);
+        passwordModal.show();
+        
+        // Handle copy button
+        const copyBtn = document.getElementById('copyPasswordBtn');
+        if (copyBtn) {
+            // Remove previous event listeners to avoid duplicates
+            const newCopyBtn = copyBtn.cloneNode(true);
+            copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+            
+            newCopyBtn.addEventListener('click', function() {
+                const field = document.getElementById('tempPasswordField');
+                if (field) {
+                    field.select();
+                    document.execCommand('copy');
+                    
+                    // Show toast notification
+                    if (typeof showToast === 'function') {
+                        showToast('Success', 'Password copied to clipboard', 'success');
+                    }
+                }
+            });
+        }
+        
+        // Handle done button to reload the page
+        const doneBtn = document.getElementById('passwordDoneBtn');
+        if (doneBtn) {
+            // Remove previous event listeners to avoid duplicates
+            const newDoneBtn = doneBtn.cloneNode(true);
+            doneBtn.parentNode.replaceChild(newDoneBtn, doneBtn);
+            
+            newDoneBtn.addEventListener('click', function() {
+                // Reload the page after dismissing the modal
+                if (window.location.pathname.includes('user-management') || 
+                    window.location.pathname.includes('student-management') || 
+                    window.location.pathname.includes('instructor-management')) {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                }
+            });
+        }
+        
+        // Show the temporary password in a toast as well, in case the modal has issues
+        if (typeof showToast === 'function') {
+            showToast('Temporary Password', `User: ${userName} (${userId})<br>Password: <strong>${tempPassword}</strong>`, 'info', 0);
+        }
+    } catch (error) {
+        console.error('Error showing password modal:', error);
+        
+        // Fallback: Show the password in a toast notification
+        if (typeof showToast === 'function') {
+            showToast('Temporary Password', `User: ${userName} (${userId})<br>Password: <strong>${tempPassword}</strong>`, 'info', 0);
+        } else {
+            // Last resort: alert
+            alert(`Temporary password for ${userName} (${userId}): ${tempPassword}`);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const roleSelect = document.getElementById('userRole');
     const userIdField = document.getElementById('userId');
@@ -331,11 +508,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        if (!csrfToken) {
+            console.error('CSRF token not found');
+            if (typeof showToast === 'function') {
+                showToast('Error', 'CSRF token not found. Please refresh the page and try again.', 'error');
+            }
+            createButton.disabled = false;
+            createButton.innerHTML = 'Create User';
+            return;
+        }
+        
         // Send data to API
         fetch('/api/users', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify(formData)
         })
@@ -355,6 +546,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 showToast('Success', data.message || 'User created successfully', 'success');
             }
             
+            // Check if we have a temporary password to display
+            if (data.user && data.user.temp_password) {
+                // Display the temporary password in a modal
+                const tempPassword = data.user.temp_password;
+                const userName = `${data.user.first_name} ${data.user.last_name}`;
+                const userId = data.user.id;
+                
+                // Create and show password modal
+                showPasswordModal(userName, userId, tempPassword);
+            } else {
+                console.warn('No temporary password found in response');
+            }
+            
             // Reset the form
             form.reset();
             
@@ -364,14 +568,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 modal.hide();
             }
             
-            // Reload the page to show the new user in the list
-            // Only do this if we're on a user management page
-            if (window.location.pathname.includes('user-management') || 
-                window.location.pathname.includes('student-management') || 
-                window.location.pathname.includes('instructor-management')) {
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1000);
+            // Don't reload the page immediately if we're showing the password
+            if (!data.user || !data.user.temp_password) {
+                // Reload the page to show the new user in the list
+                // Only do this if we're on a user management page
+                if (window.location.pathname.includes('user-management') || 
+                    window.location.pathname.includes('student-management') || 
+                    window.location.pathname.includes('instructor-management')) {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
             }
         })
         .catch(error => {

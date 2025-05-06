@@ -82,8 +82,7 @@
                 </div>
                 <!-- Right side: Add & Export Buttons -->
                 <div class="d-flex gap-2">
-                    <button class="btn btn-outline-primary d-flex align-items-center gap-1"
-                            onclick="exportClassesCSV()"
+                    <button id="exportCsvBtn" class="btn btn-outline-primary d-flex align-items-center gap-1"
                             style="background-color: #191970; color: white;">
                         <i class="bi bi-arrow-up-right"></i>
                         Export CSV
@@ -179,16 +178,23 @@
 
 <!-- Archive Confirmation Modal -->
 <div class="modal fade" id="archiveClassModal" tabindex="-1" aria-labelledby="archiveClassModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="archiveClassModalLabel">Confirm Archive</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p>Are you sure you want to archive this class?</p>
-                <p class="mb-3"><strong>Class:</strong> <span id="archiveClassName"></span></p>
-                <p class="mb-3"><strong>Class ID:</strong> <span id="archiveClassId"></span></p>
+                <div class="mb-4">
+                    <input type="hidden" id="archiveInstructorId" value="">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <strong>Warning:</strong> This will archive the instructor record.
+                    </div>
+                    <p>Are you sure you want to archive this class?</p>
+                    <p class="mb-1"><strong>Class:</strong> <span id="archiveClassName"></span></p>
+                    <p class="mb-0"><strong>Class ID:</strong> <span id="archiveClassId"></span></p>
+                </div>
                 
                 <div class="mb-3">
                     <label for="archiveReason" class="form-label">Reason for archiving</label>
@@ -198,20 +204,16 @@
                         <option value="Low enrollment">Low enrollment</option>
                         <option value="Instructor unavailable">Instructor unavailable</option>
                         <option value="Curriculum change">Curriculum change</option>
-                        <option value="Other">Other</option>
+                        <option value="other">Other (specify)</option>
                     </select>
+                    <div class="mt-2 d-none" id="customReasonContainer">
+                        <input type="text" class="form-control" id="customReason" placeholder="Specify reason">
+                    </div>
                 </div>
-                
-                <div class="mb-3">
-                    <label for="archiveComment" class="form-label">Additional comment (optional)</label>
-                    <textarea class="form-control" id="archiveComment" rows="3" placeholder="Enter any additional information"></textarea>
-                </div>
-                
-                <input type="hidden" id="archiveClassIdInput">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmArchiveClassBtn">Archive</button>
+                <button type="button" class="btn btn-danger" id="confirmArchiveClassBtn">Archive Class</button>
             </div>
         </div>
     </div>

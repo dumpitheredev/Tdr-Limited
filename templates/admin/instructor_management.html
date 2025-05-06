@@ -2,6 +2,12 @@
 
 {% block title %}Instructor Management{% endblock %}
 
+{% block head %}
+{{ super() }}
+<!-- Add CSRF token for form submissions -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
 {% block header_title %}Instructor Management{% endblock %}
 
 {% block content %}

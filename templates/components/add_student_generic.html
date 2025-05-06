@@ -16,6 +16,7 @@
            name="firstName"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">Please enter a first name.</div>
 </div>
 
 <!-- Last Name -->
@@ -27,6 +28,7 @@
            name="lastName"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">Please enter a last name.</div>
 </div>
 
 <!-- Email Address -->
@@ -38,6 +40,7 @@
            name="email"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">Please enter a valid email address.</div>
 </div>
 
 <!-- Confirm Email Address -->
@@ -49,6 +52,29 @@
            name="confirmEmail"
            required
            style="border-radius: 8px; border-color: #E5E7EB;">
+    <div class="invalid-feedback">Email addresses do not match.</div>
+</div>
+
+<!-- Date of Birth -->
+<div class="mb-3">
+    <label for="dateOfBirth" class="form-label fw-medium">Date of Birth</label>
+    <input type="date" 
+           class="form-control" 
+           id="dateOfBirth" 
+           name="dateOfBirth"
+           style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Company Selection -->
+<div class="mb-3">
+    <label for="companyId" class="form-label fw-medium">Company</label>
+    <select class="form-select" 
+            id="companyId" 
+            name="companyId"
+            style="border-radius: 8px; border-color: #E5E7EB;">
+        <option value="">No Company / Individual Student</option>
+        <!-- Companies will be populated dynamically -->
+    </select>
 </div>
 
 <!-- Hidden Role Field -->
@@ -60,19 +86,233 @@
     <input type="text" 
            class="form-control bg-light" 
            id="studentId" 
+           name="studentId"
            value="Auto-generated" 
-           disabled
+           readonly
            style="border-radius: 8px; border-color: #E5E7EB;">
+</div>
+
+<!-- Error Alert (hidden by default) -->
+<div class="alert alert-danger d-none" id="studentFormError" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    <span id="studentFormErrorMessage">Error message will appear here</span>
 </div>
 {% endblock %}
 
+<!-- Password Display Modal -->
+<div class="modal fade" id="passwordDisplayModal" tabindex="-1" aria-labelledby="passwordDisplayModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background-color: #191970;">
+                <h5 class="modal-title" id="passwordDisplayModalLabel">Temporary Password</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Important:</strong> This is the only time this password will be shown. Please copy it now.
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User</label>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-person-fill me-2"></i>
+                        <span id="passwordUserName" class="fw-bold"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User ID</label>
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-person-badge me-2"></i>
+                        <span id="passwordUserId" class="fw-bold"></span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Temporary Password</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="tempPasswordField" readonly>
+                        <button class="btn btn-outline-secondary" type="button" id="copyPasswordBtn">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                    </div>
+                    <small class="text-muted mt-2">The user will be required to change this password on first login.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn text-white" id="passwordDoneBtn" data-bs-dismiss="modal" style="background-color: #191970;">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% block modal_scripts %}
 <script>
+// Function to show the password modal with the temporary password
+function showPasswordModal(userName, userId, tempPassword) {
+    try {
+        // Create the modal if it doesn't exist
+        let modalElement = document.getElementById('passwordDisplayModal');
+        if (!modalElement) {
+            // Create the modal dynamically if it doesn't exist
+            const modalHTML = `
+            <div class="modal fade" id="passwordDisplayModal" tabindex="-1" aria-labelledby="passwordDisplayModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header text-white" style="background-color: #191970;">
+                            <h5 class="modal-title" id="passwordDisplayModalLabel">Temporary Password</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                <strong>Important:</strong> This is the only time this password will be shown. Please copy it now.
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">User</label>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-person-fill me-2"></i>
+                                    <span id="passwordUserName" class="fw-bold"></span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">User ID</label>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-person-badge me-2"></i>
+                                    <span id="passwordUserId" class="fw-bold"></span>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Temporary Password</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control font-monospace" id="tempPasswordField" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" id="copyPasswordBtn">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                                <small class="text-muted mt-2">The user will be required to change this password on first login.</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn text-white" id="passwordDoneBtn" data-bs-dismiss="modal" style="background-color: #191970;">Done</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `;
+            
+            // Append the modal to the body
+            const modalContainer = document.createElement('div');
+            modalContainer.innerHTML = modalHTML;
+            document.body.appendChild(modalContainer.firstElementChild);
+            
+            // Get the newly created modal element
+            modalElement = document.getElementById('passwordDisplayModal');
+        }
+        
+        // Now set the values in the modal (after ensuring it exists)
+        const nameElement = document.getElementById('passwordUserName');
+        const idElement = document.getElementById('passwordUserId');
+        const passwordField = document.getElementById('tempPasswordField');
+        
+        if (nameElement) nameElement.textContent = userName;
+        if (idElement) idElement.textContent = userId;
+        if (passwordField) passwordField.value = tempPassword;
+        
+        // Show the modal
+        const passwordModal = new bootstrap.Modal(modalElement);
+        passwordModal.show();
+        
+        // Handle copy button
+        const copyBtn = document.getElementById('copyPasswordBtn');
+        if (copyBtn) {
+            // Remove previous event listeners to avoid duplicates
+            const newCopyBtn = copyBtn.cloneNode(true);
+            copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
+            
+            newCopyBtn.addEventListener('click', function() {
+                const field = document.getElementById('tempPasswordField');
+                if (field) {
+                    field.select();
+                    document.execCommand('copy');
+                    
+                    // Show toast notification
+                    if (typeof showToast === 'function') {
+                        showToast('Success', 'Password copied to clipboard', 'success');
+                    }
+                }
+            });
+        }
+        
+        // Handle done button to reload the page
+        const doneBtn = document.getElementById('passwordDoneBtn');
+        if (doneBtn) {
+            // Remove previous event listeners to avoid duplicates
+            const newDoneBtn = doneBtn.cloneNode(true);
+            doneBtn.parentNode.replaceChild(newDoneBtn, doneBtn);
+            
+            newDoneBtn.addEventListener('click', function() {
+                // Reload the page after dismissing the modal
+                if (window.location.pathname.includes('student-management') || 
+                    window.location.pathname.includes('user-management')) {
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                }
+            });
+        }
+        
+        // Show the temporary password in a toast as well, in case the modal has issues
+        if (typeof showToast === 'function') {
+            showToast('Temporary Password', `User: ${userName} (${userId})<br>Password: <strong>${tempPassword}</strong>`, 'info', 0);
+        }
+    } catch (error) {
+        console.error('Error showing password modal:', error);
+        
+        // Fallback: Show the password in a toast notification
+        if (typeof showToast === 'function') {
+            showToast('Temporary Password', `User: ${userName} (${userId})<br>Password: <strong>${tempPassword}</strong>`, 'info', 0);
+        } else {
+            // Last resort: alert
+            alert(`Temporary password for ${userName} (${userId}): ${tempPassword}`);
+        }
+    }
+}
 document.addEventListener('DOMContentLoaded', function() {
     const studentIdField = document.getElementById('studentId');
-    const prefix = 'st'; // Fixed prefix for students
+    const emailField = document.getElementById('email');
+    const confirmEmailField = document.getElementById('confirmEmail');
+    const firstNameField = document.getElementById('firstName');
+    const lastNameField = document.getElementById('lastName');
+    const companySelect = document.getElementById('companyId');
+    const dateOfBirthField = document.getElementById('dateOfBirth');
+    const errorAlert = document.getElementById('studentFormError');
+    const errorMessage = document.getElementById('studentFormErrorMessage');
     const createButton = document.getElementById('createStudentBtn');
-
+    const prefix = 'st'; // Fixed prefix for students
+    
+    // Function to load companies
+    function loadCompanies() {
+        fetch('/api/companies')
+            .then(response => response.json())
+            .then(companies => {
+                // Clear existing options except the first one
+                companySelect.innerHTML = '<option value="">No Company / Individual Student</option>';
+                
+                // Add company options
+                companies.forEach(company => {
+                    const option = document.createElement('option');
+                    option.value = company.company_id;
+                    option.textContent = company.name;
+                    companySelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading companies:', error);
+            });
+    }
+    
+    // Load companies when the page loads
+    loadCompanies();
+    
     // Function to generate random numbers (2 digits)
     function generateRandomNumbers() {
         return Math.floor(Math.random() * 90 + 10).toString(); // generates 10-99
@@ -93,36 +333,174 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${prefix}${numbers}${letters}`; // e.g., st72zf
     }
 
+    // Clear the form and reset validation
+    function resetForm() {
+        const form = document.getElementById('addStudentForm');
+        form.reset();
+        hideError();
+        
+        // Remove validation classes
+        form.querySelectorAll('.is-invalid').forEach(field => {
+            field.classList.remove('is-invalid');
+        });
+        
+        // Generate new ID when form is reset
+        studentIdField.value = generateStudentId();
+    }
+    
+    // Show error message
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorAlert.classList.remove('d-none');
+    }
+    
+    // Hide error message
+    function hideError() {
+        errorAlert.classList.add('d-none');
+    }
+
     // Generate ID when modal opens
-    studentIdField.value = generateStudentId();
+    document.getElementById('addStudentModal').addEventListener('show.bs.modal', function() {
+        resetForm();
+        studentIdField.value = generateStudentId();
+    });
+    
+    // Validate email format
+    function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+    
+    // Validate form fields
+    function validateForm() {
+        let isValid = true;
+        
+        // Validate first name
+        if (!firstNameField.value.trim()) {
+            firstNameField.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            firstNameField.classList.remove('is-invalid');
+        }
+        
+        // Validate last name
+        if (!lastNameField.value.trim()) {
+            lastNameField.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            lastNameField.classList.remove('is-invalid');
+        }
+        
+        // Validate email format
+        const email = emailField.value.trim();
+        if (!email || !isValidEmail(email)) {
+            emailField.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            emailField.classList.remove('is-invalid');
+        }
+        
+        // Validate email match
+        const confirmEmail = confirmEmailField.value.trim();
+        if (email !== confirmEmail) {
+            confirmEmailField.classList.add('is-invalid');
+            showError('Email addresses do not match');
+            isValid = false;
+        } else {
+            confirmEmailField.classList.remove('is-invalid');
+            hideError();
+        }
+        
+        return isValid;
+    }
 
     // Form submission handler
     const form = document.getElementById('addStudentForm');
     form.addEventListener('submit', function(e) {
         e.preventDefault();
+        hideError();
         
-        // Email validation
-        const email = document.getElementById('email').value.trim();
-        const confirmEmail = document.getElementById('confirmEmail').value.trim();
+        // Validate form inputs
+        if (!validateForm()) {
+            return;
+        }
         
-        // Skip email validation for development/testing
-        // if (email !== confirmEmail) {
-        //     alert('Email addresses do not match!');
-        //     return;
-        // }
-
         // Disable button to indicate processing
         createButton.disabled = true;
         createButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Creating...';
 
-        // Simulate API call with setTimeout (replace with actual API call)
-        setTimeout(function() {
-            // Here you would typically send the data to your backend
-            console.log('Form submitted with ID:', studentIdField.value);
+        // Prepare data for API
+        const formData = {
+            firstName: firstNameField.value.trim(),
+            lastName: lastNameField.value.trim(),
+            email: emailField.value.trim(),
+            userId: studentIdField.value,
+            userRole: 'st' // Use the prefix code that matches the user-management form
+        };
+        
+        // Add optional fields if they have values
+        if (dateOfBirthField.value) {
+            formData.dateOfBirth = dateOfBirthField.value;
+        }
+        
+        // Add company if selected
+        if (companySelect.value) {
+            formData.companyId = companySelect.value;
+        }
+        
+        console.log('Submitting student data:', formData); // Debug log
+        
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        if (!csrfToken) {
+            console.warn('CSRF token not found. Add student request may fail.');
+            showError('CSRF token not found. Please refresh the page and try again.');
+        }
+        
+        // Show processing toast
+        if (typeof showToast === 'function') {
+            showToast('Creating new student account...', 'info');
+        } else if (typeof window.showToast === 'function') {
+            window.showToast('Creating new student account...', 'info');
+        }
+        
+        // Send data to API endpoint
+        fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
+            },
+            credentials: 'same-origin', // Include cookies for authentication
+            body: JSON.stringify(formData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                // Log the full response for debugging
+                console.log('Server response:', response);
+                
+                // Try to get the error message from response
+                return response.text().then(text => {
+                    console.log('Error response text:', text);
+                    // Try to parse as JSON if possible
+                    try {
+                        const data = JSON.parse(text);
+                        throw new Error(data.message || data.error || `Error ${response.status}: ${response.statusText}`);
+                    } catch (e) {
+                        // If can't parse as JSON, use the text or status
+                        throw new Error(text || `Error ${response.status}: ${response.statusText}`);
+                    }
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Student created successfully:', data);
             
-            // Re-enable button
-            createButton.disabled = false;
-            createButton.innerHTML = 'Create Student';
+            // Format student name
+            const studentName = `${formData.firstName} ${formData.lastName}`;
+            const studentId = formData.userId;
             
             // Close the modal
             const modal = bootstrap.Modal.getInstance(document.getElementById('addStudentModal'));
@@ -130,11 +508,82 @@ document.addEventListener('DOMContentLoaded', function() {
                 modal.hide();
             }
             
-            // Show success message (if you have a toast component)
+            // Show success message with student details
+            const successMessage = `Student ${studentName} (${studentId}) created successfully`;
+            
             if (typeof showToast === 'function') {
-                showToast('Success', 'Student created successfully', 'success');
+                showToast(successMessage, 'success');
+            } else if (typeof window.showToast === 'function') {
+                window.showToast(successMessage, 'success');
             }
-        }, 1000); // Simulating a 1-second API call
+            
+            // Check if we have a temporary password to display
+            if (data.user && data.user.temp_password) {
+                // Display the temporary password in a modal
+                const tempPassword = data.user.temp_password;
+                
+                // Create and show password modal
+                showPasswordModal(studentName, studentId, tempPassword);
+            } else {
+                console.warn('No temporary password found in response');
+            }
+            
+            // Don't reload the page immediately if we're showing the password
+            if (!data.user || !data.user.temp_password) {
+                // Refresh the student list to show the new student
+                if (typeof loadStudents === 'function') {
+                    loadStudents().then(() => {
+                        updateTable();
+                        updateCardStatistics();
+                    });
+                } else if (typeof window.loadStudents === 'function') {
+                    window.loadStudents().then(() => {
+                        window.updateTable();
+                        window.updateCardStatistics();
+                    });
+                } else {
+                    // Fallback to page reload if no update functions exist
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error creating student:', error);
+            showError(error.message || 'Failed to create student. Please try again.');
+            
+            // Also show in toast for consistency
+            if (typeof showToast === 'function') {
+                showToast(error.message || 'Failed to create student. Please try again.', 'error');
+            } else if (typeof window.showToast === 'function') {
+                window.showToast(error.message || 'Failed to create student. Please try again.', 'error');
+            }
+        })
+        .finally(() => {
+            // Re-enable button regardless of outcome
+            createButton.disabled = false;
+            createButton.innerHTML = 'Create Student';
+        });
+    });
+    
+    // Email confirmation validation
+    confirmEmailField.addEventListener('input', function() {
+        if (emailField.value !== this.value) {
+            this.classList.add('is-invalid');
+        } else {
+            this.classList.remove('is-invalid');
+            hideError();
+        }
+    });
+    
+    // Real-time validation for other fields
+    [firstNameField, lastNameField, emailField].forEach(field => {
+        field.addEventListener('input', function() {
+            if (this.value.trim()) {
+                this.classList.remove('is-invalid');
+            }
+        });
     });
 });
 </script>

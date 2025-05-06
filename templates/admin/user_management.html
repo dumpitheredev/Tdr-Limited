@@ -1,7 +1,44 @@
+{% from 'components/view_student_modal.html' import view_student_modal %}
+
 {% extends "base/layout.html" %}
 
 {% block title %}User Management{% endblock %}
 {% block active_page %}user_management{% endblock %}
+
+{% block styles %}
+<style>
+    /* Clean attendance percentage styles */
+    #attendancePercentage {
+        font-size: 2rem;
+        font-weight: 600;
+        min-height: 2.5rem;
+    }
+    
+    .attendance-badge {
+        display: block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        margin-bottom: 4px;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    .badge-present {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .badge-absent {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .badge-late {
+        background-color: #ffc107;
+        color: black;
+    }
+</style>
+{% endblock %}
 
 {% block header %}
 <h1 style="color: #191970;">User Management</h1>
@@ -18,7 +55,7 @@
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
                             <h6 class="card-subtitle text-muted mb-1">Total Users</h6>
-                            <h2 class="card-title mb-0 fw-bold" id="totalUsers">{{ total_users }}</h2>
+                            <h2 class="card-title mb-0 fw-bold" id="totalUsers">0</h2>
                         </div>
                         <div class="p-2 bg-primary bg-opacity-10 rounded">
                             <i class="bi bi-people-fill text-primary fs-4"></i>
@@ -35,7 +72,7 @@
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
                             <h6 class="card-subtitle text-muted mb-1">Active Users</h6>
-                            <h2 class="card-title mb-0 fw-bold" id="activeUsers">{{ active_users }}</h2>
+                            <h2 class="card-title mb-0 fw-bold" id="activeUsers">0</h2>
                         </div>
                         <div class="p-2 bg-success bg-opacity-10 rounded">
                             <i class="bi bi-person-check-fill text-success fs-4"></i>
@@ -52,7 +89,7 @@
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
                             <h6 class="card-subtitle text-muted mb-1">Inactive Users</h6>
-                            <h2 class="card-title mb-0 fw-bold" id="inactiveUsers">{{ inactive_users }}</h2>
+                            <h2 class="card-title mb-0 fw-bold" id="inactiveUsers">0</h2>
                         </div>
                         <div class="p-2 bg-danger bg-opacity-10 rounded">
                             <i class="bi bi-person-dash-fill text-danger fs-4"></i>
@@ -122,72 +159,7 @@
                                 </div>
                             </td>
                         </tr>
-                        {% for user in users %}
-                        <tr data-user-role="{{ user.role }}" data-user-id="{{ user.id }}" {% if user.role=='student' %}
-                            data-enrollments="{{ user.enrollments|tojson|safe if user.enrollments else '[]' }}"
-                            data-attendance="{{ user.attendance|tojson|safe if user.attendance else '{\"
-                            present\":0,\"absent\":0}' }}" {% if user.company
-                            %}data-company="{{ user.company|tojson|safe }}" {% endif %} {% elif user.role=='instructor'
-                            %} data-classes="{{ user.classes_taught|tojson|safe if user.classes_taught else '[]' }}" {%
-                            if user.department %}data-department="{{ user.department }}" {% endif %} {% elif
-                            user.role=='admin' %}
-                            data-permissions="{{ user.permissions|tojson|safe if user.permissions else '[]' }}"
-                            data-admin-role="{{ user.admin_role if user.admin_role else 'Administrator' }}" {% endif %}>
-                            <td>
-                                <div class="d-flex align-items-center">
-                                    <img src="{{ url_for('static', filename='images/' + (user.profile_img if user.profile_img else 'profile.png')) }}"
-                                        class="rounded-circle me-3 user-avatar" width="40" height="40"
-                                        alt="{{ user.first_name }} {{ user.last_name }}">
-                                    <div>
-                                        <div class="fw-medium user-name">{{ user.first_name }} {{ user.last_name }}
-                                        </div>
-                                        <div class="text-muted small user-email">{{ user.email }}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="align-middle">
-                                {% if user.role == 'admin' %}
-                                Administrator
-                                {% elif user.role == 'instructor' %}
-                                Instructor
-                                {% elif user.role == 'student' %}
-                                Student
-                                {% else %}
-                                {{ user.role }}
-                                {% endif %}
-                            </td>
-                            <td class="align-middle">
-                                <span
-                                    class="badge user-status {% if user.is_active %}bg-success-subtle text-success{% else %}bg-danger-subtle text-danger{% endif %}">
-                                    {{ 'Active' if user.is_active else 'Inactive' }}
-                                </span>
-                            </td>
-                            <td class="align-middle text-end">
-                                <div class="d-flex gap-2 justify-content-end">
-                                    <button class="btn btn-link p-0" data-user-id="{{ user.id }}"
-                                        data-user-type="{{ user.role }}">
-                                        <i class="bi bi-pencil" style="color: #191970;"></i>
-                                    </button>
-                                    <button class="btn btn-link p-0 view-user-btn" data-user-id="{{ user.id }}"
-                                        data-user-type="{{ user.role }}">
-                                        <i class="bi bi-eye" style="color: #191970;"></i>
-                                    </button>
-                                    <button class="btn btn-link p-0 toggle-status-btn" data-user-id="{{ user.id }}"
-                                        data-user-type="{{ user.role }}"
-                                        data-is-active="{{ user.is_active|string|lower }}"
-                                        title="{{ 'Deactivate User' if user.is_active else 'Activate User' }}"
-                                        data-bs-toggle="tooltip">
-                                        <i
-                                            class="bi bi-toggle-{{ 'on' if user.is_active else 'off' }} {% if user.is_active %}text-success{% else %}text-muted{% endif %}"></i>
-                                    </button>
-                                    <button class="btn btn-link p-0 text-danger delete-user-btn"
-                                        data-user-id="{{ user.id }}" data-user-type="{{ user.role }}">
-                                        <i class="bi bi-archive" style="color: #191970;"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
+                        <!-- Table rows will be populated by JavaScript -->
                     </tbody>
                 </table>
             </div>
@@ -218,21 +190,19 @@
         </div>
 
         {% include 'components/add_user_generic.html' %}
-        {% include 'components/toast_notification.html' %}
         {% include 'components/edit_user_modal.html' %}
         {% include 'components/view_instructor_modal.html' %}
-        {% include 'components/view_student_modal.html' %}
         {% include 'components/view_admin_modal.html' %}
-        {% include 'components/page_info_modal.html' %}
+        {% include 'components/toast_notification.html' %}
+        {{ view_student_modal() }}
 
-        <!-- Archive Confirmation Modal -->
-        <div class="modal fade" id="confirmArchiveModal" tabindex="-1" aria-labelledby="confirmArchiveModalLabel"
-            aria-hidden="true">
+
+        <!-- Archive User Confirmation Modal -->
+        <div class="modal fade" id="confirmArchiveModal" tabindex="-1" aria-labelledby="confirmArchiveModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="confirmArchiveModalLabel" style="color: #191970;">Confirm Archive
-                        </h5>
+                        <h5 class="modal-title" id="confirmArchiveModalLabel" style="color: #191970;">Confirm Archive</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
@@ -241,11 +211,9 @@
                             <i class="bi bi-exclamation-triangle-fill me-2"></i>
                             <strong>Warning:</strong> This will archive the user record.
                         </div>
-                        <p>Are you sure you want to archive this user? Archived users will be removed from the main
-                            view.</p>
+                        <p>Are you sure you want to archive this user? Archived users will be removed from the main view.</p>
                         <p class="mb-0"><strong>User: </strong><span id="archiveUserName">-</span></p>
                         <p class="mb-0"><strong>User ID: </strong><span id="archiveUserIdDisplay">-</span></p>
-
                         <!-- Archive Reason Section -->
                         <div class="mt-3">
                             <label for="archiveReason" class="form-label fw-bold">Archive Reason:</label>
@@ -266,29 +234,53 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-danger" id="confirmArchiveBtn"
-                            onclick="archiveUser()">Archive User</button>
+                        <button type="button" class="btn btn-danger" id="confirmArchiveBtn" onclick="archiveUser()">Archive User</button>
                     </div>
                 </div>
             </div>
         </div>
-        {% endblock %}
-        {% block scripts %}
-        <script>
-            var currentPage = 1;
-            var currentRole = "";
-            var currentSearch = "";
-            var currentPerPage = 5;
-        </script>
-        <!-- Regular script tags without module type -->
-        <script src="{{ url_for('static', filename='js/services/ApiService.js') }}?v={{ now }}"></script>
-        <script src="{{ url_for('static', filename='js/services/UserService.js') }}?v={{ now }}"></script>
+    </div>
+</div>
+{% endblock %}
 
-        <!-- Modal-specific JavaScript files -->
-        <script src="{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now }}"></script>
-        <script src="{{ url_for('static', filename='js/modals/instructor-modal.js') }}?v={{ now }}"></script>
-        <script src="{{ url_for('static', filename='js/modals/admin-modal.js') }}?v={{ now }}"></script>
+{% block scripts %}
+<script>
+    var currentPage = 1;
+    var currentRole = "";
+    var currentSearch = "";
+    var currentPerPage = 5;
+</script>
+<!-- Modal-specific JavaScript files -->
+<script src="{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now }}"></script>
+<script src="{{ url_for('static', filename='js/modals/instructor-modal.js') }}?v={{ now }}"></script>
+<script src="{{ url_for('static', filename='js/modals/admin-modal.js') }}?v={{ now }}"></script>
 
-        <!-- Main user management JavaScript -->
-        <script src="{{ url_for('static', filename='js/pages/user-management.js') }}?v={{ now + 1000 }}"></script>
-        {% endblock %}
+<!-- Main user management JavaScript -->
+<script src="{{ url_for('static', filename='js/pages/user-management.js') }}?v={{ now + 1000 }}"></script>
+
+<!-- Script to ensure modals are properly initialized -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for all scripts to load
+        setTimeout(function() {
+            // Check if required functions are available
+            if (typeof window.showStudentModalView !== 'function') {
+                console.error('Warning: Student modal functions not properly loaded');
+                // Attempt to reload the script
+                var script = document.createElement('script');
+                script.src = "{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now }}&retry=1";
+                document.body.appendChild(script);
+            }
+            
+            // Check if the student modal exists in the DOM
+            if (!document.getElementById('viewStudentModal')) {
+                console.error('Warning: Student modal not found in DOM, rendering it');
+                // Create a container and render the macro content
+                var modalContainer = document.createElement('div');
+                modalContainer.innerHTML = `{% macro render_modal() %}{{ view_student_modal() }}{% endmacro %}{{ render_modal()|safe }}`;
+                document.body.appendChild(modalContainer);
+            }
+        }, 500); // Wait 500ms for scripts to load
+    });
+</script>
+{% endblock %}

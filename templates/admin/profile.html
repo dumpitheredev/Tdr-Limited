@@ -33,6 +33,7 @@
                 </div>
                 <div class="card-body">
                     <form id="profileForm" method="post" action="{{ url_for('admin.admin_profile') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="form_type" value="profile">
                         <div class="row mb-4">
                             <div class="col-md-4 text-center mb-4 mb-md-0">
@@ -112,6 +113,7 @@
         
         <!-- Account Settings Card -->
         <div class="col-lg-4">
+            <!-- Account Settings Card -->
             <div class="card border-0 shadow-sm mb-4">
                 <div class="card-header bg-white py-3">
                     <h3 class="h5 mb-0" style="color: #191970;">
@@ -119,19 +121,35 @@
                     </h3>
                 </div>
                 <div class="card-body">
-                    <form id="passwordForm" method="post" action="{{ url_for('admin.admin_profile') }}">
+                    {% if change_password %}
+                    <div class="alert alert-warning mb-3">
+                        <h5 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Password Change Required</h5>
+                        <p>This is your first login. You must change your password before continuing to use the system.</p>
+                    </div>
+                    {% endif %}
+                    <form id="passwordForm" method="post" action="{{ url_for('admin.update_password') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="form_type" value="password">
+                        <!-- Visible but visually hidden username field for accessibility -->
+                        <div class="visually-hidden" aria-hidden="true">
+                            <label for="username">Username</label>
+                            <input type="text" id="username" name="username" autocomplete="username" value="{{ admin.email }}">
+                        </div>
                         <div class="mb-3">
                             <label for="currentPassword" class="form-label">Current Password</label>
-                            <input type="password" class="form-control" id="currentPassword" name="currentPassword" required>
+                            <input type="password" class="form-control" id="currentPassword" name="currentPassword" {% if not change_password %}required{% endif %} autocomplete="current-password" {% if change_password %}disabled{% endif %}>
+                            {% if change_password %}
+                            <input type="hidden" name="currentPassword" value="first-login-bypass">
+                            <div class="form-text text-info">Current password not required for first-time login</div>
+                            {% endif %}
                         </div>
                         <div class="mb-3">
                             <label for="newPassword" class="form-label">New Password</label>
-                            <input type="password" class="form-control" id="newPassword" name="newPassword" required>
+                            <input type="password" class="form-control" id="newPassword" name="newPassword" required autocomplete="new-password">
                         </div>
                         <div class="mb-3">
                             <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary" style="background-color: #191970; border-color: #191970;">
@@ -151,6 +169,7 @@
                 </div>
                 <div class="card-body">
                     <form id="systemSettingsForm" method="post" action="{{ url_for('admin.admin_profile') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="form_type" value="system_settings">
                         <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" id="emailNotifications" name="emailNotifications" 
@@ -255,6 +274,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="profilePictureForm" method="post" action="{{ url_for('admin.admin_profile') }}" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="form_type" value="profile_picture">
                 <div class="modal-body">
                     <div class="mb-3">
@@ -349,6 +369,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <form method="post" action="{{ url_for('admin.admin_profile') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="form_type" value="clear_schedule">
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-calendar-x me-1"></i> Clear Schedule
@@ -363,6 +384,9 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('Admin Profile page loaded');
+    console.log('Admin Profile initialized successfully');
+    
     // Display toast notification function
     function displayToast(category, message) {
         const toast = document.getElementById('statusToast');

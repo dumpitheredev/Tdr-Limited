@@ -1,23 +1,38 @@
 <!-- Edit User Status Modal -->
 <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="editUserModalLabel">Edit User Status</h5>
+                <h5 class="modal-title" id="editUserModalLabel" style="color: #191970;">Edit User</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label for="userStatusSelect" class="form-label">Status</label>
-                    <select class="form-select" id="userStatusSelect">
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                    </select>
-                </div>
+                <form id="editUserForm" class="needs-validation" novalidate>
+                    <!-- User Info (Read-only) -->
+                    <div class="mb-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <img id="editUserImage" src="/static/images/profile.png" alt="User" class="rounded-circle" width="80" height="80">
+                            <div>
+                                <h5 id="editUserName" class="mb-1">User Name</h5>
+                                <p id="editUserId" class="mb-1 text-muted">User ID</p>
+                                <p id="editUserRole" class="mb-0 text-muted">Role</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="userStatusSelect" class="form-label">Status*</label>
+                        <select class="form-select" id="userStatusSelect" required>
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                        <div class="invalid-feedback">Please select a status</div>
+                    </div>
+                </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveUserStatus()" style="background-color: #191970; border-color: #191970;">Save Changes</button>
+                <button type="button" class="btn btn-primary save-status-btn" id="saveUserStatusBtn" style="background-color: #191970; border-color: #191970;">Save Changes</button>
             </div>
         </div>
     </div>

@@ -7,6 +7,8 @@
             </div>
             <div class="modal-body">
                 <form id="addClassForm" class="needs-validation" novalidate>
+                    <!-- CSRF Token -->
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <!-- Class Name -->
                     <div class="mb-3">
                         <label for="className" class="form-label">Class Name*</label>

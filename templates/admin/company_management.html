@@ -7,6 +7,12 @@
 
 {% block title %}Company Management{% endblock %}
 
+{% block head %}
+{{ super() }}
+<!-- Add CSRF token for form submissions -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
 {% block active_page %}company_management{% endblock %}
 
 {% block header_title %}Company Management{% endblock %}
@@ -120,21 +126,28 @@
                                     <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <!-- Rows will be populated here -->
+                            <tbody id="companyTableBody">
+                                <!-- Table data will be loaded by JavaScript -->
+                                <tr>
+                                    <td colspan="7" class="text-center py-4">
+                                        <div class="d-flex flex-column align-items-center">
+                                            <div class="spinner-border text-primary" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <p class="text-muted mt-2 mb-0">Loading company data...</p>
+                                        </div>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </div>
-
                     <!-- Pagination Controls -->
                     <div class="d-flex align-items-center gap-3 mt-3">
                         <div class="d-flex align-items-center gap-2">
                             <span class="text-body-secondary">Show rows per page:</span>
                             <select id="rowsPerPage" class="form-select form-select-sm" style="width: 80px;">
-                                <option value="5">5</option>
-                                <option value="10" selected>10</option>
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
                                 <option value="25">25</option>
                                 <option value="50">50</option>
                             </select>

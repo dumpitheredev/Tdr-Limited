@@ -3,6 +3,8 @@
 {% block active_page %}enrollment_management{% endblock %}
 
 {% block styles %}
+<!-- CSRF Token for API requests -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <!-- Select2 CSS -->
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
@@ -94,45 +96,15 @@
                         </tr>
                     </thead>
                     <tbody id="enrolmentTableBody">
-                        {% for enrolment in enrolments %}
+                        <!-- Table content will be populated by JavaScript -->
                         <tr>
-                            <td>
-                                <div class="d-flex align-items-center">
-                                    <img src="{{ url_for('static', filename='images/profile.png') }}" 
-                                         class="rounded-circle me-3" 
-                                         width="40" 
-                                         height="40"
-                                         alt="{{ enrolment.student.name }}">
-                                    <div>
-                                        <div class="fw-medium">{{ enrolment.student.name }}</div>
-                                        <div class="text-muted small">{{ enrolment.student.user_id }}</div>
-                                    </div>
+                            <td colspan="5" class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
                                 </div>
-                            </td>
-                            <td>{{ enrolment.classes|length }} Classes</td>
-                            <td>{{ enrolment.enrollment_date }}</td>
-                            <td>
-                                <span class="badge {% if enrolment.student.status == 'Active' %}bg-success-subtle text-success
-                                          {% elif enrolment.student.status == 'Inactive' %}bg-danger-subtle text-danger
-                                          {% else %}bg-warning-subtle text-warning{% endif %}">
-                                    {{ enrolment.student.status }}
-                                </span>
-                            </td>
-                            <td class="text-end">
-                                {% if enrolment.status == 'Pending' %}
-                                <!-- Approval button removed as requested -->
-                                {% endif %}
-                                <button class="btn btn-sm btn-link text-muted" 
-                                        onclick="viewEnrolment('{{ enrolment.student.user_id }}')">
-                                        <i class="bi bi-eye" style="color: #191970;"></i>
-                                </button>
-                                <button class="btn btn-sm btn-link text-muted" 
-                                        onclick="editEnrolment('{{ enrolment.student.user_id }}')">
-                                        <i class="bi bi-pencil" style="color: #191970;"></i>
-                                </button>
+                                <p class="mt-2">Loading enrollment data...</p>
                             </td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
             </div>

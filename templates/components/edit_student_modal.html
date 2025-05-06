@@ -1,4 +1,4 @@
-<!-- Edit Student Status Modal -->
+<!-- Edit Student Modal -->
 <div class="modal fade" id="editStudentModal" tabindex="-1" aria-labelledby="editStudentModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -7,14 +7,25 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label for="studentStatusSelect" class="form-label">Status</label>
-                    <select class="form-select" id="studentStatusSelect">
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                        <option value="Completed">Completed</option>
-                    </select>
-                </div>
+                <form id="editStudentForm">
+                    <!-- Student Header Section -->
+                    <div class="d-flex align-items-center gap-3 mb-4">
+                        <img id="editStudentImage" src="/static/images/profile.png" alt="Student" 
+                             class="rounded-circle" width="64" height="64">
+                        <div>
+                            <h5 id="editStudentName" class="mb-0" style="color: #191970;">Student Name</h5>
+                            <p class="text-muted mb-0">Student ID: <span id="editStudentId"></span></p>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="studentStatusSelect" class="form-label">Status</label>
+                        <select class="form-select" id="studentStatusSelect">
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>                    
+                        </select>
+                    </div>
+                </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

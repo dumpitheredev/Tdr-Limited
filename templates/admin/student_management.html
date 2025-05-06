@@ -1,10 +1,21 @@
+{% from 'components/view_student_modal.html' import view_student_modal %}
+{% from 'components/attendance_table.html' import attendance_table with context %}
+
 {% extends "base/layout.html" %}
 
 {% block title %}Student Management{% endblock %}
 
+{% block head %}
+{{ super() }}
+<!-- Add CSRF token for form submissions -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+{% endblock %}
+
 {% block header_title %}Student Management{% endblock %}
 
 {% block content %}
+    <!-- Include Toast Notification Component -->
+    {% include 'components/toast_notification.html' %}
 
     <!-- Stats Cards -->
     <div class="row g-3 mb-4">
@@ -161,7 +172,7 @@
 </div>
 
 {% include 'components/add_student_generic.html' %}
-{% include 'components/view_student_modal.html' %}
+{{ view_student_modal() }}
 {% include 'components/edit_student_modal.html' %}
 {% include 'components/toast_notification.html' %}
 
@@ -215,7 +226,55 @@
     var currentPage = 1;
     var currentStatus = "";
     var currentPerPage = 5;
+    
+    // Create a global flag to track if attendance-helper.js is already loaded
+    window.attendanceHelperLoaded = window.attendanceHelperLoaded || false;
 </script>
-<script src="{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now|default('') }}"></script>
-<script src="{{ url_for('static', filename='js/pages/student-management.js') }}?v={{ now|default('') }}"></script>
+
+{# Load helper scripts first - only if not already loaded #}
+<script>
+    if (!window.attendanceHelperLoaded) {
+        // console.log('Loading attendance-helper.js');
+        var helperScript = document.createElement('script');
+        helperScript.src = "{{ url_for('static', filename='js/helpers/attendance-helper.js') }}?v={{ now|default('') }}";
+        helperScript.onload = function() {
+            window.attendanceHelperLoaded = true;
+            console.log('attendance-helper.js loaded successfully');
+        };
+        document.head.appendChild(helperScript);
+    } else {
+        console.log('attendance-helper.js already loaded, skipping');
+    }
+</script>
+
+{# Load student-modal with defer #}
+<script src="{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now|default('') }}" defer></script>
+
+{# Load student-management last with defer #}
+<script src="{{ url_for('static', filename='js/pages/student-management.js') }}?v={{ now|default('') }}" defer></script>
+
+{# Add a script to check if all dependencies are loaded and handle fallbacks #}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Wait for all scripts to load
+        setTimeout(function() {
+            // Check if required functions are available
+            if (typeof window.showStudentModalView !== 'function') {
+                console.error('Warning: Student modal functions not properly loaded');
+                // Attempt to reload the script
+                var script = document.createElement('script');
+                script.src = "{{ url_for('static', filename='js/modals/student-modal.js') }}?v={{ now|default('') }}&retry=1";
+                document.body.appendChild(script);
+            }
+            
+            // Check if student management is initialized
+            if (typeof window.initStudentManagement === 'function' && 
+                !document.body.getAttribute('data-student-management-initialized')) {
+                // Don't log initialization to console - just do it silently
+                window.initStudentManagement();
+                document.body.setAttribute('data-student-management-initialized', 'true');
+            }
+        }, 500); // Wait 500ms for scripts to load
+    });
+</script>
 {% endblock %}
