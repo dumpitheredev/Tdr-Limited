@@ -8,8 +8,8 @@ let currentPageState = {
     statusFilter: ''
 };
 
-// Attendance table pagination state
-let attendancePageState = {
+// Attendance table pagination state - renamed to avoid conflicts with attendance-helper.js
+let classAttendancePageState = {
     page: 1,
     perPage: 5,
     totalStudents: 0
@@ -21,53 +21,140 @@ let currentEditingClass = null;
 let currentAttendanceData = [];
 
 // Function to export classes to CSV
-async function exportClassesCSV() {
+function exportClassesCSV() {
+    // Get the export button and store its original text
+    const exportButton = document.getElementById('exportCsvBtn');
+    if (!exportButton) return;
+    
+    const originalButtonText = exportButton.innerHTML;
+    
+    // Disable the button and show loading state
+    exportButton.disabled = true;
+    exportButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Exporting...';
+    
     try {
-        // Show a loading indicator or toast
-        showToast('Info', 'Preparing CSV export...', 'info');
-    
-    // Get current filters
-    const status = document.getElementById('statusFilter')?.value || '';
-    const search = document.getElementById('searchInput')?.value || '';
-    
-        // Build the URL with query parameters
-        let url = '/api/classes/export-csv';
-        const params = new URLSearchParams();
-        if (status) params.append('status', status);
-        if (search) params.append('search', search);
+        // Get current filters
+        const status = document.getElementById('statusFilter')?.value || '';
+        const search = document.getElementById('searchInput')?.value || '';
         
-        // Add query params if any exist
-        if (params.toString()) {
-            url += '?' + params.toString();
-        }
+        // Show processing toast
+        showToast('Processing', 'Preparing export, please wait...', 'info');
         
-        // Use fetch API to get the CSV data
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-            throw new Error(`Export failed with status: ${response.status}`);
-        }
-        
-        // Get the blob from the response
-        const blob = await response.blob();
-        
-        // Create a download link and trigger it
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const filename = `class-data-${new Date().toISOString().split('T')[0]}.csv`;
-        
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-        
-        // Clean up
-        window.URL.revokeObjectURL(downloadUrl);
-    document.body.removeChild(link);
-        
-        showToast('Success', 'CSV file downloaded successfully', 'success');
+        // Get all class data from the API to ensure we have complete data
+        fetch('/api/classes')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Use the API data or fall back to current page data if API fails
+                let allClassData = Array.isArray(data) ? data : 
+                                  (Array.isArray(currentPageState.currentData) ? [...currentPageState.currentData] : []);
+                
+                // Ensure each class has a proper status field
+                allClassData = allClassData.map(item => ({
+                    ...item,
+                    status: item.isActive ? 'Active' : 'Inactive'
+                }));
+                
+                // Apply status filter if selected
+                let filteredData = allClassData;
+                if (status) {
+                    filteredData = filteredData.filter(item => item.status === status);
+                }
+                
+                // Apply search filter if entered
+                if (search) {
+                    const searchLower = search.toLowerCase();
+                    filteredData = filteredData.filter(item => {
+                        return (
+                            (item.name && item.name.toLowerCase().includes(searchLower)) ||
+                            (item.class_id && item.class_id.toLowerCase().includes(searchLower)) ||
+                            (item.instructor_name && item.instructor_name.toLowerCase().includes(searchLower))
+                        );
+                    });
+                }
+                
+                // Check if there's data to export
+                if (filteredData.length === 0) {
+                    showToast('No Data to Export', 'No classes match the current filters for export.', 'info');
+                    exportButton.disabled = false;
+                    exportButton.innerHTML = originalButtonText;
+                    return;
+                }
+                
+                // Define CSV headers
+                const headers = ['ID', 'Name', 'Instructor', 'Day', 'Time', 'Year', 'Status'];
+                
+                // Convert data to CSV format
+                let csvContent = headers.join(',') + '\n';
+                
+                // Helper function to escape CSV fields properly
+                const escapeCSV = (field) => {
+                    if (field === null || field === undefined) return '';
+                    const str = String(field);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return '"' + str.replace(/"/g, '""') + '"';
+                    }
+                    return str;
+                };
+                
+                filteredData.forEach(classItem => {
+                    // Map the data to ensure all fields are properly populated
+                    const row = [
+                        escapeCSV(classItem.id || classItem.class_id || ''),
+                        escapeCSV(classItem.name || ''),
+                        escapeCSV(classItem.instructorName || classItem.instructor_name || classItem.instructor || 'Not Assigned'),
+                        escapeCSV(classItem.dayOfWeek || classItem.day || ''),
+                        escapeCSV(classItem.startTime && classItem.endTime ? 
+                            `${classItem.startTime} - ${classItem.endTime}` : 
+                            (classItem.start_time && classItem.end_time ? 
+                                `${classItem.start_time} - ${classItem.end_time}` : '')),
+                        escapeCSV(classItem.term || classItem.year || ''),
+                        escapeCSV(classItem.status || (classItem.isActive ? 'Active' : 'Inactive'))
+                    ];
+                    
+                    csvContent += row.join(',') + '\n';
+                });
+                
+                // Create download link
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                
+                link.setAttribute('href', url);
+                link.setAttribute('download', `class-data-${new Date().toISOString().slice(0,10)}.csv`);
+                link.style.display = 'none';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Show success toast
+                const count = filteredData.length;
+                showToast('Success', `Exported ${count} ${count === 1 ? 'class' : 'classes'} to CSV file`, 'success');
+                
+                // Re-enable the button
+                exportButton.disabled = false;
+                exportButton.innerHTML = originalButtonText;
+            })
+            .catch(error => {
+                console.error('Error fetching class data for export:', error);
+                showToast('Export Failed', 'Failed to export CSV: ' + error.message, 'error');
+                
+                // Re-enable the button
+                exportButton.disabled = false;
+                exportButton.innerHTML = originalButtonText;
+            });
     } catch (error) {
-        showToast('Error', `Failed to export CSV: ${error.message}`, 'error');
+        console.error('Error exporting CSV:', error);
+        showToast('Export Failed', 'Failed to export CSV: ' + error.message, 'error');
+        
+        // Re-enable the button
+        exportButton.disabled = false;
+        exportButton.innerHTML = originalButtonText;
     }
 }
 
@@ -88,6 +175,12 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => {
                 highlightRestoredClass(restoredId);
             }, 500);
+        }
+        
+        // Add event listener for CSV export button
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        if (exportCsvBtn) {
+            exportCsvBtn.addEventListener('click', exportClassesCSV);
         }
         
         // Add event listeners for search
@@ -191,20 +284,22 @@ async function fetchAndUpdateData() {
         const response = await fetch('/api/classes');
         
         if (!response.ok) throw new Error('Failed to fetch classes');
-        const data = await response.json();
+        const responseData = await response.json();
+        
+        // Extract classes array from the response
+        const data = responseData.classes || [];
+        console.log('Class management page Loaded');
         
         // Clean up the data - handle null/invalid years
-        if (Array.isArray(data)) {
-            data.forEach(item => {
-                // Convert null or "null" years to empty string
-                if (!item.year || item.year === "null") {
-                    item.year = ""; // This will be displayed as N/A in the UI
-                }
-            });
-        }
+        data.forEach(item => {
+            // Convert null or "null" years to empty string
+            if (!item.year || item.year === "null") {
+                item.year = ""; // This will be displayed as N/A in the UI
+            }
+        });
         
-        currentPageState.currentData = data || [];
-        currentPageState.totalItems = currentPageState.currentData.length;
+        currentPageState.currentData = data;
+        currentPageState.totalItems = data.length;
         
         // Update status cards when data is loaded
         updateStatusCards(currentPageState.currentData);
@@ -214,7 +309,8 @@ async function fetchAndUpdateData() {
         
         return data;
     } catch (error) {
-        showToast('Error', 'Failed to load classes', 'error');
+        console.error('Error fetching classes:', error);
+        showToast('Error', 'Failed to load classes: ' + error.message, 'error');
         currentPageState.currentData = [];
         return [];
     }
@@ -224,6 +320,18 @@ async function fetchAndUpdateData() {
 function updateTable() {
     try {
         let filteredData = Array.isArray(currentPageState.currentData) ? [...currentPageState.currentData] : [];
+        
+        // Map API field names to expected field names if needed
+        filteredData = filteredData.map(item => ({
+            id: item.id,
+            class_id: item.id, // Use id as class_id for compatibility
+            name: item.name,
+            day: item.dayOfWeek || 'N/A',
+            time: item.startTime ? `${item.startTime} - ${item.endTime || 'N/A'}` : 'N/A',
+            instructor: item.instructorName || 'Not Assigned',
+            year: item.term || '',
+            status: item.isActive ? 'Active' : 'Inactive'
+        }));
 
         if (currentPageState.statusFilter) {
             filteredData = filteredData.filter(classItem => 
@@ -235,7 +343,7 @@ function updateTable() {
             const searchTerm = currentPageState.searchTerm.toLowerCase();
             filteredData = filteredData.filter(classItem =>
                 classItem.name.toLowerCase().includes(searchTerm) ||
-                classItem.class_id.toLowerCase().includes(searchTerm)
+                classItem.class_id.toString().toLowerCase().includes(searchTerm)
             );
         }
 
@@ -332,16 +440,28 @@ function updateStatusCards(data) {
             return;
         }
         
-        const totalClasses = data.length;
-        const activeClasses = data.filter(c => c.status === 'Active').length;
-        const inactiveClasses = data.filter(c => c.status === 'Inactive').length;
+        // First map the API data to include status field
+        const mappedData = data.map(item => ({
+            ...item,
+            status: item.isActive ? 'Active' : 'Inactive'
+        }));
+        
+        const totalClasses = mappedData.length;
+        const activeClasses = mappedData.filter(c => c.status === 'Active').length;
+        const inactiveClasses = mappedData.filter(c => c.status === 'Inactive').length;
         
         // Update the count elements
-        document.querySelector('[data-count="total"]').textContent = totalClasses;
-        document.querySelector('[data-count="active"]').textContent = activeClasses;
-        document.querySelector('[data-count="inactive"]').textContent = inactiveClasses;
+        const totalElement = document.querySelector('[data-count="total"]');
+        const activeElement = document.querySelector('[data-count="active"]');
+        const inactiveElement = document.querySelector('[data-count="inactive"]');
+        
+        if (totalElement) totalElement.textContent = totalClasses;
+        if (activeElement) activeElement.textContent = activeClasses;
+        if (inactiveElement) inactiveElement.textContent = inactiveClasses;
+        
+        console.log('Class management initialized successfully');
     } catch (error) {
-        // Silently handle errors
+        console.error('Error updating status cards:', error);
     }
 }
 
@@ -598,9 +718,8 @@ async function loadClassAttendance(classId, startDate, endDate) {
         // Store the data for later reference
         currentAttendanceData = data;
         
-        // Use updateAttendanceTables instead of updateAttendanceTable
+        // Use updateAttendanceTables which already calls updateAttendanceStats internally
         updateAttendanceTables(data);
-        updateAttendanceStats(data);
     } catch (error) {
         console.error('Error loading class attendance:', error);
         
@@ -946,16 +1065,43 @@ function confirmArchiveClass(classData) {
     const modal = document.getElementById('archiveClassModal');
     const archiveClassName = document.getElementById('archiveClassName');
     const archiveClassId = document.getElementById('archiveClassId');
-    const archiveClassIdInput = document.getElementById('archiveClassIdInput');
     
     // Set the class details in the modal
     archiveClassName.textContent = classData.name;
     archiveClassId.textContent = classData.class_id;
-    archiveClassIdInput.value = classData.class_id;
+    
+    // Set instructor ID if it exists
+    const instructorIdField = document.getElementById('archiveInstructorId');
+    if (instructorIdField && classData.instructor_id) {
+        instructorIdField.value = classData.instructor_id;
+    }
     
     // Clear previous values
-    document.getElementById('archiveReason').value = '';
-    document.getElementById('archiveComment').value = '';
+    const archiveReason = document.getElementById('archiveReason');
+    archiveReason.value = '';
+    
+    // Hide custom reason container initially
+    const customReasonContainer = document.getElementById('customReasonContainer');
+    if (customReasonContainer) {
+        customReasonContainer.classList.add('d-none');
+    }
+    
+    // Clear custom reason field if it exists
+    const customReason = document.getElementById('customReason');
+    if (customReason) {
+        customReason.value = '';
+    }
+    
+    // Add event listener for reason dropdown to show/hide custom reason field
+    if (archiveReason && customReasonContainer) {
+        archiveReason.addEventListener('change', function() {
+            if (this.value.toLowerCase() === 'other') {
+                customReasonContainer.classList.remove('d-none');
+            } else {
+                customReasonContainer.classList.add('d-none');
+            }
+        });
+    }
     
     // Initialize the modal
     const archiveModal = new bootstrap.Modal(modal);
@@ -963,8 +1109,8 @@ function confirmArchiveClass(classData) {
     
     // Set up the confirm button event handler
     document.getElementById('confirmArchiveClassBtn').onclick = function() {
-        const reason = document.getElementById('archiveReason').value;
-        const comment = document.getElementById('archiveComment').value;
+        const reasonSelect = document.getElementById('archiveReason');
+        const reason = reasonSelect.value;
         
         // Validate that a reason is selected
         if (!reason) {
@@ -972,8 +1118,18 @@ function confirmArchiveClass(classData) {
             return;
         }
         
-        // Combine reason and comment
-        const archiveNote = comment ? `${reason}: ${comment}` : reason;
+        let archiveNote = reason;
+        
+        // If reason is 'other', get the custom reason
+        if (reason.toLowerCase() === 'other') {
+            const customReasonField = document.getElementById('customReason');
+            if (customReasonField && customReasonField.value.trim()) {
+                archiveNote = customReasonField.value.trim();
+            } else {
+                showToast('Error', 'Please specify a custom reason', 'error');
+                return;
+            }
+        }
         
         // Update class status with the archive note
         updateClassStatus(classData.class_id, 'Inactive', archiveNote);
@@ -986,11 +1142,20 @@ function confirmArchiveClass(classData) {
 // Update class status
 async function updateClassStatus(classId, newStatus, archiveNote = '') {
     try {
-        const response = await fetch(`/api/classes/${classId}/status`, {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (!csrfToken) {
+            console.warn('CSRF token not found, request may fail');
+            showToast('Warning', 'CSRF token missing. Request may fail.', 'warning');
+        }
+        
+        const response = await fetch(`/api/classes/${classId}/archive`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
+            credentials: 'same-origin',
             body: JSON.stringify({ 
                 status: newStatus,
                 archiveNote: archiveNote
@@ -1072,12 +1237,24 @@ async function handleAddClass(event) {
         // Close modal properly before making API request
         closeModalProperly(modalEl);
         
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (!csrfToken) {
+            console.warn('CSRF token not found, request may fail');
+            showToast('Warning', 'CSRF token missing. Request may fail.', 'warning');
+        }
+        
+        // Show processing toast
+        showToast('Info', `Adding class "${className}"...`, 'info');
+        
         // Send to server
         const response = await fetch('/api/classes', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
+            credentials: 'same-origin',
             body: JSON.stringify(newClass),
         });
 
@@ -1141,12 +1318,21 @@ async function handleEditClass(event) {
         // Close modal properly before making API request
         closeModalProperly(modalEl);
         
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (!csrfToken) {
+            console.warn('CSRF token not found, request may fail');
+            showToast('Warning', 'CSRF token missing. Request may fail.', 'warning');
+        }
+        
         // Send update to server
         const response = await fetch(`/api/classes/${classId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
+            credentials: 'same-origin',
             body: JSON.stringify(updatedClass),
         });
 
@@ -1290,7 +1476,7 @@ function updateAttendanceTables(attendanceData) {
     }
     
     // Update total students count for pagination
-    attendancePageState.totalStudents = studentMap.size;
+    classAttendancePageState.totalStudents = studentMap.size;
     
     // Get unique dates from the data and sort chronologically
     const dates = new Set();
@@ -1325,8 +1511,8 @@ function updateAttendanceTables(attendanceData) {
     
     // Apply pagination to students
     let studentArray = Array.from(studentMap.values());
-    const startIndex = (attendancePageState.page - 1) * attendancePageState.perPage;
-    const endIndex = Math.min(startIndex + attendancePageState.perPage, studentArray.length);
+    const startIndex = (classAttendancePageState.page - 1) * classAttendancePageState.perPage;
+    const endIndex = Math.min(startIndex + classAttendancePageState.perPage, studentArray.length);
     const paginatedStudents = studentArray.slice(startIndex, endIndex);
     
     // Generate student rows
@@ -1412,11 +1598,14 @@ function updateAttendanceTables(attendanceData) {
         }
     }
     
-    // Update attendance statistics
-    updateAttendanceStats(attendanceData);
-    
-    // Update pagination controls
-    updateAttendancePagination();
+    // Use requestAnimationFrame to update stats after DOM renders to prevent flickering
+    requestAnimationFrame(() => {
+        // Update attendance statistics
+        updateAttendanceStats(attendanceData);
+        
+        // Update pagination controls
+        updateAttendancePagination();
+    });
 }
 
 // Function to update attendance pagination controls
@@ -1430,10 +1619,10 @@ function updateAttendancePagination() {
     // Update pagination info
     const paginationInfo = document.querySelector('#attendancePaginationInfo');
     if (paginationInfo) {
-        const startIndex = (attendancePageState.page - 1) * attendancePageState.perPage + 1;
-        const endIndex = Math.min(startIndex + attendancePageState.perPage - 1, attendancePageState.totalStudents);
-        paginationInfo.textContent = attendancePageState.totalStudents > 0 ? 
-            `${startIndex}-${endIndex} of ${attendancePageState.totalStudents}` :
+        const startIndex = (classAttendancePageState.page - 1) * classAttendancePageState.perPage + 1;
+        const endIndex = Math.min(startIndex + classAttendancePageState.perPage - 1, classAttendancePageState.totalStudents);
+        paginationInfo.textContent = classAttendancePageState.totalStudents > 0 ? 
+            `${startIndex}-${endIndex} of ${classAttendancePageState.totalStudents}` :
             '0-0 of 0';
     }
     
@@ -1442,12 +1631,12 @@ function updateAttendancePagination() {
     const nextButton = document.querySelector('#attendanceNextPage');
     
     if (prevButton) {
-        prevButton.disabled = attendancePageState.page === 1;
+        prevButton.disabled = classAttendancePageState.page === 1;
     }
     
     if (nextButton) {
-        const maxPage = Math.ceil(attendancePageState.totalStudents / attendancePageState.perPage);
-        nextButton.disabled = attendancePageState.page >= maxPage;
+        const maxPage = Math.ceil(classAttendancePageState.totalStudents / classAttendancePageState.perPage);
+        nextButton.disabled = classAttendancePageState.page >= maxPage;
     }
 }
 
@@ -1455,23 +1644,23 @@ function updateAttendancePagination() {
 window.changeAttendanceRowsPerPage = function() {
     const rowsSelect = document.querySelector('#attendanceRowsPerPage');
     if (rowsSelect) {
-        attendancePageState.perPage = parseInt(rowsSelect.value);
-        attendancePageState.page = 1; // Reset to first page
+        classAttendancePageState.perPage = parseInt(rowsSelect.value);
+        classAttendancePageState.page = 1; // Reset to first page
         updateAttendanceTables(currentAttendanceData);
     }
 };
 
 window.goToAttendancePrevPage = function() {
-    if (attendancePageState.page > 1) {
-        attendancePageState.page--;
+    if (classAttendancePageState.page > 1) {
+        classAttendancePageState.page--;
         updateAttendanceTables(currentAttendanceData);
     }
 };
 
 window.goToAttendanceNextPage = function() {
-    const maxPage = Math.ceil(attendancePageState.totalStudents / attendancePageState.perPage);
-    if (attendancePageState.page < maxPage) {
-        attendancePageState.page++;
+    const maxPage = Math.ceil(classAttendancePageState.totalStudents / classAttendancePageState.perPage);
+    if (classAttendancePageState.page < maxPage) {
+        classAttendancePageState.page++;
         updateAttendanceTables(currentAttendanceData);
     }
 }; 
@@ -1599,8 +1788,7 @@ function initializeModals() {
                 endTimeField.value = "10:00";
             }
             
-            // Don't reset the form on open as it clears user input
-            // Instead, ensure the proper defaults are set
+            // Ensure the proper defaults are set
             const nameField = document.getElementById('addClassName');
             const dayField = document.getElementById('addClassDay');
             const statusField = document.getElementById('addClassStatus');

@@ -109,96 +109,60 @@ function initializeScheduleBlocks() {
             // Get class name and time from the block
             const className = this.querySelector('div[style="color: #191970;"]').textContent;
             const timeSlot = this.querySelector('.small.text-muted').textContent;
-            const classId = this.getAttribute('data-class-id');
             
-            // Use the status toast component
-            showSystemToast('Class Selected', `${className} (${timeSlot})`, 'info');
+            // Show a toast or alert with the class info
+            showClassInfoToast(className, timeSlot);
             
-            // Get day from the closest heading
-            const dayElement = this.closest('.row.g-3.mb-4').previousElementSibling.querySelector('.h5');
-            const day = dayElement ? dayElement.textContent.trim() : '';
-            
-            // Show class actions in the modal or toast
-            showClassActions(className, timeSlot, day, classId);
+            // Optional: Navigate to attendance or class details
+            // const dayElement = this.closest('.row.g-3.mb-4').previousElementSibling.querySelector('.h5').textContent;
+            // window.location.href = `/instructor/mark-attendance?class=${encodeURIComponent(className)}&day=${encodeURIComponent(dayElement)}`;
         });
     });
 }
 
 /**
- * Show class actions using the system toast notification
+ * Show a toast notification with class information using the shared toast component
  */
-function showClassActions(className, timeSlot, day, classId) {
-    // Get the existing toast elements from the toast_notification.html component
-    const statusToast = document.getElementById('statusToast');
+function showClassInfoToast(className, timeSlot) {
+    // Get the existing toast elements from toast_notification.html
+    const toast = document.getElementById('statusToast');
     const toastTitle = document.getElementById('toastTitle');
     const toastMessage = document.getElementById('toastMessage');
+    const toastIcon = toast.querySelector('.toast-header i');
     
-    if (!statusToast || !toastTitle || !toastMessage) {
-        console.error('Toast notification components not found');
+    if (!toast || !toastTitle || !toastMessage) {
+        console.error('Toast notification elements not found');
         return;
     }
     
-    // Update toast header
-    const toastHeader = statusToast.querySelector('.toast-header i');
-    toastHeader.className = 'bi bi-calendar-check text-primary me-2';
+    // Set title and icon
     toastTitle.textContent = className;
+    toastIcon.className = 'bi bi-calendar-check me-2';
+    toastIcon.style.color = '#191970';
     
-    // Create action buttons with system colors
-    let queryParams = '';
-    if (classId) {
-        queryParams = `?class_id=${classId}`;
-    } else {
-        queryParams = `?class=${encodeURIComponent(className)}&day=${encodeURIComponent(day)}`;
-    }
-    
+    // Create custom message with time slot and action buttons
     toastMessage.innerHTML = `
-        <div>${timeSlot} (${day})</div>
-        <div class="d-flex justify-content-between mt-2">
-            <a href="/instructor/mark-attendance${queryParams}" class="btn btn-sm" style="background-color: #191970; color: white;">
-                <i class="bi bi-check-circle me-1"></i>Mark Attendance
+        <p class="mb-2">${timeSlot}</p>
+        <div class="d-flex justify-content-between">
+            <a href="/instructor/mark-attendance" class="btn btn-sm btn-outline" 
+               style="border-color: #191970; color: #191970; transition: all 0.3s ease;"
+               onmouseover="this.style.backgroundColor='#191970'; this.style.color='white';"
+               onmouseout="this.style.backgroundColor=''; this.style.color='#191970';">
+               <i class="bi bi-pencil-square me-1"></i>Mark Attendance
             </a>
-            <a href="/instructor/view-attendance${queryParams}" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-eye me-1"></i>View Attendance
+            <a href="/instructor/view-attendance" class="btn btn-sm btn-outline" 
+               style="border-color: #191970; color: #191970; transition: all 0.3s ease;"
+               onmouseover="this.style.backgroundColor='#191970'; this.style.color='white';"
+               onmouseout="this.style.backgroundColor=''; this.style.color='#191970';">
+               <i class="bi bi-eye me-1"></i>View Attendance
             </a>
         </div>
     `;
     
     // Show the toast
-    const bsToast = new bootstrap.Toast(statusToast, {
-        autohide: false
-    });
-    bsToast.show();
-}
-
-/**
- * Show a toast notification using the system component
- */
-function showSystemToast(title, message, type = 'success') {
-    // Get the toast elements
-    const statusToast = document.getElementById('statusToast');
-    const toastTitle = document.getElementById('toastTitle');
-    const toastMessage = document.getElementById('toastMessage');
-    const toastHeader = statusToast.querySelector('.toast-header i');
-    
-    // Set icon and color based on type
-    if (type === 'success') {
-        toastHeader.className = 'bi bi-check-circle-fill text-success me-2';
-    } else if (type === 'error' || type === 'danger') {
-        toastHeader.className = 'bi bi-exclamation-triangle-fill text-danger me-2';
-    } else if (type === 'warning') {
-        toastHeader.className = 'bi bi-exclamation-circle-fill text-warning me-2';
-    } else if (type === 'info') {
-        toastHeader.className = 'bi bi-info-circle-fill text-info me-2';
-    }
-    
-    // Set title and message
-    toastTitle.textContent = title;
-    toastMessage.textContent = message;
-    
-    // Show the toast
-    const bsToast = new bootstrap.Toast(statusToast, {
+    const bsToast = new bootstrap.Toast(toast, {
         autohide: true,
-        delay: 3000
+        delay: 5000
     });
     bsToast.show();
 }

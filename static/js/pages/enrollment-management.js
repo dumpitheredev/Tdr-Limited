@@ -69,14 +69,27 @@ const utils = {
                 'Pragma': 'no-cache',
                 'Expires': '0'
             },
-            cache: 'no-store'
+            cache: 'no-store',
+            credentials: 'same-origin' // Include cookies for CSRF token
         };
+        
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        // Add CSRF token to headers if it exists and this is a modifying request
+        const isModifyingRequest = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase() || 'GET');
+        
+        // Create headers with CSRF token if needed
+        const headers = {...defaultOptions.headers, ...options.headers};
+        if (csrfToken && isModifyingRequest) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
         
         // Merge defaults with provided options
         const mergedOptions = { 
             ...defaultOptions, 
             ...options,
-            headers: {...defaultOptions.headers, ...options.headers}
+            headers: headers
         };
         
         try {
@@ -469,9 +482,11 @@ function setupEnrollmentModalListeners() {
     // Load data when enrollment modal is shown
     const enrollmentModal = document.getElementById('addEnrolmentModal');
     if (enrollmentModal) {
+        // Use both Bootstrap's event and a direct handler to ensure it works
         enrollmentModal.addEventListener('show.bs.modal', function() {
-        loadUnenrolledStudents();
-        loadClasses();
+            console.log('Enrollment modal is being shown - loading data');
+            loadUnenrolledStudents();
+            loadClasses();
             
             // Set today's date as default for start date
             const startDateField = document.getElementById('startDate');
@@ -481,6 +496,19 @@ function setupEnrollmentModalListeners() {
                 startDateField.value = formattedDate;
             }
         });
+        
+        // Add a direct click handler to the button that opens the modal
+        const addEnrollmentBtn = document.querySelector('button[data-bs-target="#addEnrolmentModal"]');
+        if (addEnrollmentBtn) {
+            addEnrollmentBtn.addEventListener('click', function() {
+                console.log('Add Enrollment button clicked - ensuring classes are loaded');
+                // Give a small delay to ensure modal is in DOM
+                setTimeout(() => {
+                    loadUnenrolledStudents();
+                    loadClasses();
+                }, 100);
+            });
+        }
     }
     
     // Student search in modal
@@ -496,10 +524,14 @@ function loadInitialData() {
     const params = new URLSearchParams();
     
     // Get current filters from URL or use defaults
-    params.set('status', urlParams.get('status') || '');
+    const statusValue = urlParams.get('status') || '';
+    params.set('status', statusValue);
     params.set('search', urlParams.get('search') || '');
     params.set('per_page', urlParams.get('per_page') || '5');
     params.set('page', urlParams.get('page') || '1');
+    
+    // Synchronize UI filters with URL parameters
+    synchronizeUIFilters(urlParams);
     
     // Add cache buster and fetch data
     fetchFilteredData(utils.withCacheBuster(params));
@@ -676,10 +708,14 @@ async function loadUnenrolledStudents() {
     try {
         const data = await utils.fetchData('/api/students/unenrolled');
 
-        const studentSelect = document.getElementById('studentSelect');
-        if (!studentSelect) return;
+        const studentCheckboxes = document.getElementById('studentCheckboxes');
+        if (!studentCheckboxes) {
+            console.error('Student checkboxes container not found');
+            return;
+        }
         
-        studentSelect.innerHTML = '';
+        // Show loading indicator
+        studentCheckboxes.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading students...</p></div>';
         
         // Process students data from various possible response formats
         let students = data.students || data || [];
@@ -692,12 +728,12 @@ async function loadUnenrolledStudents() {
         // Store students list for filtering
         window.allStudents = students;
         
+        // Clear the container
+        studentCheckboxes.innerHTML = '';
+        
         if (students.length === 0) {
             // Show no students available message
-            const option = document.createElement('option');
-            option.disabled = true;
-            option.textContent = 'No students available';
-            studentSelect.appendChild(option);
+            studentCheckboxes.innerHTML = '<div class="alert alert-info">No students available</div>';
             return;
         }
         
@@ -707,31 +743,50 @@ async function loadUnenrolledStudents() {
             searchInput.value = '';
         }
         
-        // Add each student as an option
+        // Add each student as a checkbox
         students.forEach((student) => {
-            const option = document.createElement('option');
-            option.value = student.id || student.user_id;
+            const studentId = student.id || student.user_id;
             
             // Handle different name formats
             const name = student.name || 
                          (student.first_name && student.last_name ? 
                           `${student.first_name} ${student.last_name}` : 
                           'Unknown');
-            const id = student.id || student.user_id || '';
-            option.textContent = `${name} (${id})`;
-            studentSelect.appendChild(option);
+            const id = studentId || '';
+            
+            const div = document.createElement('div');
+            div.className = 'form-check mb-2';
+            
+            const input = document.createElement('input');
+            input.className = 'form-check-input';
+            input.type = 'checkbox';
+            input.value = studentId;
+            input.id = `student${studentId}`;
+            
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = `student${studentId}`;
+            label.innerHTML = `
+                ${name} <span class="text-muted">(${id})</span>
+            `;
+            
+            div.appendChild(input);
+            div.appendChild(label);
+            studentCheckboxes.appendChild(div);
         });
     } catch (error) {
-        utils.showToast('Error loading students: ' + error.message, 'error');
+        console.error('Error loading students:', error);
         
-        // Show error in select dropdown
-        const studentSelect = document.getElementById('studentSelect');
-        if (studentSelect) {
-            studentSelect.innerHTML = '';
-                const option = document.createElement('option');
-            option.disabled = true;
-            option.textContent = 'Error loading students';
-            studentSelect.appendChild(option);
+        // Use centralized notification system if available
+        if (typeof showError === 'function') {
+            showError('Failed to load students. Please try again.', 'Error');
+        } else {
+            utils.showToast('Error loading students: ' + error.message, 'error');
+        }
+        
+        const studentCheckboxes = document.getElementById('studentCheckboxes');
+        if (studentCheckboxes) {
+            studentCheckboxes.innerHTML = '<div class="alert alert-danger">Error loading students</div>';
         }
     }
 }
@@ -739,11 +794,29 @@ async function loadUnenrolledStudents() {
 // Load classes
 async function loadClasses() {
     try {
-        const classes = await utils.fetchData('/api/classes');
-
+        console.log('Loading classes...');
         const classCheckboxes = document.getElementById('classCheckboxes');
-        if (!classCheckboxes) return;
+        if (!classCheckboxes) {
+            console.error('Class checkboxes container not found');
+            return;
+        }
         
+        // Show loading indicator
+        classCheckboxes.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading classes...</p></div>';
+        
+        // Fetch classes from the API
+        const response = await fetch('/api/classes');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch classes: ${response.status} ${response.statusText}`);
+        }
+        
+        const responseData = await response.json();
+        console.log('Classes API response:', responseData);
+        
+        // Extract classes array from the response
+        const classes = responseData.classes || [];
+        
+        // Clear the container
         classCheckboxes.innerHTML = '';
         
         if (!classes.length) {
@@ -751,9 +824,16 @@ async function loadClasses() {
             return;
         }
         
+        console.log(`Found ${classes.length} classes to display`);
+        
+        // Log the first class to see its structure
+        if (classes.length > 0) {
+            console.log('Sample class object:', classes[0]);
+        }
+        
         // Add each class as a checkbox option
         classes.forEach((cls) => {
-            const classId = cls.class_id;
+            const classId = cls.class_id || cls.id;
             
             const div = document.createElement('div');
             div.className = 'form-check mb-2';
@@ -767,9 +847,27 @@ async function loadClasses() {
             const label = document.createElement('label');
             label.className = 'form-check-label';
             label.htmlFor = `class${classId}`;
+            
+            // Map the API response properties to our display format
+            const className = cls.name || 'Unnamed Class';
+            
+            // Get day information from dayOfWeek property
+            const dayInfo = cls.dayOfWeek || cls.day || 'Day not specified';
+            
+            // Format time from startTime and endTime properties
+            let timeInfo = 'Time not specified';
+            if (cls.startTime && cls.endTime) {
+                timeInfo = `${cls.startTime} - ${cls.endTime}`;
+            } else if (cls.time) {
+                timeInfo = cls.time;
+            }
+            
+            // Get instructor from instructorName property
+            const instructorInfo = cls.instructorName || cls.instructor || 'No instructor assigned';
+            
             label.innerHTML = `
-                ${cls.name} (${cls.day}, ${cls.time})
-                <div class="text-muted small">Instructor: ${cls.instructor}</div>
+                ${className} (${dayInfo}, ${timeInfo})
+                <div class="text-muted small">Instructor: ${instructorInfo}</div>
             `;
             
             div.appendChild(input);
@@ -777,7 +875,12 @@ async function loadClasses() {
             classCheckboxes.appendChild(div);
         });
     } catch (error) {
-        utils.showToast('Error loading classes', 'error');
+        console.error('Error loading classes:', error);
+        
+        // Use the centralized notification system
+        if (typeof showError === 'function') {
+            showError('Failed to load classes. Please try again.', 'Error');
+        }
         
         const classCheckboxes = document.getElementById('classCheckboxes');
         if (classCheckboxes) {
@@ -789,21 +892,31 @@ async function loadClasses() {
 // Handle enrollment submission
 async function handleEnrolment() {
     // Get form elements
-    const studentSelect = document.getElementById('studentSelect');
+    const studentCheckboxes = document.querySelectorAll('#studentCheckboxes input[type="checkbox"]:checked');
     const statusElement = document.getElementById('enrollmentStatus');
     const startDateElement = document.getElementById('startDate');
     
-    if (!studentSelect) {
-        utils.showToast('Error: Could not find student select element', 'error');
+    if (!studentCheckboxes) {
+        // Use centralized notification system if available
+        if (typeof showError === 'function') {
+            showError('Could not find student checkboxes', 'Error');
+        } else {
+            utils.showToast('Error: Could not find student checkboxes', 'error');
+        }
         return;
     }
     
     // Get selected values
-    const selectedStudents = Array.from(studentSelect.selectedOptions).map(opt => opt.value);
+    const selectedStudents = Array.from(studentCheckboxes).map(checkbox => checkbox.value);
     
     // Validate student selection
     if (selectedStudents.length === 0) {
-        utils.showToast('Please select at least one student', 'error');
+        // Use centralized notification system if available
+        if (typeof showWarning === 'function') {
+            showWarning('Please select at least one student', 'Validation Error');
+        } else {
+            utils.showToast('Please select at least one student', 'error');
+        }
         return;
     }
     
@@ -812,7 +925,12 @@ async function handleEnrolment() {
     const selectedClasses = Array.from(classCheckboxes).map(cb => cb.value);
                       
     if (selectedClasses.length === 0) {
-        utils.showToast('Please select at least one class', 'error');
+        // Use centralized notification system if available
+        if (typeof showWarning === 'function') {
+            showWarning('Please select at least one class', 'Validation Error');
+        } else {
+            utils.showToast('Please select at least one class', 'error');
+        }
         return;
     }
 
@@ -969,16 +1087,16 @@ function updateModalStudentInfo(mode, data) {
     // Update student status badge if exists
     const statusElement = document.getElementById(`${prefix}StudentStatus`);
     if (statusElement && mode !== 'edit') {
-        if (data.student.status === 'Active') {
+            if (data.student.status === 'Active') {
             statusElement.className = 'badge bg-success-subtle text-success';
-        } else {
+            } else {
             statusElement.className = 'badge bg-danger-subtle text-danger';
+            }
         }
-    }
-    
+        
     // Fix the profile image path and display
     const studentImageElement = document.getElementById(`${prefix}StudentImage`);
-    if (studentImageElement) {
+        if (studentImageElement) {
         // Default to profile.png if no image specified
         let profileImg = 'profile.png';
         
@@ -1008,103 +1126,131 @@ function updateModalStudentInfo(mode, data) {
 
 // Populate enrolled classes in the view modal
 function populateEnrolledClasses(data) {
-    const enrolledClassesDiv = document.getElementById('enrolledClasses');
-    if (!enrolledClassesDiv) return;
-    
-    enrolledClassesDiv.innerHTML = '';
-    
-    if (!data.classes || data.classes.length === 0) {
-        enrolledClassesDiv.innerHTML = '<p class="text-muted">No classes enrolled</p>';
+    const enrollmentContainer = document.getElementById('studentEnrollments');
+    if (!enrollmentContainer) {
+        console.error("Element with ID 'studentEnrollments' not found in the modal.");
         return;
     }
     
-    // Sort classes - active enrollments first, then by name
-    const sortedClasses = [...data.classes].sort((a, b) => {
-        // First sort by active status (active first)
-        if (a.is_active && !b.is_active) return -1;
-        if (!a.is_active && b.is_active) return 1;
-        // Then sort by name
-        return a.name.localeCompare(b.name);
-    });
+    console.log("Enrollment data:", data);
     
-    // Group classes into Active and Historical
-    const hasActiveClasses = sortedClasses.some(cls => cls.is_active);
-    const hasHistoricalClasses = sortedClasses.some(cls => !cls.is_active);
+    // Clear previous content
+    enrollmentContainer.innerHTML = '';
     
-    // Add sections with headers
-    if (hasActiveClasses) {
-        // Add active classes section
-        const activeHeader = document.createElement('h6');
-        activeHeader.className = 'mb-2 mt-3';
-        activeHeader.textContent = 'Active Enrollments';
-        enrolledClassesDiv.appendChild(activeHeader);
-        
-        sortedClasses.filter(cls => cls.is_active).forEach(cls => {
-            appendClassCard(enrolledClassesDiv, cls);
-        });
+    // Check for enrollment data from different possible sources
+    const allEnrollments = data.classes || data.enrollments || [];
+    const activeEnrollments = data.active_enrollments || allEnrollments.filter(e => e.is_active);
+    const pastEnrollments = data.historical_enrollments || allEnrollments.filter(e => !e.is_active || e.unenrollment_date);
+    
+    console.log(`Found ${activeEnrollments.length} active enrollments and ${pastEnrollments.length} past enrollments`);
+    
+    if (allEnrollments.length === 0) {
+        enrollmentContainer.innerHTML = '<p class="text-muted">No classes enrolled</p>';
+        return;
     }
     
-    if (hasHistoricalClasses) {
-        // Add historical classes section
-        const historyHeader = document.createElement('h6');
-        historyHeader.className = 'mb-2 mt-4';
-        historyHeader.textContent = 'Past Enrollments';
-        enrolledClassesDiv.appendChild(historyHeader);
-        
-        sortedClasses.filter(cls => !cls.is_active).forEach(cls => {
-            appendClassCard(enrolledClassesDiv, cls);
+    // Sort enrollments by name
+    const sortEnrollments = (enrolls) => {
+        return [...enrolls].sort((a, b) => {
+            const nameA = a.class_name || a.name || (a.class ? a.class.name : '');
+            const nameB = b.class_name || b.name || (b.class ? b.class.name : '');
+            return nameA.localeCompare(nameB);
         });
+    };
+    
+    // Add Active Enrollments section
+    if (activeEnrollments.length > 0) {
+                    const activeHeader = document.createElement('h6');
+                    activeHeader.textContent = 'Active Enrollments';
+        activeHeader.className = 'mt-3 mb-2';
+        enrollmentContainer.appendChild(activeHeader);
+                    
+        sortEnrollments(activeEnrollments).forEach(enrollment => {
+            appendClassCard(enrollmentContainer, enrollment);
+                    });
+                }
+                
+    // Add Past Enrollments section
+    if (pastEnrollments.length > 0) {
+                    const historyHeader = document.createElement('h6');
+                    historyHeader.textContent = 'Past Enrollments';
+        historyHeader.className = 'mt-4 mb-2';
+        enrollmentContainer.appendChild(historyHeader);
+                    
+        sortEnrollments(pastEnrollments).forEach(enrollment => {
+            appendClassCard(enrollmentContainer, enrollment);
+                    });
     }
 }
 
 // Create and append a class card
-function appendClassCard(container, cls) {
-    const classCard = document.createElement('div');
-    classCard.className = 'card mb-2';
+        function appendClassCard(container, cls) {
+    // Create card container
+    const card = document.createElement('div');
+    card.className = 'card mb-2';
     
-    // Use class_id if available, fallback to id for backward compatibility
-    const classId = cls.class_id || cls.id;
+    // Get class info from different possible locations in the data structure
+    const className = cls.class_name || cls.name || (cls.class ? cls.class.name : 'Unknown Class');
     
-    // Set different status badge based on enrollment status
-    let statusBadge = '';
-    
-    if (cls.is_active && cls.enrollment_status === 'Active') {
-        statusBadge = `<span class="badge bg-success-subtle text-success">Active</span>`;
-    } else if (cls.is_active && cls.enrollment_status === 'Pending') {
-        statusBadge = `<span class="badge bg-warning-subtle text-warning">Pending</span>`;
-    } else if (!cls.is_active) {
-        statusBadge = `<span class="badge bg-secondary-subtle text-secondary">Unenrolled</span>`;
-    } else {
-        statusBadge = `<span class="badge bg-secondary-subtle text-secondary">${cls.enrollment_status}</span>`;
+    // Get schedule from different possible locations
+    let schedule = cls.schedule;
+    if (!schedule) {
+        const dayOfWeek = cls.day_of_week || cls.day || (cls.class ? cls.class.day_of_week : '');
+        const startTime = cls.start_time || (cls.class ? cls.class.start_time : '');
+        const endTime = cls.end_time || (cls.class ? cls.class.end_time : '');
+        
+        if (dayOfWeek && (startTime || endTime)) {
+            schedule = `${dayOfWeek}, ${startTime || ''} - ${endTime || ''}`;
+                    } else {
+            schedule = 'Schedule not available';
+        }
     }
     
-    // Add enrollment and unenrollment dates if available
-    let dateInfo = '';
-    if (cls.enrollment_date) {
-        dateInfo += `<p class="text-muted small mb-0">Enrolled: ${cls.enrollment_date}</p>`;
-    }
-    if (cls.unenrollment_date) {
-        dateInfo += `<p class="text-muted small mb-0">Unenrolled: ${cls.unenrollment_date}</p>`;
+    // Get status
+    let status = cls.enrollment_status || cls.status || 'Unknown';
+    let isActive = cls.is_active;
+    
+    // If unenrollment_date exists, it's definitely not active and should show as "Unenrolled"
+            if (cls.unenrollment_date) {
+        isActive = false;
+        status = "Unenrolled";
     }
     
-    classCard.innerHTML = `
-        <div class="card-body p-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h6 class="card-title mb-1">${cls.name}</h6>
-                    <p class="card-text text-muted small mb-1">${cls.schedule}</p>
-                    <div class="d-flex align-items-center gap-2">
-                        ${statusBadge}
-                    </div>
-                    ${dateInfo}
-                </div>
-            </div>
+    // Create status badge with appropriate color
+    let badgeClass = '';
+    if (status.toLowerCase() === 'active') {
+        badgeClass = 'bg-success-subtle text-success';
+    } else if (status.toLowerCase() === 'pending') {
+        badgeClass = 'bg-warning-subtle text-warning';
+    } else if (status.toLowerCase() === 'completed') {
+        badgeClass = 'bg-info-subtle text-info';
+    } else if (status.toLowerCase() === 'unenrolled') {
+        badgeClass = 'bg-secondary-subtle text-secondary';
+    } else if (status.toLowerCase() === 'dropped') {
+        badgeClass = 'bg-danger-subtle text-danger';
+    }
+    
+    // Get instructor name
+    const instructor = cls.instructor_name || cls.instructor || (cls.class ? cls.class.instructor_name : 'Not assigned');
+    
+    // Create the card content
+    const cardContent = `
+                        <div class="card-body p-3">
+            <h6 class="card-title mb-1">${className}</h6>
+            <p class="card-text text-muted small mb-1">${schedule}</p>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <span class="badge ${badgeClass}">${status}</span>
+                <span class="text-muted small">${instructor ? `<i class="bi bi-person-circle me-1"></i>${instructor}` : ''}</span>
+                            </div>
+            ${cls.enrollment_date ? `<p class="text-muted small mb-0">Enrolled: ${cls.enrollment_date}</p>` : ''}
+            ${cls.unenrollment_date ? `<p class="text-muted small mb-0">Unenrolled: ${cls.unenrollment_date}</p>` : ''}
         </div>
     `;
     
-    container.appendChild(classCard);
-}
-
+    card.innerHTML = cardContent;
+    container.appendChild(card);
+        }
+        
 // Update view modal footer
 function updateViewModalFooter(studentId) {
     const viewModalFooter = document.querySelector('#viewEnrollmentModal .modal-footer');
@@ -1198,21 +1344,21 @@ async function editEnrolment(studentId) {
 function populateEditClassContainer(data, studentId) {
     const classContainer = document.getElementById('editEnrolledClasses');
     if (!classContainer) return;
-    
-    // Clear the container
-    classContainer.innerHTML = '';
-    
-    // Clear existing footer content
+        
+        // Clear the container
+        classContainer.innerHTML = '';
+        
+        // Clear existing footer content
     const modalFooter = document.querySelector('#editEnrolmentModal .modal-footer');
     if (modalFooter) modalFooter.innerHTML = '';
-    
-    // Filter out classes that have unenrollment_date (historical enrollments)
-    const activeClasses = data.classes ? data.classes.filter(cls => !cls.unenrollment_date) : [];
-    
-    if (!activeClasses || activeClasses.length === 0) {
-        classContainer.innerHTML = '<div class="alert alert-info">No active classes enrolled</div>';
         
-        // Add a message to the footer
+        // Filter out classes that have unenrollment_date (historical enrollments)
+        const activeClasses = data.classes ? data.classes.filter(cls => !cls.unenrollment_date) : [];
+        
+        if (!activeClasses || activeClasses.length === 0) {
+            classContainer.innerHTML = '<div class="alert alert-info">No active classes enrolled</div>';
+            
+            // Add a message to the footer
         if (modalFooter) {
             const message = document.createElement('div');
             message.className = 'text-muted';
@@ -1222,13 +1368,13 @@ function populateEditClassContainer(data, studentId) {
         return;
     }
     
-    // Create container to hold classes
-    const classesWrapper = document.createElement('div');
-    classesWrapper.id = 'editClassesForm';
-    classContainer.appendChild(classesWrapper);
-    
-    // Add active classes only
-    activeClasses.forEach(cls => {
+            // Create container to hold classes
+            const classesWrapper = document.createElement('div');
+            classesWrapper.id = 'editClassesForm';
+            classContainer.appendChild(classesWrapper);
+            
+            // Add active classes only
+            activeClasses.forEach(cls => {
         appendEditClassCard(classesWrapper, cls, studentId);
     });
     
@@ -1262,139 +1408,139 @@ function populateEditClassContainer(data, studentId) {
 
 // Create and append an editable class card
 function appendEditClassCard(container, cls, studentId) {
-    const classId = cls.class_id || cls.id;
-    const status = cls.enrollment_status || 'Pending';
-    
-    // Create unique identifier for this enrollment
-    const enrollmentKey = `${studentId}-${classId}`;
-    
-    const classCard = document.createElement('div');
-    classCard.className = 'card mb-3';
-    classCard.dataset.classId = classId;
-    classCard.dataset.originalStatus = status; // Store original status for comparison
-    
-    const cardBody = document.createElement('div');
-    cardBody.className = 'card-body';
-    
-    // Class header with name and toggle
-    const headerDiv = document.createElement('div');
-    headerDiv.className = 'd-flex justify-content-between align-items-center mb-2';
-    
-    // Class name
-    const classTitle = document.createElement('h6');
-    classTitle.className = 'card-title mb-0';
-    classTitle.textContent = cls.name;
-    headerDiv.appendChild(classTitle);
-    
-    // Keep enrolled toggle
-    const toggleDiv = document.createElement('div');
-    toggleDiv.className = 'form-check form-switch';
-    
-    const toggleInput = document.createElement('input');
-    toggleInput.className = 'form-check-input';
-    toggleInput.type = 'checkbox';
-    toggleInput.id = `keep-class-${classId}`;
-    
-    // Initialize storage for this enrollment if not exists
-    if (!window.enrollmentToggleStates) {
-        window.enrollmentToggleStates = {};
-    }
-    
-    // Check if we have a saved state for this toggle, otherwise default to checked
-    toggleInput.checked = window.enrollmentToggleStates[enrollmentKey] !== false;
-    
-    toggleInput.dataset.classId = classId;
-    toggleInput.dataset.enrollmentKey = enrollmentKey;
-    
-    const toggleLabel = document.createElement('label');
-    toggleLabel.className = 'form-check-label';
-    toggleLabel.htmlFor = `keep-class-${classId}`;
-    toggleLabel.textContent = 'Keep Enrolled';
-    
-    toggleDiv.appendChild(toggleInput);
-    toggleDiv.appendChild(toggleLabel);
-    headerDiv.appendChild(toggleDiv);
-    
-    cardBody.appendChild(headerDiv);
-    
-    // Class schedule
-    const scheduleText = document.createElement('p');
-    scheduleText.className = 'text-muted small mb-3';
-    scheduleText.textContent = cls.schedule || 'Schedule information not available';
-    cardBody.appendChild(scheduleText);
-    
-    // Status section
-    const statusSection = document.createElement('div');
-    statusSection.id = `status-section-${classId}`;
-    cardBody.appendChild(statusSection);
-    
-    // Status selector
-    const statusGroup = document.createElement('div');
-    statusGroup.className = 'form-group';
-    statusSection.appendChild(statusGroup);
-    
-    const statusLabel = document.createElement('label');
-    statusLabel.className = 'form-label';
-    statusLabel.textContent = 'Status';
-    statusGroup.appendChild(statusLabel);
-    
-    const statusSelect = document.createElement('select');
-    statusSelect.className = 'form-select form-select-sm';
-    statusSelect.id = `status-${classId}`;
-    statusSelect.dataset.classId = classId;
-    
-    // Set disabled state based on toggle state
-    if (window.enrollmentToggleStates[enrollmentKey] === false) {
-        statusSelect.disabled = true;
-    }
-    
-    const pendingOption = document.createElement('option');
-    pendingOption.value = 'Pending';
-    pendingOption.textContent = 'Pending';
-    pendingOption.selected = status === 'Pending';
-    statusSelect.appendChild(pendingOption);
-    
-    const activeOption = document.createElement('option');
-    activeOption.value = 'Active';
-    activeOption.textContent = 'Active';
-    activeOption.selected = status === 'Active';
-    statusSelect.appendChild(activeOption);
-    
-    statusGroup.appendChild(statusSelect);
-    
-    // Unenrollment message (hidden by default)
-    const unenrollMessage = document.createElement('div');
-    unenrollMessage.className = 'alert alert-danger mt-2';
-    unenrollMessage.id = `unenroll-msg-${classId}`;
-    unenrollMessage.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>Student will be removed from this class`;
-    
-    // Show/hide the message based on the toggle state
-    if (window.enrollmentToggleStates[enrollmentKey] === false) {
-        unenrollMessage.classList.remove('d-none');
-    } else {
-        unenrollMessage.classList.add('d-none');
-    }
-    
-    statusSection.appendChild(unenrollMessage);
-    
-    classCard.appendChild(cardBody);
+                const classId = cls.class_id || cls.id;
+                const status = cls.enrollment_status || 'Pending';
+                
+                // Create unique identifier for this enrollment
+                const enrollmentKey = `${studentId}-${classId}`;
+                
+                const classCard = document.createElement('div');
+                classCard.className = 'card mb-3';
+                classCard.dataset.classId = classId;
+                classCard.dataset.originalStatus = status; // Store original status for comparison
+                
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body';
+                
+                // Class header with name and toggle
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'd-flex justify-content-between align-items-center mb-2';
+                
+                // Class name
+                const classTitle = document.createElement('h6');
+                classTitle.className = 'card-title mb-0';
+                classTitle.textContent = cls.name;
+                headerDiv.appendChild(classTitle);
+                
+                // Keep enrolled toggle
+                const toggleDiv = document.createElement('div');
+                toggleDiv.className = 'form-check form-switch';
+                
+                const toggleInput = document.createElement('input');
+                toggleInput.className = 'form-check-input';
+                toggleInput.type = 'checkbox';
+                toggleInput.id = `keep-class-${classId}`;
+                
+                // Initialize storage for this enrollment if not exists
+                if (!window.enrollmentToggleStates) {
+                    window.enrollmentToggleStates = {};
+                }
+                
+                // Check if we have a saved state for this toggle, otherwise default to checked
+                toggleInput.checked = window.enrollmentToggleStates[enrollmentKey] !== false;
+                
+                toggleInput.dataset.classId = classId;
+                toggleInput.dataset.enrollmentKey = enrollmentKey;
+                
+                const toggleLabel = document.createElement('label');
+                toggleLabel.className = 'form-check-label';
+                toggleLabel.htmlFor = `keep-class-${classId}`;
+                toggleLabel.textContent = 'Keep Enrolled';
+                
+                toggleDiv.appendChild(toggleInput);
+                toggleDiv.appendChild(toggleLabel);
+                headerDiv.appendChild(toggleDiv);
+                
+                cardBody.appendChild(headerDiv);
+                
+                // Class schedule
+                const scheduleText = document.createElement('p');
+                scheduleText.className = 'text-muted small mb-3';
+                scheduleText.textContent = cls.schedule || 'Schedule information not available';
+                cardBody.appendChild(scheduleText);
+                
+                // Status section
+                const statusSection = document.createElement('div');
+                statusSection.id = `status-section-${classId}`;
+                cardBody.appendChild(statusSection);
+                
+                // Status selector
+                const statusGroup = document.createElement('div');
+                statusGroup.className = 'form-group';
+                statusSection.appendChild(statusGroup);
+                
+                const statusLabel = document.createElement('label');
+                statusLabel.className = 'form-label';
+                statusLabel.textContent = 'Status';
+                statusGroup.appendChild(statusLabel);
+                
+                const statusSelect = document.createElement('select');
+                statusSelect.className = 'form-select form-select-sm';
+                statusSelect.id = `status-${classId}`;
+                statusSelect.dataset.classId = classId;
+                
+                // Set disabled state based on toggle state
+                if (window.enrollmentToggleStates[enrollmentKey] === false) {
+                    statusSelect.disabled = true;
+                }
+                
+                const pendingOption = document.createElement('option');
+                pendingOption.value = 'Pending';
+                pendingOption.textContent = 'Pending';
+                pendingOption.selected = status === 'Pending';
+                statusSelect.appendChild(pendingOption);
+                
+                const activeOption = document.createElement('option');
+                activeOption.value = 'Active';
+                activeOption.textContent = 'Active';
+                activeOption.selected = status === 'Active';
+                statusSelect.appendChild(activeOption);
+                
+                statusGroup.appendChild(statusSelect);
+                
+                // Unenrollment message (hidden by default)
+                const unenrollMessage = document.createElement('div');
+                unenrollMessage.className = 'alert alert-danger mt-2';
+                unenrollMessage.id = `unenroll-msg-${classId}`;
+                unenrollMessage.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>Student will be removed from this class`;
+                
+                // Show/hide the message based on the toggle state
+                if (window.enrollmentToggleStates[enrollmentKey] === false) {
+                    unenrollMessage.classList.remove('d-none');
+                } else {
+                    unenrollMessage.classList.add('d-none');
+                }
+                
+                statusSection.appendChild(unenrollMessage);
+                
+                classCard.appendChild(cardBody);
     container.appendChild(classCard);
-    
+                
     // Add event listener for the toggle
-    toggleInput.addEventListener('change', function() {
-        const statusSelect = document.getElementById(`status-${classId}`);
-        const unenrollMsg = document.getElementById(`unenroll-msg-${classId}`);
-        const enrollmentKey = this.dataset.enrollmentKey;
-        
-        // Store toggle state for persistence
-        window.enrollmentToggleStates[enrollmentKey] = this.checked;
-        
-        if (this.checked) {
-            // Enable status selection when keeping enrolled
+                toggleInput.addEventListener('change', function() {
+                    const statusSelect = document.getElementById(`status-${classId}`);
+                    const unenrollMsg = document.getElementById(`unenroll-msg-${classId}`);
+                    const enrollmentKey = this.dataset.enrollmentKey;
+                    
+                    // Store toggle state for persistence
+                    window.enrollmentToggleStates[enrollmentKey] = this.checked;
+                    
+                    if (this.checked) {
+                        // Enable status selection when keeping enrolled
             if (statusSelect) statusSelect.disabled = false;
             if (unenrollMsg) unenrollMsg.classList.add('d-none');
-        } else {
-            // Disable status selection when not keeping enrolled
+                    } else {
+                        // Disable status selection when not keeping enrolled
             if (statusSelect) statusSelect.disabled = true;
             if (unenrollMsg) unenrollMsg.classList.remove('d-none');
         }
@@ -1408,22 +1554,22 @@ async function saveEnrollmentChanges(studentId) {
     if (!editForm) {
         utils.showToast('Error: Could not find edit form', 'error');
         return false;
-    }
-    
-    // Show loading toast
+        }
+        
+        // Show loading toast
     utils.showToast('Saving changes...', 'info');
-    
+        
     // Get all class cards in the form
     const classCards = editForm.querySelectorAll('.card');
     let hasChanges = false;
     let processedCount = 0;
-    let errorCount = 0;
-    
+        let errorCount = 0;
+        
     // Track which enrollment toggles we've already processed
     const processedEnrollments = new Set();
     
     // Process each class card
-    for (const card of classCards) {
+        for (const card of classCards) {
         try {
             const classId = card.dataset.classId;
             if (!classId) continue;
@@ -1482,42 +1628,38 @@ async function saveEnrollmentChanges(studentId) {
     } else {
         utils.showToast('No changes to save', 'info');
     }
-    
+
     return hasChanges;
 }
 
 // Process student unenrollment
 async function processUnenrollment(studentId, classId, processedEnrollments) {
     try {
-        const response = await fetch(`/api/enrollments/${studentId}/${classId}`, {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+        // Use utils.fetchData for consistent error handling and CSRF token inclusion
+        await utils.fetchData(`/api/enrollments/${studentId}/${classId}`, {
             method: 'DELETE',
             headers: {
-                'Cache-Control': 'no-cache'
-            }
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
+            },
+            credentials: 'same-origin' // Include cookies for authentication
         });
-        
-        // If successful or 404 (already unenrolled), count as processed
-        if (response.ok || response.status === 404) {
-            // Add to processed set
-            processedEnrollments.add(`${studentId}-${classId}`);
-            return true;
-        } else {
-            // Only count as error if it's not a 404
-            let errorData;
-            try {
-                errorData = await response.json();
-            } catch (e) {
-                errorData = { error: 'Failed to parse server response' };
-            }
-            
-            throw new Error(errorData.message || errorData.error || 'Failed to unenroll student');
-        }
+
+        // If we get here, the request was successful
+        processedEnrollments.add(`${studentId}-${classId}`);
+        return true;
     } catch (error) {
-        if (!error.message.includes('not found')) {
-            utils.showToast(`Error unenrolling from class ${classId}: ${error.message}`, 'error');
-            throw error;
+        // Don't count "not found" as an error
+        if (error.message && error.message.includes('not found')) {
+            return true;
         }
-        return true; // Don't count "not found" as an error
+
+        // Show error toast and propagate the error
+        utils.showToast(`Error unenrolling from class ${classId}: ${error.message}`, 'error');
+        throw error;
     }
 }
 
@@ -1525,21 +1667,21 @@ async function processUnenrollment(studentId, classId, processedEnrollments) {
 async function processStatusUpdate(studentId, classId, newStatus, processedEnrollments) {
     try {
         await utils.fetchData('/api/enrollments/approve', {
-            method: 'POST',
-            headers: {
+                            method: 'POST',
+                            headers: {
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                student_id: studentId,
-                class_id: classId,
-                status: newStatus
-            })
-        });
-        
-        // Add to processed set
+                            },
+                            body: JSON.stringify({
+                                student_id: studentId,
+                            class_id: classId,
+                            status: newStatus
+                            })
+                        });
+                        
+                        // Add to processed set
         processedEnrollments.add(`${studentId}-${classId}`);
         return true;
-    } catch (error) {
+                } catch (error) {
         utils.showToast(`Error updating status for class ${classId}: ${error.message}`, 'error');
         throw error;
     }
@@ -1547,8 +1689,18 @@ async function processStatusUpdate(studentId, classId, newStatus, processedEnrol
 
 // Refresh data after enrollment changes
 function refreshAfterChanges(studentId) {
-    // Create fresh params with cache busting
-    const freshParams = utils.withCacheBuster(window.location.search);
+    // Get current URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Create a new params object with current filters
+    const params = new URLSearchParams();
+    params.set('status', urlParams.get('status') || '');
+    params.set('search', urlParams.get('search') || '');
+    params.set('per_page', urlParams.get('per_page') || '5');
+    params.set('page', urlParams.get('page') || '1');
+    
+    // Add cache buster to prevent caching
+    const freshParams = utils.withCacheBuster(params);
     
     // If we're looking at a single student, refresh that view
     if (studentId) {
@@ -1579,16 +1731,16 @@ async function approveEnrollment(studentId, classId) {
             })
         });
 
-        // Get the current modal instance and hide it first
+            // Get the current modal instance and hide it first
         const viewModalVisible = utils.hideModal('viewEnrollmentModal');
-        
+                
         if (viewModalVisible) {
-            // Wait for modal to finish hiding transition
-            setTimeout(() => {
+                // Wait for modal to finish hiding transition
+                setTimeout(() => {
                 utils.showToast('Enrollment approved successfully', 'success');
                 refreshAfterChanges(studentId);
-            }, 300);
-        } else {
+                }, 300);
+            } else {
             utils.showToast('Enrollment approved successfully', 'success');
             refreshAfterChanges(studentId);
         }
@@ -1616,25 +1768,13 @@ async function performUnenrollment(studentId, classId) {
         // Show loading toast
         utils.showToast('Processing unenrollment...', 'info');
         
-        // Use DELETE method for unenrollment
-        const response = await fetch(`/api/enrollments/${studentId}/${classId}`, {
+        // Use utils.fetchData for consistent error handling and CSRF token inclusion
+        await utils.fetchData(`/api/enrollments/${studentId}/${classId}`, {
             method: 'DELETE',
             headers: {
-                'Cache-Control': 'no-cache'
+                'Content-Type': 'application/json'
             }
         });
-
-        // Check response status
-        if (!response.ok) {
-            let errorMessage = 'Failed to unenroll student';
-            try {
-                const result = await response.json();
-                errorMessage = result.message || result.error || errorMessage;
-            } catch (e) {
-                // Failed to parse response, use default error message
-            }
-            throw new Error(errorMessage);
-        }
         
         // Show success toast
         utils.showToast('Student successfully unenrolled', 'success');
@@ -1709,7 +1849,7 @@ function filterStudents() {
             existingNoMatchOption.textContent = `No students match "${searchTerm}"`;
             existingNoMatchOption.style.display = '';
         }
-    } else {
+        } else {
         // Remove any "no matches" option if we have matches
         const noMatchOption = Array.from(studentSelect.options).find(
             opt => opt.classList.contains('no-match-option')
@@ -1787,9 +1927,15 @@ async function exportEnrollmentsCSV() {
         window.URL.revokeObjectURL(downloadUrl);
         document.body.removeChild(link);
         
-        utils.showToast('CSV file downloaded successfully', 'success');
+        // Use the centralized notification system if available
+        if (typeof showSuccess === 'function') {
+            showSuccess('Enrollment data exported successfully', 'Success');
+        }
     } catch (error) {
-        utils.showToast('Failed to export CSV: ' + error.message, 'error');
+        // Use the centralized notification system if available
+        if (typeof showError === 'function') {
+            showError('Failed to export CSV: ' + error.message, 'Error');
+        }
     } finally {
         // Restore button state
         if (exportBtn) {
@@ -1799,73 +1945,39 @@ async function exportEnrollmentsCSV() {
     }
 }
 
-// Create a namespace for the enrollment management functionality
-const EnrollmentManager = (function() {
-    // Private functions that don't need to be exposed
-    function setupEventListeners() {
-        // ... existing setupEventListeners code ...
-    }
-    
-    function setupEnrollmentModalListeners() {
-        // ... existing setupEnrollmentModalListeners code ...
-    }
-    
-    function loadInitialData() {
-        // ... existing loadInitialData code ...
-    }
-    
-    function applyFilters(page = null) {
-        // ... existing applyFilters code with the fix for page parameter ...
-    }
-    
-    function fetchFilteredData(params) {
-        // ... existing fetchFilteredData code ...
-    }
-    
-    function updateTable(enrollments) {
-        // ... existing updateTable code ...
-    }
-    
-    function updatePagination(pagination) {
-        // ... existing updatePagination code ...
-    }
-    
-    function navigatePage(direction) {
-        // ... existing navigatePage code ...
-    }
-    
-    function refreshAfterChanges(studentId) {
-        // ... existing refreshAfterChanges code ...
-    }
-
-    // Return public methods - only expose what needs to be globally accessible
-    return {
-        // Initialize the module
-        init: function() {
-            console.log('Enrollment Management Page Loaded');
-            setupEventListeners();
-            loadInitialData();
-            setupModalHandlers();
-            cleanupInertAttributes();
-        },
+// Make functions available globally for HTML onclick attributes if needed
+// Synchronize UI filters with URL parameters
+function synchronizeUIFilters(urlParams) {
+    // Set status filter value from URL
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) {
+        const statusValue = urlParams.get('status') || '';
+        statusFilter.value = statusValue;
         
-        // Public functions that need to be called from HTML onclick attributes
-        viewEnrolment: viewEnrolment,
-        editEnrolment: editEnrolment,
-        approveEnrollment: approveEnrollment,
-        unenrollStudent: unenrollStudent,
-        
-        // Export utility for CSV download
-        exportEnrollmentsCSV: exportEnrollmentsCSV
-    };
-})();
+        // Add visual indicator for the Active filter
+        if (statusValue === 'Active') {
+            statusFilter.classList.add('showing-all-students');
+        } else {
+            statusFilter.classList.remove('showing-all-students');
+        }
+    }
+    
+    // Set search input value from URL
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = urlParams.get('search') || '';
+    }
+    
+    // Set rows per page value from URL
+    const rowsPerPage = document.getElementById('rowsPerPage');
+    if (rowsPerPage) {
+        rowsPerPage.value = urlParams.get('per_page') || '5';
+    }
+}
 
-// Initialize on document ready
-document.addEventListener('DOMContentLoaded', EnrollmentManager.init);
-
-// Make the necessary functions available globally for HTML onclick attributes
-window.viewEnrolment = EnrollmentManager.viewEnrolment;
-window.editEnrolment = EnrollmentManager.editEnrolment;
-window.approveEnrollment = EnrollmentManager.approveEnrollment;
-window.unenrollStudent = EnrollmentManager.unenrollStudent;
-window.exportEnrollmentsCSV = EnrollmentManager.exportEnrollmentsCSV;
+// Make functions available globally for HTML onclick attributes if needed
+window.viewEnrolment = viewEnrolment;
+window.editEnrolment = editEnrolment;
+window.approveEnrollment = approveEnrollment;
+window.unenrollStudent = unenrollStudent;
+window.exportEnrollmentsCSV = exportEnrollmentsCSV;

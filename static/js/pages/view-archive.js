@@ -12,7 +12,7 @@ const archiveTypes = {
     'class': {
         title: 'Archived Classes',
         icon: 'bi-book',
-        columns: ['ID', 'Name', 'Schedule', 'Year', 'Archive Date', 'Actions']
+        columns: ['ID', 'Name', 'Instructor', 'Schedule', 'Archive Date', 'Reason', 'Actions']
     },
     'student': {
         title: 'Archived Students',
@@ -43,11 +43,11 @@ let restoredRecord = null;
 
 // Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Archive page loaded');
-    
+    console.log('Archive page loaded successfully');
     // Initialize the archive page with a single function call
     // This will handle all initialization, event listeners, and data loading
     initializeArchivePage();
+    console.log('Archive page initialized');
 });
 
 // Main initialization function
@@ -59,11 +59,13 @@ function initializeArchivePage() {
     setupEventListeners();
     
     // Load initial counts separately from any specific archive data
-    fetchArchiveCounts().then(() => {
-        console.log('Archive counts loaded successfully');
-    }).catch(err => {
-        console.error('Failed to load initial archive counts:', err);
-    });
+    fetchArchiveCounts()
+        .then(counts => {
+            updateArchiveCounts(counts);
+        })
+        .catch(err => {
+            // Handle error silently
+        });
     
     // Process URL parameters
     processURLParams();
@@ -370,8 +372,10 @@ function showArchiveTable(folder) {
     hideAllArchiveTables();
     document.getElementById('defaultMessage').classList.add('d-none');
     
-    // Show selected archive table
-    const selectedTable = document.getElementById(`${folder}ArchiveTable`);
+    // Get the table ID - ensure first letter is lowercase
+    const tableId = `${folder.charAt(0).toLowerCase() + folder.slice(1)}ArchiveTable`;
+    
+    const selectedTable = document.getElementById(tableId);
     if (selectedTable) {
         selectedTable.classList.remove('d-none');
     } else if (folder === 'user') {
@@ -415,8 +419,9 @@ async function loadArchiveData(folder) {
     document.getElementById('archiveTableTitle').textContent = 
         currentFolder.charAt(0).toUpperCase() + currentFolder.slice(1) + ' Archive Records';
     
-    // Get the appropriate tbody
-    const tbody = document.querySelector(`#${currentFolder}ArchiveBody`);
+    // Get the appropriate tbody - ensure first letter is lowercase
+    const tbodyId = `${currentFolder.charAt(0).toLowerCase() + currentFolder.slice(1)}ArchiveBody`;
+    const tbody = document.getElementById(tbodyId);
     if (tbody) {
         tbody.innerHTML = `
             <tr>
@@ -429,8 +434,10 @@ async function loadArchiveData(folder) {
     }
     
     try {
-        // Build API URL
-        let url = `/api/archives/${currentFolder}`;
+        // Build API URL - special case for attendance which has its own endpoint
+        let url = currentFolder === 'attendance' 
+            ? '/api/archives/attendance' 
+            : `/api/archives/${currentFolder}`;
         
         const params = new URLSearchParams();
         
@@ -456,6 +463,8 @@ async function loadArchiveData(folder) {
         
         const data = await response.json();
 
+        // No debug logs for cleaner console output
+
         // Update table body
         if (tbody) {
             if (!data.records || data.records.length === 0) {
@@ -469,10 +478,9 @@ async function loadArchiveData(folder) {
         updatePaginationInfo(data);
 
     } catch (error) {
-        console.error('Error loading archive data:', error);
-        
-        // Show error message in table
-        const tbody = document.querySelector(`#${currentFolder}ArchiveBody`);
+        // Show error message in table - ensure first letter is lowercase
+        const tbodyId = `${currentFolder.charAt(0).toLowerCase() + currentFolder.slice(1)}ArchiveBody`;
+        const tbody = document.getElementById(tbodyId);
         const colspan = currentFolder === 'attendance' ? 7 : 6;
         
         if (tbody) {
@@ -627,13 +635,26 @@ function updatePaginationInfo(data) {
 const extractArchiveReason = (text) => {
     if (!text) return { reason: 'Archived', admin: null };
     
-    // Extract the basic reason
+    // Check for the format used in attendance records: ARCHIVED (timestamp): reason
+    const archivedMatch = text.match(/ARCHIVED \(([^)]+)\): (.+?)(\n|$)/);
+    if (archivedMatch && archivedMatch[2]) {
+        const reason = archivedMatch[2].trim();
+        
+        // Look for the 'Archived by: Admin Name' line that follows
+        const adminMatch = text.match(/Archived by: ([^\n]+)/i);
+        const admin = adminMatch ? adminMatch[1].trim() : null;
+        
+        return { reason, admin };
+    }
+    
+    // Fallback to the old format
     const reasonMatch = text.match(/ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)/);
     const reason = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim() : 'Archived';
     
-    // Try to extract admin info if available
-    const adminMatch = text.match(/Archived by: (.+?)(\n|$)/);
-    const admin = adminMatch && adminMatch[1] ? adminMatch[1].trim() : null;
+    // Extract admin name if available
+    const adminRegex = /Archived by[:\s]+([^\n]+)/i;
+    const adminMatch = text.match(adminRegex);
+    const admin = adminMatch ? adminMatch[1].trim() : null;
     
     return { reason, admin };
 };
@@ -651,9 +672,20 @@ const formatArchiveReason = (reasonObj) => {
 function generateTableRow(record, type) {
     switch(type) {
         case 'class':
-            // Extract archive reason from description
-            const classReasonObj = extractArchiveReason(record.description);
+            // Extract archive reason from notes or description
+            const classReasonObj = extractArchiveReason(record.notes || record.description);
+            // Always use the formatted reason from our extraction function
+            // Don't use record.archive_reason as it might not have the admin info
             const classReason = formatArchiveReason(classReasonObj);
+            
+            // Use the correct ID field
+            const classId = record.id || record.class_id;
+            
+            // Use the schedule field that's already formatted
+            const schedule = record.schedule || 'Not scheduled';
+            
+            // Format archive date properly
+            const archiveDate = record.archive_date || 'Unknown';
             
             return `
                 <tr>
@@ -664,22 +696,22 @@ function generateTableRow(record, type) {
                             </div>
                             <div>
                                 <div class="fw-medium">${record.name}</div>
-                                <div class="text-muted small">${record.class_id}</div>
+                                <div class="text-muted small">${classId}</div>
                             </div>
                         </div>
                     </td>
                     <td>${record.instructor || 'Not Assigned'}</td>
-                    <td>${record.day}, ${record.time}</td>
-                    <td>${record.archive_date || 'Unknown'}</td>
+                    <td>${schedule}</td>
+                    <td>${archiveDate}</td>
                     <td>
                         <span class="badge bg-secondary-subtle text-secondary">${classReason}</span>
                     </td>
                     <td class="text-end">
                         <div class="d-flex gap-2 justify-content-end">
-                            <button class="btn btn-link text-success p-0" onclick="restoreRecord('${record.class_id}', 'class')" title="Restore">
+                            <button class="btn btn-link text-success p-0" onclick="restoreRecord('${classId}', 'class')" title="Restore">
                                 <i class="bi bi-arrow-counterclockwise"></i>
                             </button>
-                            <button class="btn btn-link text-danger p-0" onclick="deleteRecord('${record.class_id}', 'class')" title="Delete">
+                            <button class="btn btn-link text-danger p-0" onclick="deleteRecord('${classId}', 'class')" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -809,16 +841,9 @@ function generateTableRow(record, type) {
                 </tr>
                 `;
         case 'attendance':
-            // Extract archive reason or use provided one
-            let attendanceReasonObj;
-            if (record.archive_reason) {
-                attendanceReasonObj = {
-                    reason: record.archive_reason,
-                    admin: record.archived_by || null
-                };
-            } else {
-                attendanceReasonObj = extractArchiveReason(record.notes);
-            }
+            // Always extract archive reason from comments field which contains the full archive note
+            // This ensures we get both the reason and admin name
+            const attendanceReasonObj = extractArchiveReason(record.comments);
             const attendanceReason = formatArchiveReason(attendanceReasonObj);
             
             return `
@@ -968,6 +993,21 @@ function showRestoreConfirmation(id, type) {
     // Store the record info for use in the confirmation handler
     recordToRestore = { id, type };
     
+    // Update modal title and body based on record type
+    const modalTitle = document.getElementById('confirmRestoreModalLabel');
+    const modalBody = document.querySelector('#confirmRestoreModal .modal-body');
+    
+    if (modalTitle && modalBody) {
+        // Set appropriate title based on type
+        modalTitle.textContent = `Confirm ${type.charAt(0).toUpperCase() + type.slice(1)} Restoration`;
+        
+        // Update modal body text
+        modalBody.innerHTML = `
+            <p>Are you sure you want to restore this ${type}?</p>
+            <p class="mb-0">This will mark the ${type} as active again.</p>
+        `;
+    }
+    
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('confirmRestoreModal'));
     modal.show();
@@ -1051,24 +1091,32 @@ async function performRestore(id, type) {
     const button = document.querySelector(`button[onclick*="restoreRecord('${id}"]`);
     
     try {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        if (!csrfToken) {
+            console.warn('CSRF token not found. Restore request may fail.');
+            showToast('Warning', 'CSRF token not found. Please refresh the page and try again.', 'warning');
+        }
+        
         // Make API request with button UI handling
         const data = await makeAPIRequest(`/api/archives/restore/${type}/${id}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
+            },
+            credentials: 'same-origin' // Include cookies for authentication
         }, button);
         
-        // Show success message
-        showToast('Success', data.message || 'Record has been restored', 'success');
+        // Show success message with appropriate message based on type
+        let successMessage = data.message || 'Record has been restored successfully';
+        showToast('Success', successMessage, 'success');
         
         // Refresh data - Load main table first
         await loadArchiveData(currentState.folder);
         // Then refresh counts
         await fetchArchiveCounts();
-
-        // Special handling for classes to prompt navigation
-        if (type === 'class' && data.id) {
-            showClassNavigationModal(data.id);
-        }
 
     } catch (error) {
         console.error('Error restoring record:', error);
@@ -1080,10 +1128,22 @@ async function performDelete(id, type) {
     const button = document.querySelector(`button[onclick*="deleteRecord('${id}"]`);
     
     try {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        if (!csrfToken) {
+            console.warn('CSRF token not found. Delete request may fail.');
+            showToast('Warning', 'CSRF token not found. Please refresh the page and try again.', 'warning');
+        }
+        
         // Make API request with button UI handling
         const data = await makeAPIRequest(`/api/archives/delete/${type}/${id}`, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
+            },
+            credentials: 'same-origin' // Include cookies for authentication
         }, button);
         
         // Show success message

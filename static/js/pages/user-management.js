@@ -382,7 +382,7 @@ function updateTable() {
             } else {
             // Generate table rows
                 tbody.innerHTML = paginatedData.map(user => `
-                <tr data-user-role="${user.role}">
+                <tr data-user-id="${user.user_id}" data-user-role="${user.role}">
                         <td>
                             <div class="d-flex align-items-center">
                             <img src="${user.profile_img ? `/static/images/${user.profile_img}` : '/static/images/profile.png'}" 
@@ -451,14 +451,29 @@ function updateCardStatistics() {
     try {
         // Calculate total counts
         const totalUsers = state.currentData.length;
-        const activeUsers = state.currentData.filter(user => user.status === 'Active').length;
+        
+        // Check for active users with multiple possible data formats
+        const activeUsers = state.currentData.filter(user => {
+            // Handle different ways active status might be stored
+            return user.status === 'Active' || 
+                   user.is_active === true || 
+                   user.is_active === 'true' || 
+                   user.active === true || 
+                   user.active === 'true';
+        }).length;
+        
         const inactiveUsers = totalUsers - activeUsers;
 
-        // Update DOM elements
-        document.getElementById('totalUsers').textContent = totalUsers;
-        document.getElementById('activeUsers').textContent = activeUsers;
-        document.getElementById('inactiveUsers').textContent = inactiveUsers;
+        // Update DOM elements with fallbacks
+        const totalElement = document.getElementById('totalUsers');
+        const activeElement = document.getElementById('activeUsers');
+        const inactiveElement = document.getElementById('inactiveUsers');
         
+        if (totalElement) totalElement.textContent = totalUsers;
+        if (activeElement) activeElement.textContent = activeUsers;
+        if (inactiveElement) inactiveElement.textContent = inactiveUsers;
+        
+        // Stats updated silently
     } catch (error) {
         console.error('Error updating card statistics:', error);
     }
@@ -585,15 +600,15 @@ function showUserModal(userData) {
             }
             break;
             
-                    case 'instructor':
+        case 'instructor':
             if (typeof window.showInstructorModalView === 'function') {
                 window.showInstructorModalView(preparedData);
             } else {
                 showToast('Instructor modal view not available', 'error');
             }
-                        break;
+            break;
             
-                    case 'admin':
+        case 'admin':
             if (typeof window.showAdminModalView === 'function') {
                 window.showAdminModalView(preparedData);
             } else {
@@ -636,14 +651,33 @@ function archiveUser() {
     const modal = document.getElementById('confirmArchiveModal');
     const userId = document.getElementById('archiveUserId').value;
     const userName = document.getElementById('archiveUserName').textContent;
-    const userRole = document.querySelector('tr[data-user-id="' + userId + '"]')?.getAttribute('data-user-role') || 'User';
+    
+    // Get the user role from the table row
+    // First try to find the row with data-user-id attribute
+    let userRole = '';
+    const userRow = document.querySelector(`tr[data-user-id="${userId}"]`);
+    
+    if (userRow) {
+        // If found, get the role from data-user-role attribute
+        userRole = userRow.getAttribute('data-user-role') || '';
+    } else {
+        // If not found with data-user-id, try to find the row with the user ID in the text content
+        const allRows = document.querySelectorAll('tbody tr');
+        for (const row of allRows) {
+            if (row.textContent.includes(userId)) {
+                userRole = row.getAttribute('data-user-role') || '';
+                break;
+            }
+        }
+    }
     
     // Get the archive reason
     const reasonSelect = document.getElementById('archiveReason');
     const customReasonInput = document.getElementById('customReason');
     
-    if (!reasonSelect || !reasonSelect.value) {
-        showToast('Please select an archive reason', 'error');
+    if (!reasonSelect || reasonSelect.value === "" || reasonSelect.value === null) {
+        // Use showToast with proper format: title first, then message, then type
+        showToast('Error', 'Please select an archive reason', 'error');
         return;
     }
     
@@ -651,13 +685,16 @@ function archiveUser() {
     let archiveReason = reasonSelect.value;
     if (archiveReason === 'other' && customReasonInput) {
         if (!customReasonInput.value.trim()) {
-            showToast('Please specify a custom reason', 'error');
+            // Use showToast with proper format: title first, then message, then type
+            showToast('Error', 'Please specify a custom reason', 'error');
+            // Focus on the custom reason input to draw user's attention
+            customReasonInput.focus();
             return;
         }
         archiveReason = customReasonInput.value.trim();
     }
     
-    console.log('Archiving user:', { userId, userName, userRole, reason: archiveReason });
+    // Archive operation in progress
     
     // Disable archive button to prevent multiple submissions
     const archiveBtn = document.getElementById('confirmArchiveBtn');
@@ -666,11 +703,31 @@ function archiveUser() {
         archiveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
     }
     
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        if (typeof showToast === 'function') {
+            showToast('Error', 'CSRF token not found. Please refresh the page and try again.', 'error');
+        } else {
+            console.error('CSRF token not found. Please refresh the page and try again.');
+        }
+        
+        // Re-enable the archive button
+        if (archiveBtn) {
+            archiveBtn.disabled = false;
+            archiveBtn.innerHTML = 'Archive';
+        }
+        return;
+    }
+    
     // Send the archive request
     fetch(`/api/users/${userId}/archive`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
         },
         body: JSON.stringify({
             reason: archiveReason
@@ -683,14 +740,58 @@ function archiveUser() {
         return response.json();
     })
     .then(data => {
-        console.log('User archived successfully:', data);
+        // User archived successfully
         
-        // Hide the modal
+        // Hide the modal - with proper cleanup
         const modal = bootstrap.Modal.getInstance(document.getElementById('confirmArchiveModal'));
-        if (modal) modal.hide();
+        if (modal) {
+            modal.hide();
+            // Clean up backdrop and modal state
+            setTimeout(() => {
+                if (typeof cleanupModalBackdrop === 'function') {
+                    cleanupModalBackdrop('confirmArchiveModal');
+                }
+            }, 150);
+        }
         
-        // Show original success message
-        showToast(data.message || 'User has been archived successfully.', 'success');
+        // Get the correct archive type based on the user's role
+        // Valid archive types are: 'student', 'class', 'company', 'instructor', 'admin', 'attendance'
+        let archiveType;
+        
+        // Determine archive link based on user role
+        
+        // Convert to lowercase for case-insensitive comparison
+        const roleLower = userRole ? userRole.toLowerCase() : '';
+        
+        if (roleLower === 'student') {
+            archiveType = 'student';
+        } else if (roleLower === 'instructor') {
+            archiveType = 'instructor';
+        } else if (roleLower === 'administrator' || roleLower === 'admin') {
+            archiveType = 'admin';
+        } else {
+            // If we couldn't determine the role, default to admin archives
+            archiveType = 'admin';
+            console.warn('Could not determine user role for archive link, defaulting to admin archive');
+        }
+        
+        // Create a custom success message with archive link
+        const successMessage = `
+            <div>User ${userName} has been archived successfully</div>
+            <div class="mt-2">
+                <a href="/admin/archive-view?type=${archiveType}" class="btn btn-sm btn-outline-primary" 
+                   style="color: #191970; background-color: transparent; border-color: #191970; transition: all 0.3s ease;" 
+                   onmouseover="this.style.backgroundColor='rgba(25, 25, 112, 0.1)';" 
+                   onmouseout="this.style.backgroundColor='transparent';" 
+                   onmousedown="this.style.backgroundColor='#191970'; this.style.color='white';" 
+                   onmouseup="this.style.backgroundColor='rgba(25, 25, 112, 0.1)'; this.style.color='#191970';">
+                    <i class="bi bi-box-arrow-right me-1"></i>View in Archives
+                </a>
+            </div>
+        `;
+        
+        // Show the toast with HTML content
+        showToast('Success', successMessage, 'success');
         
         // Remove from the table
         removeUserFromTable(userId);
@@ -702,13 +803,17 @@ function archiveUser() {
     })
     .catch(error => {
         console.error('Error archiving user:', error);
-        showToast('Failed to archive user', 'error');
+        if (typeof window.showError === 'function') {
+            window.showError('Failed to archive user');
+        } else {
+            console.error('Failed to archive user');
+        }
     })
     .finally(() => {
         // Re-enable archive button
         if (archiveBtn) {
             archiveBtn.disabled = false;
-            archiveBtn.innerHTML = 'Confirm Archive';
+            archiveBtn.innerHTML = 'Archive User';
         }
     });
 }
@@ -765,25 +870,37 @@ async function saveUserStatus(userId, isActive) {
             showToast('Error: Invalid user ID. Please try again or reload the page.', 'error');
             return;
         }
+        
+        // Normalize the isActive value to a boolean
         isActive = Boolean(isActive === true || isActive === 'true');
         const statusValue = isActive ? 'Active' : 'Inactive';
         
+        console.log(`Updating user ${userId} status to ${statusValue} (is_active: ${isActive})`);
         
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        // Prepare the request with the proper format expected by the API
         const response = await fetch(`/api/users/${userId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 status: statusValue,
                 is_active: isActive
             })
         });
         
+        // Check response status and show appropriate error
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Status update failed: ${response.status} ${response.statusText}`, errorText);
             throw new Error(`API returned ${response.status}: ${response.statusText}`);
         }
         
+        // Parse the response
         const result = await response.json();
         
         const userIndex = state.currentData.findIndex(user => user.user_id === userId || user.id === userId);
@@ -792,7 +909,7 @@ async function saveUserStatus(userId, isActive) {
         updateUserStatusInUI(userId, isActive);
         updateCardStatistics();
         updateTable();
-        showToast(`User status updated to ${statusValue}`, 'success');
+        showToast('User status updated successfully', 'success');
         return result;
     } catch (error) {
         console.error('Error updating user status:', error);
@@ -893,10 +1010,113 @@ function removeUserFromTable(userId) {
     }
 }
 
+/**
+ * Show a toast notification using the toast_notification.html component
+ * @param {string} message - The message to display or title if a second parameter is provided
+ * @param {string} type - The toast type (success, error, info, warning) or message if a third parameter is provided
+ * @param {string} typeOrNull - The toast type if message and type are provided as first two parameters
+ */
+function showToast(message, type = 'success', typeOrNull = null) {
+    try {
+        // Handle different parameter formats
+        let title, messageContent, toastType;
+        
+        if (arguments.length >= 3 && typeOrNull !== null) {
+            // Format: (title, message, type)
+            title = message;
+            messageContent = type;
+            toastType = typeOrNull;
+        } else if (arguments.length === 2 && typeof type === 'string' && 
+                  ['success', 'error', 'info', 'warning', 'danger'].includes(type.toLowerCase())) {
+            // Format: (message, type)
+            title = type.charAt(0).toUpperCase() + type.slice(1);
+            messageContent = message;
+            toastType = type;
+        } else {
+            // Default format
+            title = 'Notification';
+            messageContent = message;
+            toastType = type;
+        }
+        
+        // Get the toast element
+        const statusToast = document.getElementById('statusToast');
+        if (!statusToast) {
+            console.error('Toast element not found');
+            alert(`${title}: ${messageContent}`);
+            return;
+        }
+        
+        // Get elements inside toast
+        const toastTitle = statusToast.querySelector('#toastTitle');
+        const toastMessage = statusToast.querySelector('#toastMessage');
+        
+        if (!toastTitle || !toastMessage) {
+            console.error('Toast elements not found');
+            alert(`${title}: ${messageContent}`);
+            return;
+        }
+        
+        // Get the toast header
+        const toastHeader = statusToast.querySelector('.toast-header');
+        
+        // Remove any existing icon
+        const existingIcon = toastHeader.querySelector('i');
+        if (existingIcon) {
+            existingIcon.remove();
+        }
+        
+        // Create new icon with correct class based on type
+        let iconHTML = '';
+        if (toastType.toLowerCase() === 'success') {
+            iconHTML = '<i class="bi bi-check-circle-fill text-success me-2"></i>';
+        } else if (toastType.toLowerCase() === 'error' || toastType.toLowerCase() === 'danger') {
+            iconHTML = '<i class="bi bi-exclamation-circle-fill text-danger me-2"></i>';
+        } else if (toastType.toLowerCase() === 'warning') {
+            iconHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>';
+        } else if (toastType.toLowerCase() === 'info') {
+            iconHTML = '<i class="bi bi-info-circle-fill text-info me-2"></i>';
+        }
+        
+        // Insert the new icon at the beginning of the header
+        toastHeader.insertAdjacentHTML('afterbegin', iconHTML);
+        
+        // Update toast title text without affecting the icon
+        // Find the text node in the title (if any)
+        let textNode = null;
+        for (let i = 0; i < toastTitle.childNodes.length; i++) {
+            if (toastTitle.childNodes[i].nodeType === Node.TEXT_NODE) {
+                textNode = toastTitle.childNodes[i];
+                break;
+            }
+        }
+        
+        if (textNode) {
+            // Update existing text node
+            textNode.nodeValue = title;
+        } else {
+            // If no text node exists, append one
+            toastTitle.appendChild(document.createTextNode(title));
+        }
+        
+        // Set the message content
+        toastMessage.innerHTML = messageContent;
+        
+        // Show the toast
+        const toast = new bootstrap.Toast(statusToast);
+        toast.show();
+    } catch (error) {
+        console.error('Error showing toast:', error);
+        // Fallback to alert
+        alert(message);
+    }
+}
+
 // Make functions globally available
 window.handleUserAction = handleUserAction;
 window.archiveUser = archiveUser;
 window.saveUserStatus = saveUserStatus;
+window.showToast = showToast; // Make showToast globally available
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', initUserManagement);
@@ -1003,23 +1223,51 @@ function getAttributeAsJson(element, attributeName, defaultValue) {
 function handleSaveUserStatus() {
     try {
         // Get the current editing user from state
-        if (!state.currentEditingUser || !state.currentEditingUser.id) {
+        if (!state.currentEditingUser) {
             showToast('Error: User data not found', 'error');
             return;
         }
         
-        const userId = state.currentEditingUser.id;
-        const newStatus = document.getElementById('userStatusSelect').value;
+        // Get the user ID, checking multiple possible properties
+        const userId = state.currentEditingUser.user_id || 
+                      state.currentEditingUser.id || 
+                      document.getElementById('editUserId')?.value;
+        
+        if (!userId) {
+            console.error('Could not determine user ID from:', state.currentEditingUser);
+            showToast('Error: Could not determine user ID', 'error');
+            return;
+        }
+        
+        // Get the new status from the select dropdown
+        const statusSelect = document.getElementById('userStatusSelect');
+        if (!statusSelect) {
+            showToast('Error: Status selection not found', 'error');
+            return;
+        }
+        
+        const newStatus = statusSelect.value;
         const isActive = newStatus === 'Active';
         
+        console.log(`Saving status for user ${userId}: ${newStatus}`);
+        
         // Save the user status
-        saveUserStatus(userId, isActive).then(() => {
-            // Close the modal after successful save
-            const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
-            if (modal) {
-                modal.hide();
-            }
-        });
+        saveUserStatus(userId, isActive)
+            .then(() => {
+                // Close the modal after successful save
+                try {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } catch (modalError) {
+                    console.warn('Could not close modal:', modalError);
+                }
+            })
+            .catch(error => {
+                console.error('Status update failed:', error);
+                showToast('Failed to update user status. Please try again.', 'error');
+            });
     } catch (error) {
         console.error('Error handling save user status:', error);
         showToast('Failed to save user status', 'error');

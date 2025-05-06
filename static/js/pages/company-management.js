@@ -229,24 +229,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const countUrl = `${baseUrl}/count?${queryString}`;
             const exportUrl = `${baseUrl}?${queryString}`;
             
+            // Show processing toast
+            showToast('Preparing export, please wait...', 'info', 'Processing');
+            
             fetch(countUrl)
-        .then(response => response.json())
-        .then(data => {
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(errData => {
+                            throw new Error(errData.error || `HTTP error ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
                     if (data.success) {
                         const count = data.count;
                         if (count > 0) {
-                            showToast('Success', `Exported ${count} ${count === 1 ? 'company' : 'companies'} to CSV`, 'success');
+                            showToast(`Exported ${count} ${count === 1 ? 'company' : 'companies'} to CSV file`, 'success', 'Success');
                             window.location.href = exportUrl;
                         } else {
-                            showToast('No Companies', 'No companies match the current filters for export.', 'info');
+                            showToast('No companies match the current filters for export.', 'info', 'No Data to Export');
                         }
                     } else {
-                        showToast('Error', data.error || 'Failed to count companies for export.', 'error');
+                        showToast(data.error || 'Failed to count companies for export.', 'error', 'Export Error');
                     }
                 })
                 .catch(error => {
-                    console.error('Error counting companies for export:', error); // Kept error log
-                    showToast('Error', 'An error occurred while preparing the export.', 'error');
+                    console.error('Error counting companies for export:', error);
+                    showToast(error.message || 'An error occurred while preparing the export.', 'error', 'Export Failed');
                 })
                 .finally(() => {
                     exportButton.disabled = false;
@@ -285,13 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!archiveReason) {
                  // Show error toast if no reason selected/provided
-                 const toastTitle = document.getElementById('toastTitle');
-                 const toastMessage = document.getElementById('toastMessage');
-                 const statusToast = document.getElementById('statusToast');
-                 toastTitle.textContent = 'Validation Error';
-                 toastMessage.textContent = 'Please select or provide an archive reason.';
-                 const toast = new bootstrap.Toast(statusToast);
-                 toast.show();
+                 showToast('Please select or provide an archive reason.', 'error', 'Error');
                  return; // Stop execution
             }
 
@@ -299,16 +303,36 @@ document.addEventListener('DOMContentLoaded', () => {
             this.disabled = true; 
             this.textContent = 'Archiving...';
 
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (!csrfToken) {
+                console.warn('CSRF token not found, request may fail');
+                showToast('CSRF token missing. Request may fail.', 'warning', 'Warning');
+            }
+            
+            // Show processing toast
+            const companyName = document.getElementById('archiveCompanyNameDisplay').textContent;
+            showToast(`Archiving company "${companyName}"...`, 'info', 'Processing');
+            
             fetch(`/api/companies/${companyIdToArchive}/archive`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken || ''
                 },
+                credentials: 'same-origin',
                 body: JSON.stringify({ reason: archiveReason }) // Send reason in body
             })
             .then(response => {
                  // Check if response is ok, if not, attempt to parse as JSON for error
                 if (!response.ok) {
+                    // Check specifically for 400 status which might indicate active students
+                    if (response.status === 400) {
+                        const error = new Error('Please inactive the student(s) from this company before archiving the company. Try again later!');
+                        error.status = response.status;
+                        throw error;
+                    }
+                    
                     // Try to parse the error response as JSON
                     return response.json().then(errData => {
                         // If JSON parsing is successful, create an error with message from JSON
@@ -318,23 +342,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw error;
                     }).catch(() => { 
                         // If response is not JSON (e.g., HTML error page), throw generic error
-                         const error = new Error(`HTTP error ${response.status}: Server returned non-JSON response.`);
-                         error.status = response.status;
-                         throw error;
+                        const error = new Error(`HTTP error ${response.status}: Please try again later.`);
+                        error.status = response.status;
+                        throw error;
                     });
                 }
                 // If response is OK, parse JSON as usual
                 return response.json();
             })
             .then(data => {
-                const toastTitle = document.getElementById('toastTitle');
-                const toastMessage = document.getElementById('toastMessage');
-                const statusToast = document.getElementById('statusToast');
-
                 if (data.success) {
-                    toastTitle.textContent = 'Success';
-                    toastMessage.textContent = data.message || 'Company archived successfully';
-            // Refresh table data
+                    // Get company name for the success message
+                    const companyName = document.getElementById('archiveCompanyNameDisplay').textContent;
+                    const companyId = document.getElementById('archiveCompanyIdDisplay').textContent;
+                    
+                    // Show success toast with company details
+                    showToast(`Company "${companyName}" archived successfully`, 'success', 'Success');
+                    
+                    // Refresh table data
                     if (window.fetchAndUpdateData) {
                         window.fetchAndUpdateData(); 
                     } else {
@@ -366,35 +391,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } else {
                     // Error message from backend JSON
-                    toastTitle.textContent = 'Error';
-                    toastMessage.textContent = data.error || 'Error archiving company';
+                    let errorMessage = data.error || 'Error archiving company';
                     if (data.details) { // Show details if provided (e.g., active students)
-                        toastMessage.textContent += ` (${data.details})`;
+                        errorMessage += ` (${data.details})`;
                     }
+                    showToast(errorMessage, 'error', 'Error');
                 }
-                const toast = new bootstrap.Toast(statusToast);
-                toast.show();
             })
             .catch(error => {
                 console.error('Error during company archive fetch:', error);
-                const toastTitle = document.getElementById('toastTitle');
-                const toastMessage = document.getElementById('toastMessage');
-                const statusToast = document.getElementById('statusToast');
-                toastTitle.textContent = 'Error';
-
+                
                 // Use the specific error message if available from parsed JSON
+                let errorMessage;
                 if (error.data && error.data.error) {
-                    toastMessage.textContent = error.data.error;
+                    errorMessage = error.data.error;
                     if (error.data.details) {
-                        toastMessage.textContent += ` - ${error.data.details}`;
+                        errorMessage += ` - ${error.data.details}`;
                     }
                 } else {
                     // Fallback to generic error message
-                    toastMessage.textContent = error.message || 'An error occurred while archiving the company.';
+                    errorMessage = error.message || 'An error occurred while archiving the company.';
                 }
                 
-                const toast = new bootstrap.Toast(statusToast);
-                toast.show();
+                showToast(errorMessage, 'error', 'Error');
             })
             .finally(() => {
                  // Re-enable button regardless of success/failure
@@ -454,9 +473,8 @@ async function loadAndShowViewModal(companyId, targetPage = 1) { // Added target
         }
         const company = await response.json();
 
-        // --- Modal State (Use the global tracker) --- 
-        // let modalCurrentPage = 1; // Remove local variable
-        let modalItemsPerPage = 5; // Default (can keep local)
+        // let modalCurrentPage = 1;
+        let modalItemsPerPage = 5; 
         let modalAllStudents = company.students || [];
         modalItemsPerPage = parseInt(document.getElementById('modalRowsPerPage')?.value || '5'); // Read current selection
 
@@ -568,7 +586,7 @@ async function loadAndShowViewModal(companyId, targetPage = 1) { // Added target
 
     } catch (error) {
         console.error('Error loading or showing view modal:', error);
-        showToast('Error', `Could not load company details: ${error.message}`, 'error');
+        showToast(`Could not load company details: ${error.message}`, 'error', 'Error');
     }
 }
 
@@ -603,14 +621,39 @@ window.handleCompanyAction = function(action, companyId) {
                             status: document.getElementById('editCompanyStatus').value
                         };
 
+                        // Get CSRF token from meta tag
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        if (!csrfToken) {
+                            console.warn('CSRF token not found, request may fail');
+                            showToast('CSRF token missing. Request may fail.', 'warning', 'Warning');
+                        }
+                        
+                        // Show processing toast
+                        showToast(`Updating company "${updatedCompany.name}"...`, 'info', 'Processing');
+                        
+                        // Disable submit button and show loading state
+                        const submitButton = document.querySelector('#editCompanyForm button[type="submit"]');
+                        const originalButtonText = submitButton.innerHTML;
+                        submitButton.disabled = true;
+                        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+                        
                         fetch(`/api/companies-direct/${companyId}`, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken || ''
                             },
+                            credentials: 'same-origin',
                             body: JSON.stringify(updatedCompany)
                         })
-                        .then(response => response.json())
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.json().then(errData => {
+                                    throw new Error(errData.error || `HTTP error ${response.status}`);
+                                });
+                            }
+                            return response.json();
+                        })
                         .then(data => {
                             if (data.success) {
                                 // Close modal
@@ -619,52 +662,31 @@ window.handleCompanyAction = function(action, companyId) {
                                 // Refresh table
                                 fetchAndUpdateData();
                                 
-                                // Show success toast
-                                const toastTitle = document.getElementById('toastTitle');
-                                const toastMessage = document.getElementById('toastMessage');
-                                const statusToast = document.getElementById('statusToast');
-                                
-                                toastTitle.textContent = 'Success';
-                                toastMessage.textContent = 'Company updated successfully';
-                                const toast = new bootstrap.Toast(statusToast);
-                                toast.show();
+                                // Show success toast with company details
+                                showToast('Company updated successfully', 'success', 'Success');
                             } else {
                                 // Show error toast
-                                const toastTitle = document.getElementById('toastTitle');
-                                const toastMessage = document.getElementById('toastMessage');
-                                const statusToast = document.getElementById('statusToast');
-                                
-                                toastTitle.textContent = 'Error';
-                                toastMessage.textContent = data.error || 'Error updating company';
-                                const toast = new bootstrap.Toast(statusToast);
-                                toast.show();
+                                showToast('Failed to update company', 'error', data.error || 'Update Failed');
                             }
                         })
                         .catch(error => {
-                            console.error('Error:', error);
-                            // Show error toast
-                            const toastTitle = document.getElementById('toastTitle');
-                            const toastMessage = document.getElementById('toastMessage');
-                            const statusToast = document.getElementById('statusToast');
-                            
-                            toastTitle.textContent = 'Error';
-                            toastMessage.textContent = 'Error updating company';
-                            const toast = new bootstrap.Toast(statusToast);
-                            toast.show();
+                            console.error('Error updating company:', error);
+                            // Show error toast with details
+                            showToast(error.message || 'An error occurred while updating the company', 'error', 'Error');
+                        })
+                        .finally(() => {
+                            // Re-enable button and restore original text
+                            if (submitButton) {
+                                submitButton.disabled = false;
+                                submitButton.innerHTML = originalButtonText;
+                            }
                         });
                     };
                 })
                 .catch(error => {
                     console.error('Error fetching company details:', error);
                     // Show error toast
-                    const toastTitle = document.getElementById('toastTitle');
-                    const toastMessage = document.getElementById('toastMessage');
-                    const statusToast = document.getElementById('statusToast');
-                    
-                    toastTitle.textContent = 'Error';
-                    toastMessage.textContent = 'Error fetching company details';
-                    const toast = new bootstrap.Toast(statusToast);
-                    toast.show();
+                    showToast('Error fetching company details', 'error', 'Error');
                 });
             break;
         case 'view':
@@ -688,7 +710,7 @@ function showArchiveConfirmation(companyId) {
 
     if (!modalElement || !modalTitle || !confirmButton || !companyIdInput || !companyNameDisplay || !companyIdDisplay) {
         console.error('Archive confirmation modal elements missing (modal, title, button, hidden input, name/id display).');
-        showToast('Error', 'Cannot open archive dialog. UI elements missing.', 'error');
+        showToast('Cannot open archive dialog. UI elements missing.', 'error', 'Error');
         return;
     }
 
@@ -724,103 +746,13 @@ function showArchiveConfirmation(companyId) {
     archiveModal.show();
 }
 
-function archiveCompany() {
-    const confirmButton = document.getElementById('confirmArchiveCompanyBtn');
-    const reasonSelect = document.getElementById('archiveCompanyReason');
-    const customReasonInput = document.getElementById('archiveCompanyCustomReason');
-    const archiveModalElement = document.getElementById('archiveCompanyModal');
-    const companyIdInput = document.getElementById('archiveCompanyIdInput'); // Get the hidden input
-
-    const companyId = companyIdInput?.value; // Get ID from hidden input
-
-    // Critical Check: Ensure Company ID exists
-    if (!companyId) {
-        showToast('Error', 'Could not determine Company ID. Please close the modal and try again.', 'error');
-        console.error('Company ID is missing or undefined in archiveCompany function.');
-        // Optionally re-enable button if it exists
-        if (confirmButton) {
-            confirmButton.disabled = false;
-            confirmButton.innerHTML = 'Archive Company'; // Restore original text
-        }
-        return; // Stop execution
-    }
-
-    if (!reasonSelect || !customReasonInput || !archiveModalElement) {
-        showToast('Error', 'Could not process archive request. Modal elements missing.', 'error');
-        return;
-    }
-
-    let reason = reasonSelect.value;
-    if (reason === 'other' && customReasonInput.value.trim() !== '') {
-        reason = customReasonInput.value.trim();
-    } else if (reason === 'other') {
-        showToast('Warning', 'Please specify a reason if you select Other.', 'warning');
-        return;
-    }
-
-    // Disable button
-    if (confirmButton) { // Check if button exists before disabling
-        confirmButton.disabled = true;
-        confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Archiving...';
-    }
-
-    // Construct URL with the retrieved companyId
-    fetch(`/api/companies/${companyId}/archive`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-        body: JSON.stringify({ reason: reason })
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(err => {
-                throw new Error(err.error || `HTTP error! Status: ${response.status}`);
-            }).catch(() => {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            });
-        }
-        return response.json();
-    })
-            .then(data => {
-                if (data.success) {
-            showToast('Success', data.message || 'Company archived successfully.', 'success');
-            if (window.fetchAndUpdateData) { // Refresh the main table data
-                window.fetchAndUpdateData(); 
-            }
-            const archiveModal = bootstrap.Modal.getInstance(archiveModalElement);
-            if (archiveModal) {
-                archiveModal.hide();
-            }
-            // Reset the form elements within the modal
-            reasonSelect.value = '';
-            customReasonInput.value = '';
-            customReasonInput.style.display = 'none';
-            if (companyIdInput) companyIdInput.value = ''; // Clear hidden ID
-        } else {
-            showToast('Error', data.error || 'Failed to archive company.', 'error', 5000);
-        }
-    })
-    .catch(error => {
-        console.error('Error archiving company:', error); // Keep error log
-        showToast('Error', `Error archiving company: ${error.message}`, 'error', 5000);
-    })
-    .finally(() => {
-        // Re-enable button
-        if (confirmButton) {
-             confirmButton.disabled = false;
-             confirmButton.innerHTML = 'Confirm Archive'; // Use correct final text
-        }
-    });
-}
-
 function saveCompanyChanges() {
     const form = document.getElementById('editCompanyForm');
     const companyId = form.dataset.companyId; // Assuming company ID is stored in a data attribute
     const saveButton = document.getElementById('saveCompanyBtn');
 
     if (!form || !companyId || !saveButton) {
-        showToast('Error', 'Could not save changes. Form elements missing.', 'error');
+        showToast('Could not save changes. Form elements missing.', 'error', 'Error');
         return;
     }
 
@@ -1074,12 +1006,17 @@ async function handleModalBulkAction(action) {
 
     showToast('Processing', `Updating status for ${studentIds.length} students...`, 'info');
 
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
     const promises = studentIds.map(studentId => 
         fetch(`/api/users/${studentId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
+            credentials: 'same-origin',
             body: JSON.stringify({ is_active: newStatusIsActive })
         })
         .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
@@ -1140,12 +1077,20 @@ async function saveStudentStatusFromModal() {
     saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
 
     try {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (!csrfToken) {
+            console.warn('CSRF token not found, request may fail');
+            showToast('Warning', 'CSRF token missing. Request may fail.', 'warning');
+        }
+        
         const response = await fetch(`/api/users/${studentId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                // Add CSRF token header if necessary
+                'X-CSRFToken': csrfToken || ''
             },
+            credentials: 'same-origin',
             body: JSON.stringify({ is_active: newStatus === 'Active' }) // API expects boolean is_active
         });
 
@@ -1230,25 +1175,51 @@ if (addCompanyFormForListener) {
             const submitButton = document.querySelector('button[form="addCompanyForm"][type="submit"]'); 
             const originalButtonText = submitButton.innerHTML;
 
+            // Get CSRF token from the form's hidden field (preferred) or meta tag
+            const csrfTokenField = document.querySelector('#addCompanyForm input[name="csrf_token"]');
+            const csrfToken = csrfTokenField ? csrfTokenField.value : document.head.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (!csrfToken) {
+                console.warn('CSRF token not found, request may fail');
+                showToast('Warning', 'CSRF token missing. Request may fail.', 'warning');
+            }
+            
+            // Disable the submit button and show loading state
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Adding...';
+            
+            // Show processing toast
+            showToast(`Adding company ${formData.name}...`, 'info', 'Processing');
+            
             fetch('/api/companies', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken || ''
                 },
+                credentials: 'same-origin',
                 body: JSON.stringify(formData)
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    // If response is not ok, try to parse error message
+                    return response.json().then(errData => {
+                        throw new Error(errData.error || `HTTP error ${response.status}`);
+                    });
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
-                    showToast('Success', data.message || 'Company added successfully');
-                    // Reset form - REMOVED from here, will reset on hidden.bs.modal
-                    // addCompanyFormForListener.reset(); 
+                    // Success message with company details
+                    showToast(`Company "${formData.name}" (ID: ${formData.company_id}) added successfully`, 'success', 'Success');
                     
                     // Close modal explicitly
                     const modalInstance = bootstrap.Modal.getInstance(addCompanyModalElement);
                     if (modalInstance) {
                         modalInstance.hide();
                     }
+                    
                     // Refresh table data
                     if (window.fetchAndUpdateData) {
                         window.fetchAndUpdateData();
@@ -1256,12 +1227,17 @@ if (addCompanyFormForListener) {
                         console.error('fetchAndUpdateData function not found on window object.');
                     }
                 } else {
-                    showToast('Error', data.error || 'Error adding company', 'error');
+                    showToast(data.error || 'Error adding company', 'error', 'Error');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showToast('Error', 'An error occurred while adding the company', 'error');
+                showToast(error.message || 'An error occurred while adding the company', 'error', 'Error');
+            })
+            .finally(() => {
+                // Re-enable the button and restore original text
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalButtonText;
             });
         }
     });

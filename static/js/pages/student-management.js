@@ -29,33 +29,25 @@ let state = {
 // ------------------- Core Functions -------------------
 
 /**
- * Show a toast notification using the global notification system
+ * Show a toast notification using Bootstrap 5
  * @param {string} message - The message to display
  * @param {string} type - The toast type (success, error, info, warning)
  */
 function showToast(message, type = 'success') {
     try {
-        // Always use the global notification system if available
-        if (typeof window.getNotificationManager === 'function') {
-            const manager = window.getNotificationManager({
-                useBootstrapToasts: true
-            });
-            
-            const title = type.charAt(0).toUpperCase() + type.slice(1);
-            manager.showBootstrapToast(title, message, {
-                type: type
-            });
-            return;
+        // Handle case where parameters might be in different order (message, type) or (type, message)
+        if (arguments.length >= 2 && typeof arguments[1] === 'string' && 
+            ['success', 'error', 'info', 'warning', 'danger'].includes(arguments[1].toLowerCase())) {
+            // Parameters are in the expected order (message, type)
+        } else if (arguments.length >= 2 && typeof arguments[0] === 'string' && 
+                  ['success', 'error', 'info', 'warning', 'danger'].includes(arguments[0].toLowerCase())) {
+            // Parameters might be in reverse order (type, message)
+            const temp = message;
+            message = type;
+            type = temp;
         }
         
-        // Second option: use the global showToast if it's different from this one
-        if (typeof window.showToast === 'function') {
-            const title = type.charAt(0).toUpperCase() + type.slice(1);
-            window.showToast(title, message, type);
-            return;
-        }
-        
-        // Last resort: use toast_notification.html component if available
+        // Use the toast_notification.html component
         const statusToast = document.getElementById('statusToast');
         if (!statusToast) {
             console.error('Toast element not found');
@@ -73,74 +65,68 @@ function showToast(message, type = 'success') {
         
         // Set the title based on type
         let title = 'Information';
-        let icon = '<i class="bi bi-info-circle-fill text-info me-2"></i>';
         
         if (type === 'success') {
             title = 'Success';
-            icon = '<i class="bi bi-check-circle-fill text-success me-2"></i>';
+            // Update the existing icon to match the type
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
+            }
         } else if (type === 'error' || type === 'danger') {
             title = 'Error';
-            icon = '<i class="bi bi-exclamation-circle-fill text-danger me-2"></i>';
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-exclamation-circle-fill text-danger me-2';
+            }
         } else if (type === 'warning') {
             title = 'Warning';
-            icon = '<i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>';
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-exclamation-triangle-fill text-warning me-2';
+            }
+        } else { // info
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-info-circle-fill text-info me-2';
+            }
         }
         
         // Update toast content
-        toastTitle.innerHTML = icon + title;
+        toastTitle.textContent = title;
         toastMessage.innerHTML = message;
         
-        // Show the toast
+        // Show the toast using Bootstrap 5
         const toast = new bootstrap.Toast(statusToast);
         toast.show();
     } catch (error) {
-        console.error('Toast error');
+        console.error('Toast error:', error);
     }
 }
 
 /**
- * Clean up all modals and their backdrops in the document
- * This is a more thorough cleanup function that handles all modals
+ * Clean up all modals in the document using Bootstrap 5
  */
 function cleanupAllModals() {
     try {
         // Get all modal elements
         const modals = document.querySelectorAll('.modal');
         
-        // Remove all backdrops
-        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-            backdrop.remove();
-        });
-        
-        // Ensure body classes are removed
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('padding-right');
-        document.body.style.removeProperty('overflow');
-        
-        // Clean up all modal elements
+        // Clean up all modal elements using Bootstrap 5 API
         modals.forEach(modal => {
-            const modalId = modal.id;
-            if (modalId) {
+            if (modal.id) {
                 try {
-                    // First try to hide it using Bootstrap's API
                     const bsModal = bootstrap.Modal.getInstance(modal);
                     if (bsModal) {
                         bsModal.hide();
                     }
                 } catch (err) {
-                    // Silent failure, no logging needed
+                    // Silent failure
                 }
-                
-                // Clean up the modal element manually
-                modal.classList.remove('show');
-                modal.style.display = 'none';
-                modal.setAttribute('aria-hidden', 'true');
-                modal.removeAttribute('aria-modal');
-                modal.removeAttribute('role');
             }
         });
     } catch (error) {
-        console.error('Error cleaning up modals');
+        console.error('Error cleaning up modals:', error);
     }
 }
 
@@ -148,36 +134,33 @@ function cleanupAllModals() {
  * Initializes the student management page
  */
 async function initStudentManagement() {
-    try {
-        console.log('student management page loaded');
-        
-        // Clean up any stray modals from previous sessions
-        cleanupAllModals();
-        
-        // Check if the student-modal.js is properly loaded
-        if (typeof window.showStudentModalView !== 'function') {
-            console.error('Required dependency not loaded');
-            showToast('Warning: Student modal functionality may not work correctly. Please refresh the page.', 'warning');
-        }
-        
-        // Ensure toast container exists
-        ensureToastContainer();
-        
-        // Load initial student data
-        await loadStudents();
-        
-        // Set up event listeners
-        setupEventListeners();
-        
-        // Initial render
-        updateTable();
-        updateCardStatistics();
-        
-        console.log('student management initialized successfully');
-    } catch (error) {
-        console.error('Error initializing student management');
-        showToast('Failed to initialize student management', 'error');
+    // Already logged in the event listener
+    // console.log('Student management page loaded');
+    
+    // Clean up any stray modals from previous sessions
+    cleanupAllModals();
+    
+    // Check if the student-modal.js is properly loaded
+    if (typeof window.showStudentModalView !== 'function') {
+        console.warn('Student modal functionality not loaded');
     }
+    
+    // Ensure toast container exists
+    ensureToastContainer();
+    
+    // Load initial student data
+    await loadStudents();
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Initial UI updates
+    updateStudentTable();
+    updateCardStatistics();
+    
+    // console.log('Student management initialized successfully');
+    
+    return state.currentData;
 }
 
 /**
@@ -212,68 +195,117 @@ async function loadStudents() {
         
         if (!response.ok) throw new Error('Failed to fetch students');
         
-        const data = await response.json();
+        const rawData = await response.json();
+        
+        // Validate API response - ensure it's an array
+        if (!Array.isArray(rawData)) {
+            console.error('[loadStudents] API returned invalid data format:', rawData);
+            throw new Error('Invalid response format from API');
+        }
         
         // Make role filter case-insensitive
-        state.currentData = Array.isArray(data) 
-            ? data.filter(user => {
-                // Check if user has role property and it includes 'student' case-insensitive
+        state.currentData = rawData.filter(user => {
+            // Check if user and user.role exist before accessing properties
+            if (!user || typeof user !== 'object') {
+                console.warn('[loadStudents] Skipping invalid user object:', user);
+                return false;
+            }
+            
                 const userRole = user.role || '';
                 const isStudent = userRole.toLowerCase().includes('student');
                 return isStudent;
-              }).map(formatStudentData) 
-            : [];
+        }).map(formatStudentData);
         
         state.totalItems = state.currentData.length;
         
         return state.currentData;
     } catch (error) {
-        showToast('Failed to load students', 'error');
+        console.error('[loadStudents] Error:', error);
+        showToast(`Failed to load students: ${error.message}`, 'error');
         return [];
     }
 }
 
 /**
  * Formats a student object for display in the UI
+ * This is the core data normalization function used across the student management system
  */
 function formatStudentData(student) {
-    if (!student) return {};
-    
+    if (!student) {
+        console.warn('Attempted to format undefined or null student data');
+        return {};
+    }
+
+    // Handle case where student might be nested in a data property
+    const studentData = student.data || student;
+
+    // Normalize profile image path
+    let profileImg = studentData.profile_img || '/static/images/profile.png';
+    if (profileImg && !profileImg.startsWith('/') && !profileImg.startsWith('http')) {
+        profileImg = `/static/images/${profileImg}`;
+    }
+
+    // Normalize name fields
+    let firstName = '';
+    let lastName = '';
+    let fullName = '';
+
+    if (studentData.name) {
+        // If we have a full name, use it and try to split for first/last
+        fullName = studentData.name;
+        const nameParts = fullName.split(' ');
+        if (nameParts.length > 1) {
+            firstName = nameParts[0];
+            lastName = nameParts.slice(1).join(' ');
+        } else {
+            firstName = fullName;
+        }
+    } else if (studentData.first_name || studentData.last_name) {
+        // If we have separate first/last name fields
+        firstName = studentData.first_name || '';
+        lastName = studentData.last_name || '';
+        fullName = `${firstName} ${lastName}`.trim();
+    }
+
+    // Normalize status field
+    let isActive = true;
+    let status = 'Active';
+
+    if (studentData.status) {
+        status = studentData.status;
+        isActive = status.toLowerCase() === 'active';
+    } else if (studentData.is_active !== undefined) {
+        isActive = !!studentData.is_active;
+        status = isActive ? 'Active' : 'Inactive';
+    }
+
+    // Create a normalized student object with consistent field names
     return {
-        id: student.id || student.user_id || '',
-        user_id: student.id || student.user_id || '',
-        name: student.name || `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'Unknown',
-        email: student.email || '',
-        status: student.status || (student.is_active ? 'Active' : 'Inactive') || 'Unknown',
-        profile_img: student.profile_img || null,
-        grade: student.grade || '',
-        section: student.section || '',
-        created_at: student.created_at || '',
+        ...studentData,
+        id: studentData.id || studentData.user_id || '',
+        user_id: studentData.user_id || studentData.id || '',
+        email: studentData.email || '',
+        role: studentData.role || 'Student',
+        first_name: firstName,
+        last_name: lastName,
+        name: fullName,
+        is_active: isActive,
+        status: status,
+        profile_img: profileImg,
+        company_data: studentData.company_data || {},
+        // Add display-friendly attributes directly in the main formatter
+        statusClass: status.toLowerCase() === 'active' ? 'text-success' : 'text-danger',
+        joinDate: studentData.created_at ? new Date(studentData.created_at).toLocaleDateString() : 'Unknown'
     };
 }
 
 /**
  * Formats a student data object for the modal display
+ * @deprecated Use formatStudentData directly as it now includes all modal display attributes
  */
 function formatStudentForModal(student) {
-    if (!student) return {};
-    
-    const formattedData = formatStudentData(student);
-    
-    // Add additional display-friendly attributes
-    formattedData.statusClass = formattedData.status.toLowerCase() === 'active' ? 'text-success' : 'text-danger';
-    formattedData.joinDate = formattedData.created_at ? new Date(formattedData.created_at).toLocaleDateString() : 'Unknown';
-    
-    // Format the image path for display
-    if (formattedData.profile_img) {
-        if (!formattedData.profile_img.startsWith('/') && !formattedData.profile_img.startsWith('http')) {
-            formattedData.profile_img = `/static/images/${formattedData.profile_img}`;
-        }
-    } else {
-        formattedData.profile_img = '/static/images/profile.png';
-    }
-    
-    return formattedData;
+    // Simply pass through to the main formatter for backward compatibility
+    return formatStudentData(student);
 }
 
 /**
@@ -306,7 +338,7 @@ function setupEventListeners() {
         rowsPerPage.addEventListener('change', function() {
             state.perPage = parseInt(this.value);
             state.page = 1;
-            updateTable();
+            updateStudentTable();
         });
     }
 
@@ -316,7 +348,7 @@ function setupEventListeners() {
         prevButton.addEventListener('click', function() {
             if (state.page > 1) {
                 state.page--;
-                updateTable();
+                updateStudentTable();
             }
         });
     }
@@ -327,7 +359,7 @@ function setupEventListeners() {
             const maxPage = Math.ceil(state.totalItems / state.perPage);
             if (state.page < maxPage) {
                 state.page++;
-                updateTable();
+                updateStudentTable();
             }
         });
     }
@@ -440,8 +472,20 @@ function setupEventListeners() {
  * Handle filters changed - reload data and update UI
  */
 async function handleFiltersChanged() {
+    console.log('[handleFiltersChanged] Filters changed, reloading data...');
+    
+    // Reset pagination to first page when filters change
+    state.page = 1;
+    
+    // Store filters in state
+    state.statusFilter = document.getElementById('statusFilter')?.value || '';
+    state.searchTerm = document.getElementById('searchInput')?.value || '';
+    
+    // Reload data with new filters
     await loadStudents();
-    updateTable();
+    
+    // Update the interface
+    updateStudentTable();
     updateCardStatistics();
     updateExportButton();
 }
@@ -482,53 +526,69 @@ function filterStudents(students, status, search) {
  * @param {string} search - Search query
  */
 function exportStudentsToCSV(status, search) {
-    try {
-        // Use current data with filters applied
-        const filteredData = filterStudents(state.currentData, status, search);
-        
-        if (filteredData.length === 0) {
-            showToast('No students to export', 'warning');
-            return;
-        }
-        
-        // Define CSV headers
-        const headers = ['ID', 'Name', 'Role', 'Status', 'Email', 'Phone'];
-        
-        // Convert data to CSV format
-        let csvContent = headers.join(',') + '\n';
-        
-        filteredData.forEach(student => {
-            const row = [
-                student.user_id || '',
-                student.name || '',
-                student.role || '',
-                student.status || '',
-                student.email || '',
-                student.phone || ''
-            ].map(cell => `"${String(cell || '').replace(/"/g, '""')}"`); // Escape quotes in CSV
-            
+    console.log('[exportStudentsToCSV] Generating CSV data');
+    
+    // Show processing toast
+    showToast('Generating CSV export...', 'info');
+    
+    // Function to convert text to CSV-safe format
+    function escapeCSV(text) {
+        if (text === null || text === undefined) return '';
+        return String(text).replace(/"/g, '""');
+    }
+    
+    // Define headers for CSV
+    const headers = ['ID', 'Name', 'Role', 'Status', 'Email'];
+    
+    // Get data to export - use filtered data 
+    const data = state.currentData.map(student => {
+        return [
+            escapeCSV(student.id),
+            escapeCSV(`${student.first_name} ${student.last_name}`),
+            escapeCSV(student.role || 'Student'),
+            escapeCSV(student.is_active ? 'Active' : 'Inactive'),
+            escapeCSV(student.email),
+        ];
+    });
+    
+    // Create CSV content
+    let csvContent = headers.join(',') + '\n';
+    data.forEach(row => {
             csvContent += row.join(',') + '\n';
         });
         
         // Create download link
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        
         link.setAttribute('href', url);
-        link.setAttribute('download', `students_export_${new Date().toISOString().slice(0,10)}.csv`);
-        link.style.display = 'none';
-        
+    
+    // Create filename with current date
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    let filename = `students_export_${today}`;
+    
+    // Add filter info to filename if any filters are applied
+    if (status) filename += `_status-${status}`;
+    if (search) filename += `_search-${search}`;
+    
+    link.setAttribute('download', `${filename}.csv`);
         document.body.appendChild(link);
+    
+    // Trigger download and cleanup
         link.click();
+    setTimeout(() => {
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         
-        // Show success toast
-        showToast(`Exported ${filteredData.length} students to CSV`, 'success');
-    } catch (error) {
-        console.error('Error exporting CSV:', error);
-        showToast('Failed to export students to CSV', 'error');
-    }
+        // Show success toast with details
+        const recordCount = data.length;
+        const filterInfo = [];
+        if (status) filterInfo.push(`Status: ${status}`);
+        if (search) filterInfo.push(`Search: ${search}`);
+        
+        const filterText = filterInfo.length > 0 ? ` (${filterInfo.join(', ')})` : '';
+        showToast(`Exported ${recordCount} student records${filterText}`, 'success');
+    }, 100);
 }
 
 /**
@@ -576,113 +636,99 @@ function updateExportButton() {
 /**
  * Update the student table with current data and filters
  */
-function updateTable() {
-    try {
-        // Apply pagination
-        const startIndex = (state.page - 1) * state.perPage;
-        const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
-        const paginatedData = state.currentData.slice(startIndex, endIndex);
-
-        // Find the table element
-        const table = document.getElementById('studentTable');
-        if (!table) {
-            // Look for any table on the page as fallback
-            const tables = document.getElementsByTagName('table');
-            if (tables.length === 0) {
-                return;
-            }
-        }
-
-        // Find the tbody element
-        const tbody = table ? table.querySelector('tbody') : document.querySelector('tbody');
-        if (!tbody) {
-            return;
-        }
-     
-        // Update table content based on data
-        if (paginatedData.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                <td colspan="4" class="text-center py-5">
-                    <div class="text-muted">
-                        <i class="bi bi-inbox fs-2"></i>
-                        <p class="mt-2">No students found</p>
-                    </div>
-                </td>
-            </tr>
-        `;
-        } else {
-            // Generate table rows
-            tbody.innerHTML = paginatedData.map(student => {
-                // Ensure we have a valid student ID, using either id or user_id property
-                const studentId = student.user_id || student.id || '';
-                
-                return `
-            <tr data-user-role="${student.role || ''}" data-user-id="${studentId}">
-                    <td>
-                        <div class="d-flex align-items-center">
-                            <img src="/static/images/${student.profile_img || 'profile.png'}" 
-                            class="rounded-circle me-3" 
-                            width="40" 
-                            height="40"
-                            alt="${student.name || 'Student'}">
-                            <div>
-                            <div class="fw-medium">${student.name || 'Unnamed Student'}</div>
-                            <div class="text-muted small">${studentId}</div>
-                            </div>
-                        </div>
-                    </td>
-                <td class="align-middle">${student.role || 'Student'}</td>
-                <td class="align-middle">
-                        <span class="badge ${
-                            student.status === 'Active' ? 'bg-success-subtle text-success' : 
-                            'bg-danger-subtle text-danger'
-                        }">
-                            ${student.status || 'Unknown'}
-                        </span>
-                    </td>
-                <td class="align-middle text-end">
-                        <div class="d-flex gap-2 justify-content-end">
-                            <button class="btn btn-link p-0" onclick="handleStudentAction('edit', '${studentId}')">
-                                <i class="bi bi-pencil" style="color: #191970;"></i>
-                            </button>
-                        <button class="btn btn-link p-0" onclick="handleStudentAction('view', '${studentId}')">
-                                <i class="bi bi-eye" style="color: #191970;"></i>
-                            </button>
-                        <button class="btn btn-link p-0" onclick="handleStudentAction('archive', '${studentId}')">
-                                <i class="bi bi-archive" style="color: #191970;"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-            }).join('');
-        }
-
-        // Update pagination info
-        const paginationInfo = document.getElementById('paginationInfo');
-        if (paginationInfo) {
-            if (state.totalItems === 0) {
-                paginationInfo.textContent = '0 items';
-            } else {
-                paginationInfo.textContent = `${startIndex + 1}-${endIndex} of ${state.totalItems}`;
-            }
-        }
-
-        // Update pagination buttons
-        const prevButton = document.getElementById('prevPage');
-        if (prevButton) {
-            prevButton.disabled = state.page <= 1;
-        }
-
-        const nextButton = document.getElementById('nextPage');
-        if (nextButton) {
-            nextButton.disabled = endIndex >= state.totalItems;
-        }
-    } catch (error) {
-        // Silent error handling
-        console.error('Error updating table:', error);
+function updateStudentTable() {
+    // Updating student table
+    
+    // Get table element
+    const tableBody = document.querySelector('#studentTable tbody');
+    if (!tableBody) {
+        return;
     }
+    
+    // Remove loading indicator if present
+    const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) {
+            loadingIndicator.remove();
+    }
+    
+    // Update pagination controls
+    updatePaginationControls();
+    
+    // Calculate slice of data to display
+    const startIndex = (state.page - 1) * state.perPage;
+    const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
+    const displayData = state.currentData.slice(startIndex, endIndex);
+    
+    // If no data, show message
+    if (displayData.length === 0) {
+        let emptyMessage = 'No students found';
+        
+        // Customize message based on filters
+        if (state.statusFilter || state.searchTerm) {
+            emptyMessage = 'No students match your filters';
+            if (state.searchTerm) {
+                emptyMessage += ` for "${state.searchTerm}"`;
+            }
+            if (state.statusFilter) {
+                emptyMessage += ` with status "${state.statusFilter}"`;
+            }
+        }
+        
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center py-4">
+                    <div class="d-flex flex-column align-items-center">
+                        <i class="bi bi-search text-muted fs-1 mb-2"></i>
+                        <p class="text-muted mb-2">${emptyMessage}</p>
+                        ${(state.statusFilter || state.searchTerm) ? 
+                            `<button class="btn btn-sm btn-outline-secondary" onclick="resetFilters()">
+                                <i class="bi bi-x-circle me-1"></i>Clear Filters
+                            </button>` : 
+                            ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+        return;
+    }
+    
+    // Build rows for each student
+    let tableContent = '';
+    for (const student of displayData) {
+        tableContent += createStudentRow(student);
+    }
+    
+    // Update table content
+    tableBody.innerHTML = tableContent;
+    
+    // Add event listeners to action buttons
+    addTableEventListeners();
+}
+
+/**
+ * Reset all filters and reload data
+ */
+function resetFilters() {
+    console.log('[resetFilters] Resetting all filters');
+    
+    // Reset state
+    state.page = 1;
+    state.statusFilter = '';
+    state.searchTerm = '';
+    
+    // Reset UI
+    const statusFilter = document.getElementById('statusFilter');
+    const searchInput = document.getElementById('searchInput');
+    
+    if (statusFilter) statusFilter.value = '';
+    if (searchInput) searchInput.value = '';
+    
+    // Reload data and update UI
+    loadStudents().then(() => {
+        updateStudentTable();
+        updateCardStatistics();
+        updateExportButton();
+    });
 }
 
 /**
@@ -712,6 +758,36 @@ function updateCardStatistics() {
     } catch (error) {
         // Silent error handling
         console.error('Error updating statistics:', error);
+    }
+}
+
+/**
+ * Update pagination controls based on current state
+ */
+function updatePaginationControls() {
+    // Update pagination info
+    const paginationInfo = document.getElementById('paginationInfo');
+    if (paginationInfo) {
+        if (state.totalItems === 0) {
+            paginationInfo.textContent = '0 items';
+        } else {
+            const startIndex = (state.page - 1) * state.perPage;
+            const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
+            paginationInfo.textContent = `${startIndex + 1}-${endIndex} of ${state.totalItems}`;
+        }
+    }
+
+    // Update pagination buttons
+    const prevButton = document.getElementById('prevPage');
+    if (prevButton) {
+        prevButton.disabled = state.page <= 1;
+    }
+
+    const nextButton = document.getElementById('nextPage');
+    if (nextButton) {
+        const startIndex = (state.page - 1) * state.perPage;
+        const endIndex = Math.min(startIndex + state.perPage, state.totalItems);
+        nextButton.disabled = endIndex >= state.totalItems;
     }
 }
 
@@ -787,12 +863,13 @@ async function handleViewStudent(studentId) {
             // Format the student data for the modal
             const formattedData = formatStudentForModal(cachedStudent);
             
-            // Call the global student modal function
-            if (typeof window.showStudentModalView === 'function') {
-                window.showStudentModalView(formattedData);
-                modalShown = true;
-            } else {
+            // Call the global student modal function only if we don't plan to show fresh data
+            // We'll show the modal with cached data only if the API request fails
+            if (typeof window.showStudentModalView !== 'function') {
                 console.error('Student modal function unavailable');
+            } else {
+                // Just set modalShown to true, we'll show the modal with fresh data
+                modalShown = true;
             }
         }
         
@@ -809,19 +886,23 @@ async function handleViewStudent(studentId) {
             // Format the student data for the modal
             const formattedData = formatStudentForModal(studentData);
             
-            // Call the global student modal function
+            // Call the global student modal function with fresh data
             if (typeof window.showStudentModalView === 'function') {
                 window.showStudentModalView(formattedData);
+                modalShown = true;
             } else {
                 console.error('Student modal function unavailable');
-                if (!modalShown) {
-                    showToast('Error: Unable to display student details', 'error');
-                }
+                showToast('Error: Unable to display student details', 'error');
             }
         } catch (error) {
             console.error('Error fetching student data');
-            // Only show error if we didn't already show the modal with cached data
-            if (!modalShown) {
+            
+            // If we haven't shown the modal yet, show it with cached data as fallback
+            if (!modalShown && typeof window.showStudentModalView === 'function' && cachedStudent) {
+                const fallbackData = formatStudentForModal(cachedStudent);
+                window.showStudentModalView(fallbackData);
+                showToast('Using cached student data. Some information may be outdated.', 'warning');
+            } else if (!modalShown) {
                 showToast('Error: Unable to display student details', 'error');
             }
         }
@@ -837,101 +918,46 @@ async function handleViewStudent(studentId) {
 async function handleEditStudent(studentId) {
     try {
         if (!studentId) {
-            showToast('Invalid student ID', 'error');
+            showToast('Invalid student ID. Please try again.', 'error');
             return;
         }
-
-        // Disable form while loading data
-        const form = document.getElementById('editStudentForm');
-        if (form) {
-            form.classList.add('loading');
-        }
         
-        // Get the edit modal element
+        // Get and prepare the modal
         const modal = document.getElementById('editStudentModal');
         if (!modal) {
             showToast('Error: Edit modal not found', 'error');
             return;
         }
         
-        // Store the student ID on the modal element for later reference
+        // Store the student ID on the modal for later reference
         modal.setAttribute('data-student-id', studentId);
         
-        // Flag to track if modal has been shown
-        let modalShown = false;
+        // Prepare the form
+        const form = document.getElementById('editStudentForm');
+        if (form) {
+            form.classList.add('loading');
+            form.classList.remove('populated');
+        }
         
-        // Get the student from current data first for immediate display
-        const cachedStudent = state.currentData.find(student => 
-            (student.user_id && student.user_id.toString() === studentId.toString()) || 
-            (student.id && student.id.toString() === studentId.toString())
-        );
+        // Get student data (try API first, then cache)
+        let studentData = await getStudentData(studentId);
         
-        if (cachedStudent) {
-            state.currentEditingStudent = formatStudentForModal(cachedStudent);
-            populateEditForm(state.currentEditingStudent);
+        // If we have student data, populate the form and show the modal
+        if (studentData) {
+            // Set as current editing student
+            state.currentEditingStudent = studentData;
+            
+            // Populate the form with the student data
+            populateEditForm(studentData);
             
             // Show the modal
-            try {
-                const editModal = new bootstrap.Modal(modal);
-                editModal.show();
-                modalShown = true;
-            } catch (error) {
-                console.error('Error showing modal');
-                try {
-                    $(modal).modal('show');
-                    modalShown = true;
-                } catch (e) {
-                    console.error('Error showing modal');
-                }
-            }
-        }
-        
-        // Fetch fresh data from API to update the form
-        try {
-            const response = await fetch(`/api/users/${studentId}`);
-            
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
-            
-            const apiData = await response.json();
-            
-            // Format data for modal
-            state.currentEditingStudent = formatStudentForModal(apiData);
-            
-            // Update form with fresh data
-            populateEditForm(state.currentEditingStudent);
-            
-            // If modal wasn't shown from cached data, show it now
-            if (!modalShown) {
-                try {
-                    const editModal = new bootstrap.Modal(modal);
-                    editModal.show();
-                    modalShown = true;
-                } catch (error) {
-                    console.error('Error showing modal');
-                    try {
-                        $(modal).modal('show');
-                        modalShown = true;
-                    } catch (e) {
-                        console.error('Error showing modal');
-                        showToast('Error: Unable to show edit modal', 'error');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching student data');
-            // If we already showed modal with cached data, just log the error
-            // Otherwise show an error toast
-            if (!modalShown) {
-                showToast('Error loading student data', 'error');
-            } else {
-                showToast('Warning: Using cached data. Could not refresh from server.', 'warning');
-            }
+            showModal(modal);
+        } else {
+            showToast('Error: Student data not found', 'error');
         }
     } catch (error) {
-        console.error('Error in handleEditStudent');
-        showToast('Error loading student data for editing', 'error');
+        console.error('Error in handleEditStudent:', error);
+        showToast(`Error loading student data: ${error.message}`, 'error');
     } finally {
         // Re-enable form regardless of outcome
         const form = document.getElementById('editStudentForm');
@@ -942,7 +968,67 @@ async function handleEditStudent(studentId) {
 }
 
 /**
+ * Get student data from API or cache
+ * @param {string} studentId - The ID of the student to get
+ * @returns {Object|null} - The student data or null if not found
+ */
+async function getStudentData(studentId) {
+    try {
+        // Try API first
+        console.log(`Fetching student data for ID: ${studentId}`);
+        const response = await fetch(`/api/users/${studentId}`);
+        
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        
+        const apiData = await response.json();
+        console.log('API returned student data:', apiData);
+        
+        // Format and return the data
+        return formatStudentData(apiData);
+    } catch (apiError) {
+        console.warn('Error fetching student data from API:', apiError);
+        
+        // Fall back to cached data
+        const cachedStudent = state.currentData.find(student => 
+            (student.user_id && student.user_id.toString() === studentId.toString()) || 
+            (student.id && student.id.toString() === studentId.toString())
+        );
+        
+        if (cachedStudent) {
+            console.log('Using cached student data:', cachedStudent);
+            showToast('Using cached data. Could not refresh from server.', 'warning');
+            return formatStudentData(cachedStudent);
+        }
+        
+        // No data found
+        return null;
+    }
+}
+
+/**
+ * Show a modal using Bootstrap 5
+ * @param {HTMLElement} modal - The modal element to show
+ * @returns {boolean} - Whether the modal was successfully shown
+ */
+function showModal(modal) {
+    if (!modal) return false;
+    
+    try {
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        return true;
+    } catch (error) {
+        console.error('Error showing modal:', error);
+        showToast('Error: Unable to show modal', 'error');
+        return false;
+    }
+}
+
+/**
  * Populates the edit form with student data
+ * @param {Object} studentData - Normalized student data object
  */
 function populateEditForm(studentData) {
     if (!studentData) {
@@ -950,89 +1036,90 @@ function populateEditForm(studentData) {
         return;
     }
     
-    // Set values in the form based on edit_student_modal.html component
-    const nameElement = document.getElementById('editStudentName');
-    if (nameElement) {
-        const fullName = studentData.name || `${studentData.first_name || ''} ${studentData.last_name || ''}`.trim();
-        nameElement.textContent = fullName || 'Unknown Student';
+    // Get all form elements at once to reduce DOM queries
+    const elements = {
+        name: document.getElementById('editStudentName'),
+        id: document.getElementById('editStudentId'),
+        status: document.getElementById('studentStatusSelect'),
+        image: document.getElementById('editStudentImage'),
+        form: document.getElementById('editStudentForm')
+    };
+    
+    // Set student name
+    if (elements.name) {
+        elements.name.textContent = studentData.name || 'Unknown Student';
     }
     
-    const idElement = document.getElementById('editStudentId');
-    if (idElement) {
-        const studentId = studentData.user_id || studentData.id || '';
-        idElement.textContent = studentId || 'ID not available';
+    // Set student ID
+    if (elements.id) {
+        elements.id.textContent = studentData.user_id || 'ID not available';
     }
     
     // Set status dropdown
-    const statusSelect = document.getElementById('studentStatusSelect');
-    if (statusSelect) {
-        // Determine status from various possible fields
-        let currentStatus = 'Active'; // Default to active
-        
-        if (studentData.status) {
-            currentStatus = studentData.status;
-        } else if (studentData.is_active !== undefined) {
-            currentStatus = studentData.is_active ? 'Active' : 'Inactive';
-        }
-        
-        // Try to find matching option
-        let optionFound = false;
-        
-        // Look through options and select the matching one
-        for (let i = 0; i < statusSelect.options.length; i++) {
-            if (statusSelect.options[i].value.toLowerCase() === currentStatus.toLowerCase()) {
-                statusSelect.selectedIndex = i;
-                optionFound = true;
-                break;
-            }
-        }
-        
-        // If no match was found, see if we can add a new option
-        if (!optionFound) {
-            // Create and add a new option
-            const newOption = document.createElement('option');
-            newOption.value = currentStatus;
-            newOption.textContent = currentStatus;
-            statusSelect.appendChild(newOption);
-            
-            // Set it as selected
-            statusSelect.value = currentStatus;
-        }
+    if (elements.status) {
+        populateStatusDropdown(elements.status, studentData.status || 'Active');
     }
     
     // Set student image
-    const studentImage = document.getElementById('editStudentImage');
-    if (studentImage) {
-        // Default image path
-        let imagePath = '/static/images/profile.png';
+    if (elements.image) {
+        elements.image.src = studentData.profile_img || '/static/images/profile.png';
+        elements.image.alt = studentData.name || 'Student';
         
-        // Use student image if available
-        if (studentData.profile_img) {
-            if (studentData.profile_img.startsWith('/')) {
-                imagePath = studentData.profile_img;
-            } else if (studentData.profile_img.startsWith('http')) {
-                imagePath = studentData.profile_img;
-            } else {
-                imagePath = `/static/images/${studentData.profile_img}`;
-            }
-        }
-        
-        // Set the image source and alt text
-        studentImage.src = imagePath;
-        studentImage.alt = studentData.name || 'Student';
-        
-        // Add error handler to fallback to default if image fails to load
-        studentImage.onerror = function() {
+        // Add error handler for image loading failures
+        elements.image.onerror = function() {
             this.src = '/static/images/profile.png';
             this.onerror = null; // Prevent infinite loop
         };
     }
     
-    // Show that form is populated and ready
-    const form = document.getElementById('editStudentForm');
-    if (form) {
-        form.classList.remove('loading');
-        form.classList.add('populated');
+    // Update form state
+    if (elements.form) {
+        elements.form.classList.remove('loading');
+        elements.form.classList.add('populated');
+    }
+}
+
+/**
+ * Populates a status dropdown with the appropriate options and selects the current value
+ * @param {HTMLSelectElement} selectElement - The select element to populate
+ * @param {string} currentStatus - The current status value to select
+ */
+function populateStatusDropdown(selectElement, currentStatus) {
+    if (!selectElement) return;
+    
+    // Clear existing options
+    selectElement.innerHTML = '';
+    
+    // Define standard statuses
+    const statuses = ['Active', 'Inactive'];
+    
+    // Add standard options
+    statuses.forEach(status => {
+        const option = document.createElement('option');
+        option.value = status;
+        option.textContent = status;
+        selectElement.appendChild(option);
+    });
+    
+    // Add custom status if needed
+    if (currentStatus && !statuses.includes(currentStatus)) {
+        const customOption = document.createElement('option');
+        customOption.value = currentStatus;
+        customOption.textContent = currentStatus;
+        selectElement.appendChild(customOption);
+    }
+    
+    // Set the current value
+    selectElement.value = currentStatus;
+    
+    // If the value wasn't set correctly, use case-insensitive matching as fallback
+    if (selectElement.value !== currentStatus) {
+        for (let i = 0; i < selectElement.options.length; i++) {
+            if (selectElement.options[i].value.toLowerCase() === currentStatus.toLowerCase()) {
+                selectElement.selectedIndex = i;
+                break;
+            }
+        }
     }
 }
 
@@ -1040,55 +1127,44 @@ function populateEditForm(studentData) {
  * Handles archiving a student
  */
 function handleArchiveStudent(studentId) {
+    try {
     if (!studentId) {
-        showToast('Invalid student ID', 'error');
+            const error = new Error('Invalid student ID');
+            console.error('[handleArchiveStudent] Error:', error);
+            showToast('Cannot archive student: Invalid ID', 'error');
         return;
     }
 
-    // Find student in current data
-    const student = state.currentData.find(student => 
-        (student.user_id && student.user_id.toString() === studentId.toString()) || 
-        (student.id && student.id.toString() === studentId.toString())
-    );
-    
+        // Find student in state data
+        const student = state.currentData.find(s => s.id === studentId);
     if (!student) {
-        showToast('Student not found', 'error');
+            const error = new Error(`Student with ID ${studentId} not found in current data`);
+            console.error('[handleArchiveStudent] Error:', error);
+            showToast('Cannot archive student: Student not found', 'error');
         return;
     }
     
-    // Clean up any existing modals first
-    cleanupModalBackdrop();
-    
-    // Ensure the modal exists
-    const modal = document.getElementById('confirmArchiveModal');
-    if (!modal) {
-        showToast('Unable to display archive confirmation', 'error');
-        return;
-    }
-    
-    // Populate confirmation modal with null checks
-    const idInput = document.getElementById('archiveStudentId');
-    if (idInput) {
-        idInput.value = studentId;
-    }
-    
-    const nameElement = document.getElementById('archiveStudentName');
-    if (nameElement) {
-        nameElement.textContent = student.name || 'Unknown Student';
-    }
-    
-    const idDisplay = document.getElementById('archiveStudentIdDisplay');
-    if (idDisplay) {
-        idDisplay.textContent = studentId;
-    }
-    
-    // Show confirmation modal
-    try {
-        const confirmModal = new bootstrap.Modal(modal);
-        confirmModal.show();
+        // Set the archive UI fields
+        document.getElementById('archiveStudentId').value = studentId;
+        document.getElementById('archiveStudentName').textContent = `${student.first_name} ${student.last_name}`;
+        document.getElementById('archiveStudentIdDisplay').textContent = studentId;
+        
+        // Reset the reason dropdown and custom field
+        const reasonSelect = document.getElementById('archiveReason');
+        if (reasonSelect) reasonSelect.value = '';
+        
+        const customReasonContainer = document.getElementById('customReasonContainer');
+        if (customReasonContainer) customReasonContainer.classList.add('d-none');
+        
+        const customReason = document.getElementById('customReason');
+        if (customReason) customReason.value = '';
+        
+        // Show the modal
+        const modal = new bootstrap.Modal(document.getElementById('confirmArchiveModal'));
+        modal.show();
     } catch (error) {
-        console.error('Error showing modal');
-        showToast('Could not display archive confirmation', 'error');
+        console.error('[handleArchiveStudent] Error:', error);
+        showToast(`Error preparing archive operation: ${error.message}`, 'error');
     }
 }
 
@@ -1127,16 +1203,29 @@ function archiveStudent() {
         archiveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
     }
     
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    
+    if (!csrfToken) {
+        console.warn('CSRF token not found. Archive request may fail.');
+        showToast('Warning: CSRF token not found. Please refresh the page and try again.', 'warning');
+    }
     
     // Send the archive request
     fetch(`/api/users/${studentId}/archive`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken || ''
         },
+        credentials: 'same-origin', // Include cookies for authentication
         body: JSON.stringify({
             reason: archiveReason,
-            name: studentName
+            name: studentName,
+            // Add explicit archived flag for clarity
+            archived: true,
+            status: 'Archived',
+            is_archived: true
         })
     })
     .then(response => {
@@ -1158,22 +1247,47 @@ function archiveStudent() {
             }, 150);
         }
         
-        // Show success message with strong styling
-        showToast(`Student ${studentName} has been archived successfully`, 'success');
+        // Create a custom success message with archive link
+        const successMessage = `
+            <div>Student ${studentName} has been archived successfully</div>
+            <div class="mt-2">
+                <a href="/admin/archive-view?type=student" class="btn btn-sm btn-outline-primary" 
+                   style="color: #191970; background-color: transparent; border-color: #191970; transition: all 0.3s ease;" 
+                   onmouseover="this.style.backgroundColor='rgba(25, 25, 112, 0.1)';" 
+                   onmouseout="this.style.backgroundColor='transparent';" 
+                   onmousedown="this.style.backgroundColor='#191970'; this.style.color='white';" 
+                   onmouseup="this.style.backgroundColor='rgba(25, 25, 112, 0.1)'; this.style.color='#191970';">
+                    <i class="bi bi-box-arrow-right me-1"></i>View in Archives
+                </a>
+            </div>
+        `;
         
-        // Try to add link to archives in the toast
-        try {
-            setTimeout(() => {
-                const toastElement = document.querySelector('#toastContainer .toast:last-child .toast-body');
-                if (toastElement) {
-                    const archiveLink = document.createElement('div');
-                    archiveLink.className = 'mt-2';
-                    archiveLink.innerHTML = '<a href="/admin/archive-view?type=student" class="btn btn-sm btn-outline-secondary">View in Student Archives</a>';
-                    toastElement.appendChild(archiveLink);
-                }
-            }, 100);
-        } catch (error) {
-            console.error('Error adding archive link');
+        // Show the toast with HTML content
+        const statusToast = document.getElementById('statusToast');
+        if (statusToast) {
+            // Update the icon to success
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
+            }
+            
+            // Set the title
+            const toastTitle = document.getElementById('toastTitle');
+            if (toastTitle) {
+                toastTitle.textContent = 'Success';
+            }
+            
+            // Set the message with HTML content including the link
+            const toastMessage = document.getElementById('toastMessage');
+            if (toastMessage) {
+                toastMessage.innerHTML = successMessage;
+            }
+            
+            // Show the toast
+            const toast = new bootstrap.Toast(statusToast);
+            toast.show();
+        } else {
+            showToast(`Student ${studentName} has been archived successfully`, 'success');
         }
         
         // Remove from the table
@@ -1182,7 +1296,7 @@ function archiveStudent() {
         // Update statistics
         loadStudents().then(() => {
             updateCardStatistics();
-            updateTable();
+            updateStudentTable();
         });
     })
     .catch(error => {
@@ -1225,7 +1339,7 @@ function removeStudentFromTable(studentId) {
         state.totalItems--;
         
         // Update the table to reflect the change
-        updateTable();
+        updateStudentTable();
     }
     
     // Also try to remove the row directly from the DOM for immediate feedback
@@ -1235,7 +1349,7 @@ function removeStudentFromTable(studentId) {
             studentRow.remove();
         }
     } catch (error) {
-        // Silent failure, the updateTable call above will handle it
+        // Silent failure, the updateStudentTable call above will handle it
         console.error('Error removing row from DOM');
     }
 }
@@ -1244,153 +1358,168 @@ function removeStudentFromTable(studentId) {
  * Save student status (called from edit modal)
  */
 window.saveStudentStatus = async function() {
+    // Get UI elements
+    const elements = {
+        saveButton: document.querySelector('#editStudentModal .btn-primary'),
+        modal: document.getElementById('editStudentModal'),
+        statusSelect: document.getElementById('studentStatusSelect')
+    };
+    
     try {
         // Show processing indicator
-        const saveButton = document.querySelector('#editStudentModal .btn-primary');
-        if (saveButton) {
-            saveButton.disabled = true;
-            saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
+        if (elements.saveButton) {
+            elements.saveButton.disabled = true;
+            elements.saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
         }
         
-        // Get the modal element to extract the student ID
-        const modal = document.getElementById('editStudentModal');
-        if (!modal) {
-            showToast('Error: Cannot find edit modal', 'error');
-            return;
-        }
+        // Validate required elements
+        if (!elements.modal) throw new Error('Modal element not found');
+        if (!elements.statusSelect) throw new Error('Status select element not found');
         
-        // Find the student ID - first try data attribute on modal
-        let studentId = modal.getAttribute('data-student-id');
+        // Get and validate student ID and status
+        const studentId = elements.modal.getAttribute('data-student-id');
+        if (!studentId) throw new Error('Student ID not found');
         
-        // Try from the state
-        if (!studentId && state.currentEditingStudent) {
-            studentId = state.currentEditingStudent.user_id || state.currentEditingStudent.id;
-        }
+        const newStatus = elements.statusSelect.value;
+        if (!newStatus) throw new Error('No status selected');
         
-        // Try from the form element
-        if (!studentId) {
-            const idElement = document.getElementById('editStudentId');
-            if (idElement && idElement.textContent) {
-                studentId = idElement.textContent.trim();
-            }
-        }
+        console.log(`Updating student ${studentId} status to ${newStatus}`);
         
-        // Validate the student ID
-        if (!studentId) {
-            showToast('Cannot update student: ID not found', 'error');
-            return;
-        }
+        // Get CSRF token
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (!csrfToken) console.warn('CSRF token not found, request may fail');
         
-        // Get the new status
-        const statusSelect = document.getElementById('studentStatusSelect');
-        if (!statusSelect) {
-            throw new Error('Status select not found');
-        }
+        // Make the API request
+        const result = await updateStudentStatus(studentId, newStatus, csrfToken);
         
-        const newStatus = statusSelect.value;
-        const isActive = newStatus === 'Active';
+        // Update local data
+        updateLocalStudentData(studentId, newStatus);
         
-        // Send status update to API
-        const response = await fetch(`/api/users/${studentId}/status`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ 
-                status: newStatus,
-                is_active: isActive
-            })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.message || `API returned ${response.status}: ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        
-        // Update in local data if student exists in current data
-        const studentIndex = state.currentData.findIndex(student => 
-            (student.user_id && student.user_id.toString() === studentId.toString()) || 
-            (student.id && student.id.toString() === studentId.toString())
-        );
-        
-        if (studentIndex !== -1) {
-            state.currentData[studentIndex].status = newStatus;
-            state.currentData[studentIndex].is_active = isActive;
-        }
-        
-        // Close modal with proper cleanup
-        const editModal = bootstrap.Modal.getInstance(document.getElementById('editStudentModal'));
-        if (editModal) {
-            editModal.hide();
-            // Clean up backdrop and modal state
-            setTimeout(() => {
-                cleanupModalBackdrop('editStudentModal');
-            }, 150);
-        }
+        // Close the modal
+        hideModal(elements.modal);
         
         // Update UI
-        updateTable();
+        updateStudentTable();
         updateCardStatistics();
         
         // Show success message
-        showToast(`Student status updated to ${newStatus}`, 'success');
+        showToast('Student status updated successfully', 'success');
         
-        // Return result for testing or chaining
         return result;
     } catch (error) {
+        console.error('Error saving student status:', error);
         showToast(`Failed to update student status: ${error.message}`, 'error');
+        return null;
     } finally {
         // Re-enable save button
-        const saveButton = document.querySelector('#editStudentModal .btn-primary');
-        if (saveButton) {
-            saveButton.disabled = false;
-            saveButton.innerHTML = 'Save Changes';
+        if (elements.saveButton) {
+            elements.saveButton.disabled = false;
+            elements.saveButton.innerHTML = 'Save Changes';
         }
     }
 };
 
 /**
+ * Update student status via API
+ * @param {string} studentId - The ID of the student to update
+ * @param {string} newStatus - The new status to set (Active/Inactive)
+ * @param {string} csrfToken - CSRF token for security
+ * @returns {Object} - The API response
+ */
+async function updateStudentStatus(studentId, newStatus, csrfToken) {
+    try {
+        // Show processing toast
+        showToast('Updating student status...', 'info');
+        
+        // Convert status string to boolean is_active value
+        const isActive = newStatus.toLowerCase() === 'active';
+        
+        // Prepare the request with the correct payload format
+        const requestOptions = {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
+            },
+            body: JSON.stringify({ 
+                is_active: isActive,
+                status: newStatus // Include for backward compatibility
+            }),
+            credentials: 'same-origin'
+        };
+        
+        // Log the request for debugging
+        console.log(`Sending ${requestOptions.method} request to /api/users/${studentId}/status with payload:`, 
+            JSON.parse(requestOptions.body));
+        
+        // Make the API request
+        const response = await fetch(`/api/users/${studentId}/status`, requestOptions);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Status update failed with status ${response.status}:`, errorText);
+            throw new Error(`API error (${response.status}): ${errorText}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Error in updateStudentStatus:', error);
+        throw error; // Re-throw to be handled by the caller
+    }
+}
+
+/**
+ * Update student status in local data
+ * @param {string} studentId - The ID of the student to update
+ * @param {string} newStatus - The new status to set
+ */
+function updateLocalStudentData(studentId, newStatus) {
+    const studentIndex = state.currentData.findIndex(student => 
+        (student.user_id && student.user_id.toString() === studentId.toString()) || 
+        (student.id && student.id.toString() === studentId.toString())
+    );
+    
+    if (studentIndex !== -1) {
+        // Update the status in the current data
+        state.currentData[studentIndex].status = newStatus;
+        state.currentData[studentIndex].is_active = newStatus.toLowerCase() === 'active';
+    }
+}
+
+/**
+ * Hide a modal using Bootstrap 5
+ * @param {HTMLElement} modal - The modal element to hide
+ */
+function hideModal(modal) {
+    if (!modal) return;
+    
+    try {
+        const bsModal = bootstrap.Modal.getInstance(modal);
+        if (bsModal) {
+            bsModal.hide();
+        }
+    } catch (error) {
+        console.error('Error hiding modal:', error);
+    }
+}
+
+/**
  * Ensure modal backdrop is removed
- * This uses the global cleanupModalBackdrop function from student-modal.js if available
  * @param {string} modalId - The ID of the modal element (without #)
  */
 function cleanupModalBackdrop(modalId) {
-    // Use the global function if it exists (from student-modal.js)
-    // But only if it's not this same function to prevent infinite recursion
-    if (typeof window.cleanupModalBackdrop === 'function' && 
-        window.cleanupModalBackdrop !== cleanupModalBackdrop) {
-        window.cleanupModalBackdrop(modalId);
-        return;
-    }
-
-    // Fallback implementation
     try {
-        // Remove any lingering backdrop
-        const backdrop = document.querySelector('.modal-backdrop');
-        if (backdrop) {
-            backdrop.remove();
-        }
-        
-        // Ensure body classes are removed
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('padding-right');
-        document.body.style.removeProperty('overflow');
-        
-        // If modalId is provided, ensure the modal element is properly cleaned up
         if (modalId) {
             const modalElement = document.getElementById(modalId);
             if (modalElement) {
-                modalElement.classList.remove('show');
-                modalElement.style.display = 'none';
-                modalElement.setAttribute('aria-hidden', 'true');
-                modalElement.removeAttribute('aria-modal');
-                modalElement.removeAttribute('role');
+                const bsModal = bootstrap.Modal.getInstance(modalElement);
+                if (bsModal) {
+                    bsModal.hide();
+                }
             }
         }
     } catch (error) {
-        console.error('Error cleaning up modal backdrop');
+        console.error('Error cleaning up modal backdrop:', error);
     }
 }
 
@@ -1398,10 +1527,88 @@ function cleanupModalBackdrop(modalId) {
 window.handleStudentAction = handleStudentAction;
 window.archiveStudent = archiveStudent;
 
-// Only assign our cleanupModalBackdrop to window if there isn't one from student-modal.js
-if (typeof window.cleanupModalBackdrop !== 'function') {
-    window.cleanupModalBackdrop = cleanupModalBackdrop;
+// Always use our cleanupModalBackdrop function
+window.cleanupModalBackdrop = cleanupModalBackdrop;
+
+// Initialize on page load only if not already initialized
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if already initialized
+    if (!document.body.getAttribute('data-student-management-initialized')) {
+        console.log('Student management page loaded');
+        initStudentManagement();
+        document.body.setAttribute('data-student-management-initialized', 'true');
+    }
+});
+
+/**
+ * Create a table row for a student
+ * @param {Object} student - Student data object
+ * @returns {string} HTML for the table row
+ */
+function createStudentRow(student) {
+    const studentId = student.id || '';
+    
+    // Ensure profile image path is absolute
+    let profileImg = student.profile_img || '/static/images/profile.png';
+    // If the path doesn't start with a slash or http, make it absolute
+    if (profileImg && !profileImg.startsWith('/') && !profileImg.startsWith('http')) {
+        profileImg = `/static/images/${profileImg}`;
+    }
+    
+    const firstName = student.first_name || '';
+    const lastName = student.last_name || '';
+    const studentName = `${firstName} ${lastName}`.trim() || 'Unnamed Student';
+    const studentRole = student.role || 'Student';
+    const isActive = student.is_active ?? true;
+    const studentStatus = isActive ? 'Active' : 'Inactive';
+    const statusClass = isActive ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger';
+
+    return `
+        <tr data-user-role="${studentRole}" data-user-id="${studentId}">
+            <td>
+                <div class="d-flex align-items-center">
+                    <img src="${profileImg}" 
+                    class="rounded-circle me-3" 
+                    width="40" 
+                    height="40"
+                    alt="${studentName}"
+                    onerror="this.src='/static/images/profile.png'">
+                    <div>
+                        <div class="fw-medium">${studentName}</div>
+                        <div class="text-muted small">${studentId}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="align-middle">${studentRole}</td>
+            <td class="align-middle">
+                <span class="badge ${statusClass}">
+                    ${studentStatus}
+                </span>
+            </td>
+            <td class="align-middle text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                    <button class="btn btn-link p-0" onclick="handleEditStudent('${studentId}')">
+                        <i class="bi bi-pencil" style="color: #191970;"></i>
+                    </button>
+                    <button class="btn btn-link p-0" onclick="handleViewStudent('${studentId}')">
+                        <i class="bi bi-eye" style="color: #191970;"></i>
+                    </button>
+                    <button class="btn btn-link p-0" onclick="handleArchiveStudent('${studentId}')">
+                        <i class="bi bi-archive" style="color: #191970;"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `;
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', initStudentManagement);
+/**
+ * Adds event listeners to the student table
+ */
+function addTableEventListeners() {
+    // Find all action buttons and add event listeners
+    const studentTable = document.getElementById('studentTable');
+    if (!studentTable) return;
+    
+    // Table event listeners initialized
+}

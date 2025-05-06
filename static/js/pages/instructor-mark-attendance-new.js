@@ -207,6 +207,18 @@ if (window.attendanceModuleInitialized) {
                 if (hasAttendanceForThisClass) {
                     // Show message that attendance has been marked
                     const messageContainer = document.createElement('div');
+                    messageContainer.className = 'alert alert-info mb-3 attendance-marked-message';
+                    messageContainer.innerHTML = `
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        Today's attendance has been marked for this class. Please use the <a href="/instructor/view-attendance" class="alert-link">View Attendance</a> page if you need to make changes.
+                    `;
+                    
+                    // Insert the message before the table
+                    const attendanceTable = document.getElementById('attendanceTable');
+                    if (attendanceTable) {
+                        const tableContainer = attendanceTable.parentNode;
+                        tableContainer.insertBefore(messageContainer, attendanceTable);
+                    }
                     
                     // Disable save button
                     saveAttendanceBtn.disabled = true;
@@ -220,7 +232,7 @@ if (window.attendanceModuleInitialized) {
                                     <i class="bi bi-info-circle-fill me-2"></i>
                                     Attendance for <strong>${selectedClassNameText}</strong> has already been marked for today.
                                     <br>
-                                    Please use the <a href="/admin/attendance-view" class="alert-link">View Attendance</a> page if you need to make changes.
+                                    Please use the <a href="/instructor/view-attendance" class="alert-link">View Attendance</a> page if you need to make changes.
                                 </div>
                             </td>
                         </tr>

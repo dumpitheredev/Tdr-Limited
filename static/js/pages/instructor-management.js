@@ -41,33 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // ------------------- Core Functions -------------------
 
 /**
- * Show a toast notification using the global notification system
+ * Show a toast notification using the toast_notification.html component
  * @param {string} message - The message to display
  * @param {string} type - The toast type (success, error, info, warning)
  */
 function showToast(message, type = 'success') {
     try {
-        // Always use the global notification system if available
-        if (typeof window.getNotificationManager === 'function') {
-            const manager = window.getNotificationManager({
-                useBootstrapToasts: true
-            });
-            
-            const title = type.charAt(0).toUpperCase() + type.slice(1);
-            manager.showBootstrapToast(title, message, {
-                type: type
-            });
-            return;
-        }
-        
-        // Second option: use the global showToast if it's different from this one
-        if (typeof window.showToast === 'function') {
-            const title = type.charAt(0).toUpperCase() + type.slice(1);
-            window.showToast(title, message, type);
-            return;
-        }
-        
-        // Last resort: use toast_notification.html component if available
+        // Use the toast_notification.html component
         const statusToast = document.getElementById('statusToast');
         if (!statusToast) {
             console.error('Toast element not found');
@@ -83,30 +63,44 @@ function showToast(message, type = 'success') {
             return;
         }
         
-        // Set the title based on type
+        // Set the title based on type (without adding an icon - the template already has one)
         let title = 'Information';
-        let icon = '<i class="bi bi-info-circle-fill text-info me-2"></i>';
         
         if (type === 'success') {
             title = 'Success';
-            icon = '<i class="bi bi-check-circle-fill text-success me-2"></i>';
+            // Update the existing icon to match the type
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
+            }
         } else if (type === 'error' || type === 'danger') {
             title = 'Error';
-            icon = '<i class="bi bi-exclamation-circle-fill text-danger me-2"></i>';
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-exclamation-circle-fill text-danger me-2';
+            }
         } else if (type === 'warning') {
             title = 'Warning';
-            icon = '<i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>';
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-exclamation-triangle-fill text-warning me-2';
+            }
+        } else { // info
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-info-circle-fill text-info me-2';
+            }
         }
         
-        // Update toast content
-        toastTitle.innerHTML = icon + title;
+        // Update toast content - just set the title text without adding another icon
+        toastTitle.textContent = title;
         toastMessage.innerHTML = message;
         
         // Show the toast
         const toast = new bootstrap.Toast(statusToast);
         toast.show();
-        } catch (error) {
-        console.error('Toast error');
+    } catch (error) {
+        console.error('Toast error:', error);
     }
 }
 
@@ -223,22 +217,44 @@ function fetchAndUpdateData(showLoading = false) {
     fetch(`/api/instructors?_t=${timestamp}`)
         .then(response => {
             if (!response.ok) {
-                throw new Error('Failed to fetch instructors');
+                // Get detailed error message from response
+                return response.json().then(errorData => {
+                    console.error('Error response:', errorData);
+                    throw new Error(errorData.error || `Failed to update instructor status: ${response.status}`);
+                }).catch(err => {
+                    // If we can't parse the JSON, just throw with status code
+                    throw new Error(`Failed to update instructor status: ${response.status}`);
+                });
             }
             return response.json();
         })
-            .then(data => {
-            
-            // Extract instructor data
+        .then(data => {
+            // Handle different API response formats with robust type checking
             let instructorData = [];
+            
+            // Check if data is an array
             if (Array.isArray(data)) {
+
                 instructorData = data;
-            } else if (data.instructors && Array.isArray(data.instructors)) {
-                instructorData = data.instructors;
-            } else if (data.data && Array.isArray(data.data)) {
-                instructorData = data.data;
+            } 
+            // Check if data has an instructors property that is an array
+            else if (data && typeof data === 'object') {
+                if (Array.isArray(data.instructors)) {
+
+                    instructorData = data.instructors;
+                } else if (data.data && Array.isArray(data.data)) {
+
+                    instructorData = data.data;
+                } else if (data.results && Array.isArray(data.results)) {
+
+                    instructorData = data.results;
+                } else {
+                    console.error('Could not find instructors array in response:', data);
+                    showToast('Error: Unexpected data format from server', 'error');
+                }
             } else {
-                console.error('Unexpected data format:', data);
+                console.error('Invalid data format:', data);
+                showToast('Error: Invalid data format from server', 'error');
             }
             
 
@@ -283,19 +299,52 @@ function fetchAndUpdateData(showLoading = false) {
 function formatInstructorData(instructor) {
     if (!instructor) return {};
     
+    // Handle different name field formats
+    let fullName = 'Unknown';
+    
+    if (instructor.name) {
+        // If instructor has a name field, use it
+        fullName = instructor.name;
+    } else if (instructor.first_name && instructor.last_name) {
+        // If instructor has first_name and last_name fields, combine them
+        fullName = `${instructor.first_name} ${instructor.last_name}`.trim();
+    } else if (instructor.firstName && instructor.lastName) {
+        // Alternative field naming
+        fullName = `${instructor.firstName} ${instructor.lastName}`.trim();
+    } else if (instructor.first_name) {
+        // Only first name available
+        fullName = instructor.first_name.trim();
+    } else if (instructor.last_name) {
+        // Only last name available
+        fullName = instructor.last_name.trim();
+    }
+    
+    // Handle different status field formats
+    let status = 'Unknown';
+    if (instructor.status) {
+        status = instructor.status;
+    } else if (typeof instructor.is_active !== 'undefined') {
+        status = instructor.is_active ? 'Active' : 'Inactive';
+    } else if (typeof instructor.active !== 'undefined') {
+        status = instructor.active ? 'Active' : 'Inactive';
+    }
+    
     return {
         id: instructor.id || instructor.user_id || '',
         user_id: instructor.id || instructor.user_id || '',
-        name: instructor.name || `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim() || 'Unknown',
+        name: fullName,
         email: instructor.email || '',
-        status: instructor.status || (instructor.is_active ? 'Active' : 'Inactive') || 'Unknown',
+        status: status,
         profile_img: instructor.profile_img || null,
         department: instructor.department || '',
         specialization: instructor.specialization || '',
         created_at: instructor.created_at || '',
         qualification: instructor.qualification || '',
         classes_taught: instructor.classes_taught || [],
-        role: instructor.role || 'Instructor'
+        role: instructor.role || 'Instructor',
+        // Store original name fields for reference
+        first_name: instructor.first_name || instructor.firstName || '',
+        last_name: instructor.last_name || instructor.lastName || ''
     };
 }
 
@@ -457,17 +506,18 @@ function saveInstructorStatus() {
         
         if (!instructorId) {
             showToast('Error: Instructor ID not found', 'error');
-                    return;
-                }
-                
+            return;
+        }
+        
         // Get form values
         const statusSelect = document.getElementById('instructorStatusSelect');
         const status = statusSelect ? statusSelect.value : '';
+        
+        // Convert status to boolean - API expects a boolean value for is_active
         const isActive = status === 'Active';
         
-        // Create the data object to send
+        // Create the data object to send - the API endpoint only expects is_active
         const updateData = {
-            status: status,
             is_active: isActive
         };
         
@@ -480,48 +530,74 @@ function saveInstructorStatus() {
             saveButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Saving...';
         }
         
-        // Send the update request - using the correct endpoint for user status updates
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        if (!csrfToken) {
+            console.warn('CSRF token not found. Request may fail.');
+            showToast('Warning: CSRF token not found. Please refresh the page and try again.', 'warning');
+        }
+        
+        // Debug logging
+        console.log(`Updating instructor ${instructorId} status to ${status} (is_active: ${isActive})`);
+        console.log('Request data:', JSON.stringify(updateData));
+        
+        // Send the update request
         fetch(`/api/users/${instructorId}/status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken || ''
             },
-            body: JSON.stringify(updateData)
+            body: JSON.stringify(updateData),
+            credentials: 'same-origin' // Include cookies for authentication
         })
         .then(response => {
+            // Log the response status
+            console.log(`Response status: ${response.status} ${response.statusText}`);
+            
             if (!response.ok) {
-                // Try to parse error response as JSON, but handle HTML responses too
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    return response.json().then(data => {
-                        throw new Error(data.message || `Failed to update instructor status: ${response.status}`);
+                // Try to get detailed error information
+                return response.json()
+                    .then(errorData => {
+                        console.error('Error details:', errorData);
+                        throw new Error(errorData.error || `Failed to update status (${response.status})`);
+                    })
+                    .catch(jsonError => {
+                        // If we can't parse the JSON, use the status text
+                        console.error('Error parsing error response:', jsonError);
+                        throw new Error(`Server error: ${response.statusText || response.status}`);
                     });
-                } else {
-                    throw new Error(`Failed to update instructor status: ${response.status}`);
-                }
             }
+            
             return response.json();
         })
         .then(data => {
-            // Hide the modal and ensure proper cleanup
+            console.log('Success response:', data);
+            
+            // Hide the modal
             const modal = document.getElementById('editInstructorModal');
-            const modalInstance = bootstrap.Modal.getInstance(modal);
-            if (modalInstance) {
-                modalInstance.hide();
-                // Additional cleanup
-                setTimeout(() => {
-                    cleanupModalBackdrop('editInstructorModal');
-                }, 150);
+            if (modal) {
+                const modalInstance = bootstrap.Modal.getInstance(modal);
+                if (modalInstance) {
+                    modalInstance.hide();
+                    // Clean up backdrop
+                    setTimeout(() => {
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) backdrop.remove();
+                        document.body.classList.remove('modal-open');
+                        document.body.style.removeProperty('padding-right');
+                    }, 150);
+                }
             }
             
             // Show success message
             showToast('Instructor status updated successfully', 'success');
             
-            // Update the instructor in the data
-            updateInstructorInData(instructorId, { status: status });
-            
-            // Refresh the table and stats
-            fetchAndUpdateData(false);
+            // Refresh the table to show updated data
+            setTimeout(() => {
+                fetchAndUpdateData(false);
+            }, 500);
         })
         .catch(error => {
             console.error('Error updating instructor status:', error);
@@ -666,6 +742,9 @@ function updateTable() {
         const row = document.createElement('tr');
         row.setAttribute('data-user-id', instructorId);
         row.setAttribute('data-user-role', role);
+        row.setAttribute('data-email', instructor.email || '');
+        row.setAttribute('data-department', instructor.department || '');
+        row.setAttribute('data-specialization', instructor.specialization || '');
         
         // Set the row content
         row.innerHTML = `
@@ -825,7 +904,14 @@ async function handleViewInstructor(instructorId) {
             const response = await fetch(`/api/users/${instructorId}`);
             
             if (!response.ok) {
-                throw new Error(`Failed to fetch instructor details: ${response.status}`);
+                // Get detailed error message from response
+                return response.json().then(errorData => {
+                    console.error('Error response:', errorData);
+                    throw new Error(errorData.error || `Failed to fetch instructor details: ${response.status}`);
+                }).catch(err => {
+                    // If we can't parse the JSON, just throw with status code
+                    throw new Error(`Failed to fetch instructor details: ${response.status}`);
+                });
             }
             
             const instructorData = await response.json();
@@ -1151,11 +1237,21 @@ function archiveInstructor() {
     // Save reference to the modal first for cleanup later
     const modal = bootstrap.Modal.getInstance(document.getElementById('confirmArchiveModal'));
     
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    
+    if (!csrfToken) {
+        console.warn('CSRF token not found. Archive request may fail.');
+        // Show warning toast
+        showToast('Warning: CSRF token not found. Please refresh the page and try again.', 'warning');
+    }
+    
     // Send the archive request
     fetch(`/api/users/${instructorId}/archive`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken || ''
         },
         body: JSON.stringify({
             reason: archiveReason,
@@ -1181,23 +1277,50 @@ function archiveInstructor() {
             setTimeout(() => cleanupModalBackdrop('confirmArchiveModal'), 150);
         }
         
-        // Show success message
-        showToast(`Instructor ${instructorName} has been archived successfully`, 'success');
+        // Create a custom success message with archive link
+        const successMessage = `
+            <div>Instructor ${instructorName} has been archived successfully</div>
+            <div class="mt-2">
+                <a href="/admin/archive-view?type=instructor" class="btn btn-sm btn-outline-primary" 
+                   style="color: #191970; background-color: transparent; border-color: #191970; transition: all 0.3s ease;" 
+                   onmouseover="this.style.backgroundColor='rgba(25, 25, 112, 0.1)';" 
+                   onmouseout="this.style.backgroundColor='transparent';" 
+                   onmousedown="this.style.backgroundColor='#191970'; this.style.color='white';" 
+                   onmouseup="this.style.backgroundColor='rgba(25, 25, 112, 0.1)'; this.style.color='#191970';">
+                    <i class="bi bi-box-arrow-right me-1"></i>View in Archives
+                </a>
+            </div>
+        `;
         
-        // Add link to archives in the toast
-        setTimeout(() => {
-            try {
-                const toastElement = document.querySelector('#toastContainer .toast:last-child .toast-body');
-                if (toastElement) {
-                    const archiveLink = document.createElement('div');
-                    archiveLink.className = 'mt-2';
-                    archiveLink.innerHTML = '<a href="/admin/archive-view?type=instructor" class="btn btn-sm btn-outline-secondary">View in Instructor Archives</a>';
-                    toastElement.appendChild(archiveLink);
-                }
-            } catch (error) {
-                console.error('Error adding archive link to toast');
+        // Show the toast with HTML content
+        const statusToast = document.getElementById('statusToast');
+        if (statusToast) {
+            // Update the icon to success
+            const iconElement = statusToast.querySelector('.toast-header i');
+            if (iconElement) {
+                iconElement.className = 'bi bi-check-circle-fill text-success me-2';
             }
-        }, 100);
+            
+            // Set the title
+            const toastTitle = document.getElementById('toastTitle');
+            if (toastTitle) {
+                toastTitle.textContent = 'Success';
+            }
+            
+            // Set the message with HTML content including the link
+            const toastMessage = document.getElementById('toastMessage');
+            if (toastMessage) {
+                toastMessage.innerHTML = successMessage;
+            }
+            
+            // Show the toast
+            const toast = new bootstrap.Toast(statusToast);
+            toast.show();
+        } else {
+            // Fallback to regular toast if element not found
+            showToast(`Instructor ${instructorName} has been archived successfully`, 'success');
+            console.warn('Toast element not found for custom archive link');
+        }
         
         // First, directly remove the row from the table
         const row = document.querySelector(`tr[data-user-id="${instructorId}"]`);
@@ -1611,29 +1734,78 @@ function filterInstructors(instructors, status, search) {
  */
 function exportInstructorsToCSV(status, search) {
     try {
-        // Use current data with filters applied
-        const filteredData = filterInstructors(state.filteredData, status, search);
+        // Get the export button and show loading state
+        const exportButton = document.getElementById('exportCSV');
+        if (exportButton) {
+            exportButton.disabled = true;
+            exportButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Exporting...';
+        }
         
-        if (filteredData.length === 0) {
+        // Show processing toast
+        showToast('Preparing export, please wait...', 'info');
+        
+        // Use the data that's already loaded in state
+        let instructorData = [...state.allData];
+        
+        // Apply filters if provided
+        if (status) {
+            instructorData = instructorData.filter(instructor => 
+                instructor.status?.toLowerCase() === status.toLowerCase());
+        }
+        
+        if (search) {
+            const searchLower = search.toLowerCase();
+            instructorData = instructorData.filter(instructor => 
+                (instructor.name?.toLowerCase().includes(searchLower) || 
+                 instructor.id?.toString().toLowerCase().includes(searchLower) || 
+                 instructor.email?.toLowerCase().includes(searchLower)));
+        }
+        
+        if (instructorData.length === 0) {
             showToast('No instructors to export', 'warning');
+            if (exportButton) {
+                exportButton.disabled = false;
+                exportButton.innerHTML = 'Export CSV';
+            }
             return;
         }
         
         // Define CSV headers
         const headers = ['ID', 'Name', 'Department', 'Status', 'Email', 'Specialization'];
         
+        // Helper function to escape CSV fields properly
+        const escapeCSV = (field) => {
+            if (field === null || field === undefined) return '';
+            const str = String(field);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        };
+        
         // Convert data to CSV format
         let csvContent = headers.join(',') + '\n';
         
-        filteredData.forEach(instructor => {
+        // Log the data for debugging
+        console.log('Exporting instructor data:', instructorData);
+        
+        // Process each instructor
+        instructorData.forEach(instructor => {
+            // Log each instructor for debugging
+            console.log('Processing instructor:', instructor);
+            
+            // Create the CSV row using data from state
             const row = [
-                instructor.user_id || '',
-                instructor.name || '',
-                instructor.department || '',
-                instructor.status || '',
-                instructor.email || '',
-                instructor.specialization || ''
-            ].map(cell => `"${String(cell || '').replace(/"/g, '""')}"`); // Escape quotes in CSV
+                escapeCSV(instructor.id || instructor.user_id || ''),
+                escapeCSV(instructor.name || `${instructor.first_name || ''} ${instructor.last_name || ''}`.trim() || ''),
+                escapeCSV(instructor.department || ''),
+                escapeCSV(instructor.status || ''),
+                escapeCSV(instructor.email || ''),
+                escapeCSV(instructor.specialization || '')
+            ];
+            
+            // Log the CSV row for debugging
+            console.log('CSV row:', row);
             
             csvContent += row.join(',') + '\n';
         });
@@ -1652,10 +1824,23 @@ function exportInstructorsToCSV(status, search) {
         document.body.removeChild(link);
         
         // Show success toast
-        showToast(`Exported ${filteredData.length} instructors to CSV`, 'success');
-        } catch (error) {
+        showToast(`Exported ${instructorData.length} instructors to CSV`, 'success');
+        
+        // Reset export button
+        if (exportButton) {
+            exportButton.disabled = false;
+            exportButton.innerHTML = 'Export CSV';
+        }
+    } catch (error) {
         console.error('Error exporting CSV:', error);
-        showToast('Failed to export instructors to CSV', 'error');
+        showToast('Failed to export instructors to CSV: ' + error.message, 'error');
+        
+        // Reset export button
+        const exportButton = document.getElementById('exportCSV');
+        if (exportButton) {
+            exportButton.disabled = false;
+            exportButton.innerHTML = 'Export CSV';
+        }
     }
 }
 
