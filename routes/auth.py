@@ -1,7 +1,7 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_user, logout_user, login_required, current_user
-from models import db, User, AdminSettings
+from models import db, User, AdminSettings, LoginAttempt
 from datetime import datetime, timezone
 import pytz
 
@@ -74,23 +74,60 @@ def login():
         # Validate input
         if not email or not password:
             error = 'Please enter your email and password'
-            return render_template('auth/login.html', error=error)
+            return render_template('auth/login.html', error=error, maintenance_active=maintenance_active)
+        
+        # Get client IP address
+        ip_address = request.remote_addr
+        
+        # Check login attempts and lockout status
+        login_attempt = LoginAttempt.get_attempts(ip_address, email)
+        
+        # Check if account is locked
+        if login_attempt.is_locked():
+            lockout_minutes = login_attempt.get_lockout_remaining_minutes()
+            error = f'Too many failed login attempts. Please try again in {lockout_minutes} minutes.'
+            return render_template('auth/login.html', error=error, maintenance_active=maintenance_active)
         
         # Check if user exists
         user = User.query.filter_by(email=email).first()
         
         if not user:
-            error = 'Invalid email or password'
-            return render_template('auth/login.html', error=error)
+            # Increment failed attempts
+            login_attempt.increment()
+            remaining = login_attempt.get_remaining_attempts()
+            
+            if remaining > 0:
+                error = f'Invalid email or password. {remaining} attempts remaining.'
+            else:
+                error = 'Too many failed login attempts. Your account has been temporarily locked.'
+            
+            return render_template('auth/login.html', error=error, maintenance_active=maintenance_active)
         
         # Use proper password checking
         login_success = user.check_password(password)
         
         if not login_success:
-            error = 'Invalid email or password'
-            return render_template('auth/login.html', error=error)
+            # Increment failed attempts
+            login_attempt.increment()
+            remaining = login_attempt.get_remaining_attempts()
+            
+            if remaining > 0:
+                error = f'Invalid email or password. {remaining} attempts remaining.'
+            else:
+                error = 'Too many failed login attempts. Your account has been temporarily locked.'
+            
+            return render_template('auth/login.html', error=error, maintenance_active=maintenance_active)
+        
+        # Reset login attempts on successful login
+        login_attempt.reset()
         
         # At this point, login is successful - we already know the user's role from the database
+        
+        # Check if this is the user's first login and they need to change their password
+        if user.first_login:
+            # Set a session flag to indicate that the user needs to change their password
+            session['password_change_required'] = True
+            flash('This is your first login. You must change your password before continuing.', 'warning')
         
         # Check for super admin status
         is_super_admin = user.role == 'admin' and (
@@ -121,16 +158,27 @@ def login():
         if maintenance_active and is_super_admin:
             flash('Maintenance mode is active. You have been granted access as a super administrator.', 'warning')
         
-        # Redirect based on role
-        if user.role == 'admin':
-            flash('Welcome, Administrator', 'success')
-            return redirect(url_for('admin.dashboard'))
-        elif user.role == 'instructor':
-            flash('Welcome, Instructor', 'success')
-            return redirect(url_for('instructor.dashboard'))
-        elif user.role == 'student':
-            flash('Welcome, Student', 'success')
-            return redirect(url_for('student.dashboard'))
+        # Redirect based on role and first login status
+        if session.get('password_change_required'):
+            # Redirect to password change page based on role
+            if user.role == 'admin':
+                return redirect(url_for('admin.admin_profile', change_password=True))
+            elif user.role == 'instructor':
+                return redirect(url_for('instructor.instructor_profile', change_password=True))
+            elif user.role == 'student':
+                # For students, redirect to student profile (you may need to create this route)
+                return redirect(url_for('student.dashboard', change_password=True))
+        else:
+            # Normal login flow for returning users
+            if user.role == 'admin':
+                flash('Welcome, Administrator', 'success')
+                return redirect(url_for('admin.dashboard'))
+            elif user.role == 'instructor':
+                flash('Welcome, Instructor', 'success')
+                return redirect(url_for('instructor.dashboard'))
+            elif user.role == 'student':
+                flash('Welcome, Student', 'success')
+                return redirect(url_for('student.dashboard'))
     
     # If we got here due to a redirect loop, log the user out first
     if is_redirect and current_user.is_authenticated:

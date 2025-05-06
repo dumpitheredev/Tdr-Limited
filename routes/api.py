@@ -10,11 +10,13 @@ import traceback
 import json
 import uuid
 import math
+import sys
 import os
 import re
 import string
 import random
 from functools import wraps
+from sqlalchemy.exc import IntegrityError 
 
 # Create API blueprint
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -54,7 +56,7 @@ def map_company_to_dict(company):
         'name': getattr(company, 'name', ''),
         'contact': getattr(company, 'contact', ''),
         'email': getattr(company, 'email', ''),
-        'status': getattr(company, 'status', 'Active')
+        'status': getattr(company, 'is_active', 'Active')
     }
     
     # Handle ID field which might be 'id' or 'company_id'
@@ -496,6 +498,9 @@ def get_instructors():
     # Get users with instructor role
     query = User.query.filter_by(role='Instructor')
     
+    # LINE TO FILTER OUT ARCHIVED USERS
+    query = query.filter(User.is_archived != True)
+    
     if status_filter:
         is_active = status_filter.lower() == 'active'
         query = query.filter(User.is_active == is_active)
@@ -530,7 +535,9 @@ def get_instructors():
             'email': instructor.email,
             'status': 'Active' if instructor.is_active else 'Inactive',
             'classes': class_list,
-            'profile_img': instructor.profile_img
+            'profile_img': instructor.profile_img,
+            'department': instructor.department,
+            'specialization': instructor.specialization
         })
     
     return jsonify(result)
@@ -539,6 +546,7 @@ def get_instructors():
 @login_required
 def get_companies():
     """API endpoint to get all companies"""
+    # Fetch all companies, removing the is_archived filter
     companies = Company.query.all()
     
     result = []
@@ -559,10 +567,11 @@ def get_company(company_id):
     
     for student in students:
         student_list.append({
-            'id': student.id,
+            'user_id': student.id, # Change key to user_id
             'name': f"{student.first_name} {student.last_name}",
             'email': student.email,
-            'status': 'Active' if student.is_active else 'Inactive'
+            'status': 'Active' if student.is_active else 'Inactive',
+            'profile_img': student.profile_img # Add profile_img
         })
     
     # Map company to dictionary and add students
@@ -590,7 +599,13 @@ def update_company(company_id):
         if 'email' in data:
             company.email = data['email']
         if 'status' in data:
-            company.status = data['status']
+            # Validate the input status value
+            if data['status'] in ['Active', 'Inactive']:
+                company.is_active = data['status']
+            else:
+                # Handle invalid status value if necessary, e.g., return error or default
+                print(f"Warning: Invalid status value '{data['status']}' received for company {company_id}. Defaulting to Active.")
+                company.is_active = 'Active'
         
         db.session.commit()
         return jsonify({
@@ -619,15 +634,20 @@ def create_company():
     try:
         # Check if company ID already exists
         if Company.query.get(data['company_id']):
-            return jsonify({'error': 'Company ID already exists'}), 400
-        
+            return jsonify({'error': 'Company ID generation conflict, please try again'}), 400 # Changed message slightly
+
+        # Check if email already exists
+        existing_email_company = Company.query.filter(func.lower(Company.email) == func.lower(data['email'])).first()
+        if existing_email_company:
+             return jsonify({'error': 'Email address already exists in the system'}), 400
+
         # Create new company
         new_company = Company(
             company_id=data['company_id'],
             name=data['name'],
             contact=data['contact'],
             email=data['email'],
-            status='Active'
+            is_active='Active'
         )
         
         # Add to database
@@ -640,27 +660,60 @@ def create_company():
             'company_id': data['company_id']
         }), 201
         
+    except IntegrityError as ie:
+        db.session.rollback()
+        error_str = str(ie.orig).lower() # Check the original DB driver error message
+        if 'duplicate entry' in error_str and 'company.email' in error_str:
+            return jsonify({'error': 'Email address already exists'}), 400
+        elif 'duplicate entry' in error_str and ('company.PRIMARY' in error_str or 'company.id' in error_str): # Check primary key too
+             return jsonify({'error': 'Company ID conflict, please try again'}), 400
+        else:
+            return jsonify({'error': 'Database integrity error. Please check input.'}), 500
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Failed to create company: {str(e)}'}), 500
+        traceback.print_exc() # Keep traceback for unexpected errors
+        return jsonify({'error': f'Failed to create company: An unexpected error occurred.'}), 500
 
 @api_bp.route('/companies-direct', methods=['GET'])
 @login_required
 def get_companies_direct():
-    """API endpoint to get all companies using direct SQL to avoid ORM mapping issues"""
+    """API endpoint to get companies, filtering by status and including archive status."""
     try:
-        # Use raw SQL to query the companies table
-        result = db.session.execute(text("SELECT id, name, contact, email, status, created_at, updated_at FROM company"))
+        status_filter = request.args.get('status') # e.g., 'Active', 'Inactive', 'Archived', 'All'
+        params = {}
+        where_clauses = []
+
+        if status_filter == 'Active':
+            where_clauses.append("is_active = 'Active'")
+            where_clauses.append("is_archived = false")
+        elif status_filter == 'Inactive':
+            where_clauses.append("is_active = 'Inactive'")
+            where_clauses.append("is_archived = false")
+        elif status_filter == 'Archived':
+            where_clauses.append("is_archived = true")
+        # No clause needed for 'All' or empty/None status_filter
+        
+        # Base query including is_archived
+        query = "SELECT id, name, contact, email, is_active, is_archived, created_at, updated_at FROM company"
+        
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        query += " ORDER BY name" # Optional: Order results
+
+        # Fetch companies using the constructed query
+        result = db.session.execute(text(query), params)
         companies = []
         
-        # Map the results to dictionaries
+        # Map the results to dictionaries, including is_archived
         for row in result:
             companies.append({
                 'company_id': row.id,
                 'name': row.name,
                 'contact': row.contact,
                 'email': row.email,
-                'status': row.status,
+                'status': row.is_active, # Keep 'status' based on is_active for consistency with UI
+                'is_archived': row.is_archived, # Include the archive status
                 'created_at': row.created_at.isoformat() if row.created_at else None,
                 'updated_at': row.updated_at.isoformat() if row.updated_at else None
             })
@@ -668,6 +721,7 @@ def get_companies_direct():
         return jsonify(companies)
     except Exception as e:
         print(f"Error fetching companies: {str(e)}")
+        traceback.print_exc() # Print traceback for detailed error
         return jsonify([]), 500
 
 @api_bp.route('/companies-direct/<string:company_id>', methods=['GET'])
@@ -675,9 +729,9 @@ def get_companies_direct():
 def get_company_direct(company_id):
     """API endpoint to get a specific company by ID using direct SQL to avoid ORM mapping issues"""
     try:
-        # Use raw SQL to query the company
+        # Use raw SQL to query the company, select is_active instead of status
         result = db.session.execute(
-            text("SELECT id, name, contact, email, status, created_at, updated_at FROM company WHERE id = :company_id"),
+            text("SELECT id, name, contact, email, is_active, created_at, updated_at FROM company WHERE id = :company_id"),
             {"company_id": company_id}
         ).fetchone()
         
@@ -690,10 +744,11 @@ def get_company_direct(company_id):
         
         for student in students:
             student_list.append({
-                'id': student.id,
+                'user_id': student.id, # Change key to user_id
                 'name': f"{student.first_name} {student.last_name}",
                 'email': student.email,
-                'status': 'Active' if student.is_active else 'Inactive'
+                'status': 'Active' if student.is_active else 'Inactive',
+                'profile_img': student.profile_img # Add profile_img
             })
         
         # Map the result to a dictionary
@@ -702,7 +757,7 @@ def get_company_direct(company_id):
             'name': result.name,
             'contact': result.contact,
             'email': result.email,
-            'status': result.status,
+            'status': result.is_active,
             'created_at': result.created_at.isoformat() if result.created_at else None,
             'updated_at': result.updated_at.isoformat() if result.updated_at else None,
             'students': student_list
@@ -723,13 +778,13 @@ def update_company_direct(company_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Get the company first to check current status
+        # Get the company first to check current status using is_active
         company = Company.query.get(company_id)
         if not company:
             return jsonify({'error': 'Company not found'}), 404
             
-        # Check if we're archiving the company (changing status to Inactive)
-        is_archiving = 'status' in data and data['status'] == 'Inactive' and company.status != 'Inactive'
+        # Check if we're archiving/changing status (check is_active field)
+        is_status_change_to_inactive = 'status' in data and data['status'] == 'Inactive' and company.is_active != 'Inactive'
         
         # Prepare update fields
         update_fields = []
@@ -748,14 +803,18 @@ def update_company_direct(company_id):
             params["email"] = data['email']
         
         if 'status' in data:
-            update_fields.append("status = :status")
-            params["status"] = data['status']
+            if data['status'] in ['Active', 'Inactive']:
+                update_fields.append("is_active = :is_active")
+                params["is_active"] = data['status']
+            else:
+                # Handle invalid status value if necessary
+                print(f"Warning: Invalid status value '{data['status']}' received in update_company_direct for company {company_id}. Ignoring status update.")
         
         # Add updated_at timestamp
         update_fields.append("updated_at = NOW()")
         
-        # If archiving, add archive information
-        if is_archiving and 'archiveNote' in data and data['archiveNote']:
+        # If changing status to Inactive, consider adding archive note (logic unchanged, uses notes field)
+        if is_status_change_to_inactive and 'archiveNote' in data and data['archiveNote']:
             # Format archive note with consistent pattern
             archive_timestamp = datetime.now().strftime('%Y-%m-%d')
             reason = data['archiveNote']
@@ -790,8 +849,8 @@ def update_company_direct(company_id):
             
             # Add a success message
             message = 'Company updated successfully'
-            if is_archiving:
-                message = 'Company archived successfully'
+            if is_status_change_to_inactive:
+                message = 'Company status set to Inactive successfully'
             
             return jsonify({
                 'success': True,
@@ -808,12 +867,185 @@ def update_company_direct(company_id):
         print(f"Error updating company: {str(e)}")
         return jsonify({'error': f'Failed to update company: {str(e)}'}), 500
 
-@api_bp.route('/classes', methods=['GET'])
+@api_bp.route('/companies/<string:company_id>/archive', methods=['PUT'])
+@login_required
+@admin_required
+def archive_company(company_id):
+    """API endpoint to archive a specific company."""
+    try:
+        company = Company.query.get_or_404(company_id)
+        
+        # Get the reason from the request body
+        data = request.json or {}
+        archive_reason = data.get('reason', 'No reason provided') # Get reason or use default
+
+        # Check for active students associated with this company
+        active_students = User.query.filter_by(
+            company_id=company_id,
+            role='Student',
+            is_active=True,
+            is_archived=False
+        ).count()
+        
+        if active_students > 0:
+            return jsonify({
+                'success': False, # Add success: False
+                'error': f'Company has {active_students} active students',
+                'details': 'Reassign or archive students before archiving the company.'
+            }), 400
+
+        # Mark as inactive and archived
+        company.is_active = 'Inactive'
+        company.is_archived = True
+        
+        # Add archive note (similar to user archive)
+        if hasattr(company, 'notes'):
+            archive_timestamp = datetime.now().strftime('%Y-%m-%d')
+            admin_name = f"{current_user.first_name} {current_user.last_name}"
+            
+            # Use the extracted archive_reason here
+            archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {archive_reason}\nArchived by: {admin_name}"
+            
+            # Update notes field with the archive note
+            if company.notes:
+                company.notes += f"\n\n{archive_note}"
+            else:
+                company.notes = archive_note
+        
+        # Add archive date if column exists (it might not if migration hasn't added it yet)
+        if hasattr(company, 'archive_date'):
+             try:
+                 company.archive_date = datetime.now().date()
+             except Exception as e:
+                 print(f"Warning: Could not set archive_date for company {company_id}: {e}")
+
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'Company {company.name} ({company_id}) has been archived.'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error archiving company {company_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to archive company: {str(e)}'}), 500
+
+@api_bp.route('/classes', methods=['GET', 'POST'])
 @login_required
 def get_classes():
     """
-    Get a list of all classes
+    Get a list of all classes or create a new class
     """
+    # Handle POST request to create a new class
+    if request.method == 'POST':
+        try:
+            # Check if user has permission to create classes
+            if current_user.role.lower() != 'admin':
+                return jsonify({
+                    'error': 'You do not have permission to create classes'
+                }), 403
+                
+            # Get JSON data from request
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+                
+            # Extract class data
+            name = data.get('name')
+            description = data.get('description', '')
+            day_of_week = data.get('day')
+            instructor_id = data.get('instructor_id')
+            year = data.get('year')
+            status = data.get('status', 'Active')
+            
+            # Parse time string (format: "09:00 - 10:00")
+            time_str = data.get('time', '')
+            start_time = None
+            end_time = None
+            
+            if time_str and ' - ' in time_str:
+                time_parts = time_str.split(' - ')
+                if len(time_parts) == 2:
+                    start_time_str, end_time_str = time_parts
+                    try:
+                        # Convert time strings to time objects
+                        start_time = datetime.strptime(start_time_str.strip(), '%H:%M').time()
+                        end_time = datetime.strptime(end_time_str.strip(), '%H:%M').time()
+                    except ValueError:
+                        return jsonify({'error': 'Invalid time format. Use HH:MM format.'}), 400
+            
+            # Validate required fields
+            if not name or not name.strip():
+                return jsonify({'error': 'Class name is required'}), 400
+                
+            if not day_of_week or not day_of_week.strip():
+                return jsonify({'error': 'Day of week is required'}), 400
+                
+            if not start_time or not end_time:
+                return jsonify({'error': 'Start and end times are required'}), 400
+                
+            # Generate a unique class ID with format: kl + 2 digits + 2 lowercase letters
+            import string
+            class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
+            
+            # Check if the ID already exists, if so, generate a new one
+            while Class.query.filter_by(id=class_id).first():
+                class_id = 'kl' + ''.join(random.choices('0123456789', k=2)) + ''.join(random.choices(string.ascii_lowercase, k=2))
+                
+            # Create new class object
+            new_class = Class(
+                id=class_id,
+                name=name,
+                description=description,
+                day_of_week=day_of_week,
+                start_time=start_time,
+                end_time=end_time,
+                instructor_id=instructor_id if instructor_id else None,
+                term=year,
+                is_active=(status.lower() == 'active'),
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            # Add to database
+            db.session.add(new_class)
+            db.session.commit()
+            
+            # Get instructor name for response
+            instructor_name = "Not Assigned"
+            if instructor_id:
+                instructor = User.query.get(instructor_id)
+                if instructor:
+                    instructor_name = f"{instructor.first_name} {instructor.last_name}"
+            
+            # Return success response
+            return jsonify({
+                'success': True,
+                'message': f'Class "{name}" created successfully',
+                'class': {
+                    'id': new_class.id,
+                    'name': new_class.name,
+                    'description': new_class.description,
+                    'dayOfWeek': new_class.day_of_week,
+                    'startTime': new_class.start_time.strftime('%H:%M') if new_class.start_time else None,
+                    'endTime': new_class.end_time.strftime('%H:%M') if new_class.end_time else None,
+                    'instructorId': new_class.instructor_id,
+                    'instructorName': instructor_name,
+                    'term': new_class.term,
+                    'isActive': new_class.is_active
+                }
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'error': f'Failed to create class: {str(e)}'
+            }), 500
+    
+    # Handle GET request to fetch classes
     try:
         # Get query parameters
         is_active = request.args.get('is_active')
@@ -821,6 +1053,9 @@ def get_classes():
         
         # Start the query
         query = db.session.query(Class)
+        
+        # Always exclude archived classes from the main class list
+        query = query.filter(Class.is_archived != True)
         
         # Apply filters
         if is_active is not None:
@@ -868,6 +1103,79 @@ def get_classes():
             'classes': []
         }), 500
 
+
+@api_bp.route('/classes/<class_id>/archive', methods=['PUT'])
+@login_required
+@admin_required
+def archive_class(class_id):
+    """
+    Update the status of a class (active/inactive) and handle archiving
+    """
+    try:
+        # Get JSON data
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Get status and archive note
+        new_status = data.get('status')
+        archive_note = data.get('archiveNote', '')
+        
+        if not new_status:
+            return jsonify({'error': 'Status is required'}), 400
+            
+        # Get the class
+        class_obj = Class.query.get(class_id)
+        if not class_obj:
+            return jsonify({'error': f'Class with ID {class_id} not found'}), 404
+            
+        # Update status
+        is_active = new_status.lower() == 'active'
+        class_obj.is_active = is_active
+        
+        # If archiving (setting to inactive), set archive flag and note
+        if not is_active:
+            # Set archive flags and dates
+            class_obj.is_archived = True
+            class_obj.is_active = False
+            
+            # Update timestamps
+            current_time = datetime.now()
+            class_obj.updated_at = current_time
+            class_obj.archive_date = current_time.date()
+            
+            # Store archive note if provided
+            if archive_note:
+                # Get admin name
+                admin_name = f"{current_user.first_name} {current_user.last_name}"
+                
+                # Format note with ARCHIVE NOTE format for extraction by frontend
+                # Make sure to use the exact format expected by the extractArchiveReason function
+                formatted_note = f"ARCHIVE NOTE ({current_time.strftime('%Y-%m-%d')}): {archive_note}\nArchived by: {admin_name}"
+                
+                # If class already has notes, append to them
+                if class_obj.notes:
+                    class_obj.notes = f"{class_obj.notes}\n\n{formatted_note}"
+                else:
+                    # Create new notes
+                    class_obj.notes = formatted_note
+        
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Class status updated to {new_status}',
+            'class_id': class_id,
+            'status': new_status
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to update class status: {str(e)}'}), 500
+
 @api_bp.route('/classes/<string:class_id>', methods=['GET'])
 @login_required
 def get_class(class_id):
@@ -896,6 +1204,58 @@ def get_class(class_id):
     }
     
     return jsonify(result)
+
+@api_bp.route('/classes/<string:class_id>/students', methods=['GET'])
+@login_required
+def get_class_students(class_id):
+    """API endpoint to get students enrolled in a specific class"""
+    try:
+        # Verify the class exists
+        class_obj = Class.query.get_or_404(class_id)
+        
+        # Get enrolled students for this class - use distinct to avoid duplicates
+        students = db.session.query(User).distinct().join(
+            Enrollment, User.id == Enrollment.student_id
+        ).filter(
+            Enrollment.class_id == class_id,
+            User.role == 'Student',
+            User.is_active == True,
+            Enrollment.unenrollment_date.is_(None)  # Only active enrollments
+        ).all()
+        
+        # Format the response
+        result = []
+        # Use a set to track student IDs we've already added
+        processed_student_ids = set()
+        
+        for student in students:
+            # Skip if we've already processed this student
+            if student.id in processed_student_ids:
+                continue
+                
+            processed_student_ids.add(student.id)
+            result.append({
+                'id': student.id,
+                'first_name': student.first_name,
+                'last_name': student.last_name,
+                'email': student.email,
+                'profile_img': student.profile_img or 'profile.png'
+            })
+        
+        return jsonify({
+            'class_id': class_id,
+            'class_name': class_obj.name,
+            'students': result
+        })
+        
+    except Exception as e:
+        print(f"Error getting class students: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'students': []
+        }), 500
 
 @api_bp.route('/classes/<string:class_id>', methods=['PUT'])
 @login_required
@@ -948,7 +1308,8 @@ def get_class_attendance(class_id):
         # Verify the class exists
         class_obj = Class.query.get_or_404(class_id)
         
-        # Get optional date range filters
+        # Get optional date filters
+        date = request.args.get('date')  # Single date filter
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -970,19 +1331,26 @@ def get_class_attendance(class_id):
         )
         
         # Apply date filters if provided
-        if start_date:
+        if date:  # Single date filter takes precedence
             try:
-                start = datetime.strptime(start_date, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date >= start)
+                specific_date = datetime.strptime(date, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date == specific_date)
             except ValueError:
                 pass
-                
-        if end_date:
-            try:
-                end = datetime.strptime(end_date, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date <= end)
-            except ValueError:
-                pass
+        else:  # Use date range if single date not provided
+            if start_date:
+                try:
+                    start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                    query = query.filter(Attendance.date >= start)
+                except ValueError:
+                    pass
+                    
+            if end_date:
+                try:
+                    end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                    query = query.filter(Attendance.date <= end)
+                except ValueError:
+                    pass
         
         # Execute the query directly
         attendance_records = query.all()
@@ -1016,8 +1384,10 @@ def get_class_attendance(class_id):
         return jsonify([]), 200  # Return empty array with 200 status to prevent breaking the UI 
 
 @api_bp.route('/attendance/save', methods=['POST'])
-@login_required
 def save_attendance():
+    # Check if user is authenticated and return JSON response if not
+    if not current_user.is_authenticated:
+        return jsonify({'success': False, 'message': 'Authentication required'}), 401
     """API endpoint to save attendance records for multiple students"""
     try:
         # Get JSON data from request
@@ -1057,39 +1427,72 @@ def save_attendance():
                 if status not in ['Present', 'Absent', 'Late']:
                     status = 'Present'  # Default to Present if unknown
                 
-                # Check if record already exists
-                existing = Attendance.query.filter_by(
-                    student_id=record['student_id'],
-                    class_id=data['class_id'],
-                    date=attendance_date
-                ).first()
-                
-                if existing:
-                    # Update existing record
-                    existing.status = status
-                    existing.comments = record.get('comment', '')
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # Create new attendance record
-                    new_attendance = Attendance(
+                try:
+                    # Check if record already exists
+                    existing = Attendance.query.filter_by(
                         student_id=record['student_id'],
                         class_id=data['class_id'],
-                        date=attendance_date,
-                        status=status,
-                        comments=record.get('comment', ''),
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow()
-                    )
-                    db.session.add(new_attendance)
-                
-                success_count += 1
+                        date=attendance_date
+                    ).first()
+                    
+                    if existing:
+                        # Update existing record
+                        existing.status = status
+                        existing.comments = record.get('comment', '')
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        # Create new attendance record
+                        new_attendance = Attendance(
+                            student_id=record['student_id'],
+                            class_id=data['class_id'],
+                            date=attendance_date,
+                            status=status,
+                            comments=record.get('comment', ''),
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow()
+                        )
+                        db.session.add(new_attendance)
+                    
+                    # Try to flush each record individually to catch duplicates early
+                    db.session.flush()
+                    success_count += 1
+                    
+                except IntegrityError as e:
+                    # Handle duplicate record
+                    db.session.rollback()
+                    print(f"Integrity error for student {record['student_id']}: {str(e)}")
+                    error_count += 1
+                    # Continue processing other records
                 
             except Exception as e:
                 print(f"Error processing attendance record: {str(e)}")
                 error_count += 1
                 
-        # Commit all changes
-        db.session.commit()
+        try:
+            # Commit all changes
+            db.session.commit()
+        except IntegrityError as e:
+            # Handle unique constraint violation
+            db.session.rollback()
+            print(f"Integrity error when saving attendance: {str(e)}")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Some attendance records already exist. Only new records were saved.',
+                'duplicate': True,
+                'records_processed': success_count,
+                'errors': error_count
+            })
+        except Exception as e:
+            # Handle other errors
+            db.session.rollback()
+            print(f"Error saving attendance: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': f'Error saving attendance: {str(e)}',
+                'records_processed': success_count,
+                'errors': error_count
+            }), 500
         
         return jsonify({
             'success': True,
@@ -1112,9 +1515,9 @@ def get_attendance_record(record_id):
         result = db.session.query(
             Attendance, User, Class
         ).outerjoin(
-            User, User.id == Attendance.student_id
+            User, Attendance.student_id == User.id
         ).outerjoin(
-            Class, Class.id == Attendance.class_id
+            Class, Attendance.class_id == Class.id
         ).filter(
             Attendance.id == record_id
         ).first()
@@ -1170,18 +1573,32 @@ def update_attendance(record_id):
         # Get the attendance record
         attendance = Attendance.query.get_or_404(record_id)
         
+        # Check if the user is authorized to modify this record
+        if current_user.role.lower() == 'instructor':
+            # Instructors can only modify their own class records
+            class_obj = Class.query.get(attendance.class_id)
+            if not class_obj or class_obj.instructor_id != current_user.id:
+                return jsonify({'success': False, 'message': 'You are not authorized to modify this attendance record'}), 403
+        elif current_user.role.lower() != 'admin':
+            # Only admins and instructors can modify attendance
+            return jsonify({'success': False, 'message': 'You are not authorized to modify attendance records'}), 403
+        
         # Update status if provided
         if 'status' in data:
             # Normalize status to match enum values (capitalize first letter)
-            status = data['status'].capitalize()
+            status_value = str(data['status']).strip().lower()
             
-            # Make sure it's one of our valid status values
-            if status not in ['Present', 'Absent', 'Late']:
-                status = 'Present'  # Default to Present if unknown
+            if status_value == 'present':
+                attendance.status = 'Present'
+            elif status_value == 'absent':
+                attendance.status = 'Absent'
+            elif status_value == 'late':
+                attendance.status = 'Late'
+            else:
+                # Default to Present if unknown
+                attendance.status = 'Present'
                 
-            attendance.status = status
-            
-        # Update comment if provided (check both comment and comments field names)
+        # Update comment if provided (handle both 'comment' and 'comments' keys)
         if 'comment' in data:
             attendance.comments = data['comment']
         elif 'comments' in data:
@@ -1193,22 +1610,25 @@ def update_attendance(record_id):
         # Save changes
         db.session.commit()
         
-        # Return updated record
+        # Return updated record with standardized keys
         return jsonify({
             'success': True,
             'message': 'Attendance record updated successfully',
             'record': {
                 'id': attendance.id,
                 'date': attendance.date.strftime('%Y-%m-%d'),
-                'status': attendance.status,
+                'status': attendance.status.lower(),  # Return lowercase for frontend consistency
                 'student_id': attendance.student_id,
-                'comment': attendance.comments
+                'class_id': attendance.class_id,
+                'comment': attendance.comments,
+                'updated_at': attendance.updated_at.strftime('%Y-%m-%d %H:%M:%S') if attendance.updated_at else None
             }
         })
         
     except Exception as e:
         db.session.rollback()
         print(f"Error updating attendance: {str(e)}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': f'Error updating attendance: {str(e)}'}), 500
 
 @api_bp.route('/classes/export-csv', methods=['GET'])
@@ -1597,6 +2017,135 @@ def get_archives(folder):
             result['records'] = admin_records[start:end]
             result['total'] = total
         
+        elif folder == 'company':
+            # Build the query for archived companies
+            query = Company.query.filter(Company.is_archived == True)
+            
+            # Apply search if provided
+            if search:
+                query = query.filter(or_(
+                    Company.name.ilike(f'%{search}%'),
+                    Company.id.ilike(f'%{search}%'),
+                    Company.contact.ilike(f'%{search}%'),
+                    Company.email.ilike(f'%{search}%')
+                ))
+                
+            # Count total for pagination
+            total = query.count()
+            
+            # Get paginated results
+            companies = query.order_by(Company.name).all() # Order by name
+            
+            # Format for response
+            company_records = []
+            for company in companies:
+                # Format date if available
+                archive_date = "Unknown"
+                try:
+                    if hasattr(company, 'archive_date') and company.archive_date:
+                        archive_date = company.archive_date.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+                
+                # Add to results (send notes/description for reason extraction)
+                company_records.append({
+                    'company_id': company.id,
+                    'name': company.name,
+                    'contact': company.contact,
+                    'email': company.email,
+                    'archive_date': archive_date,
+                    'notes': company.notes if hasattr(company, 'notes') else '',
+                    'description': company.description if hasattr(company, 'description') else '' # Send description too if it exists
+                })
+                
+            # Apply pagination
+            result['records'] = company_records[start:end]
+            result['total'] = total
+            
+        elif folder == 'class':
+            # Build the query for archived classes
+            query = Class.query.filter(Class.is_archived == True)
+            
+            # Apply search if provided
+            if search:
+                query = query.filter(or_(
+                    Class.id.ilike(f'%{search}%'),
+                    Class.name.ilike(f'%{search}%'),
+                    Class.description.ilike(f'%{search}%')
+                ))
+                
+            # Count total for pagination
+            total = query.count()
+            
+            # Get paginated results
+            classes = query.order_by(Class.id).all()
+            
+            # Format for response
+            class_records = []
+            for class_obj in classes:
+                # Format date if available
+                archive_date = "Unknown"
+                try:
+                    if hasattr(class_obj, 'archive_date') and class_obj.archive_date:
+                        archive_date = class_obj.archive_date.strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+                
+                # Get instructor information
+                instructor_name = "Not Assigned"
+                if hasattr(class_obj, 'instructor_id') and class_obj.instructor_id:
+                    instructor = User.query.get(class_obj.instructor_id)
+                    if instructor:
+                        instructor_name = f"{instructor.first_name} {instructor.last_name}"
+                
+                # Format schedule for display
+                day = class_obj.day_of_week if hasattr(class_obj, 'day_of_week') else ''
+                
+                # Format time properly
+                start_time = ''
+                end_time = ''
+                if hasattr(class_obj, 'start_time') and class_obj.start_time:
+                    try:
+                        if isinstance(class_obj.start_time, str):
+                            start_time = class_obj.start_time
+                        else:
+                            start_time = class_obj.start_time.strftime('%H:%M')
+                    except Exception:
+                        pass
+                        
+                if hasattr(class_obj, 'end_time') and class_obj.end_time:
+                    try:
+                        if isinstance(class_obj.end_time, str):
+                            end_time = class_obj.end_time
+                        else:
+                            end_time = class_obj.end_time.strftime('%H:%M')
+                    except Exception:
+                        pass
+                
+                # Create schedule string
+                schedule = f"{day} {start_time}-{end_time}" if day and (start_time or end_time) else 'Not scheduled'
+                
+                # We don't need to extract the archive reason here anymore
+                # The frontend will handle the extraction and formatting
+                # Just pass the raw notes to the frontend
+                
+                # Add to results
+                class_records.append({
+                    'id': class_obj.id,
+                    'name': class_obj.name,
+                    'instructor': instructor_name,
+                    'schedule': schedule,
+                    'year': class_obj.year if hasattr(class_obj, 'year') else 'N/A',
+                    'archive_date': archive_date,
+                    'notes': class_obj.notes if hasattr(class_obj, 'notes') else '',
+                    'description': class_obj.description if hasattr(class_obj, 'description') else ''
+                    # Removed archive_reason field - frontend will extract it from notes
+                })
+                
+            # Apply pagination
+            result['records'] = class_records[start:end]
+            result['total'] = total
+        
         # Return final results
         return jsonify(result)
         
@@ -1690,15 +2239,21 @@ def restore_archive(folder, record_id):
             if not company:
                 return jsonify({'error': f'Company with ID {record_id} not found'}), 404
             
-            # Mark the company as active and not archived
-            company.is_active = True
+            # Mark the company as active and not archived (Restore Logic)
             company.is_archived = False
+            company.is_active = 'Active' # Restore to Active status
             
             # Remove the archive note
             if hasattr(company, 'notes') and company.notes and "ARCHIVE NOTE" in company.notes:
-                parts = company.notes.split("ARCHIVE NOTE")
-                company.notes = parts[0].strip() if parts[0].strip() else ""
+                # Split by the specific note format to remove it reliably
+                note_parts = company.notes.split("ARCHIVE NOTE (")
+                # Keep the part before the first archive note instance
+                company.notes = note_parts[0].strip() if note_parts[0] else None 
             
+            # Clear archive date if it exists (Optional but good practice)
+            if hasattr(company, 'archive_date'):
+                 company.archive_date = None
+
             # Save changes
             db.session.commit()
             
@@ -1804,20 +2359,6 @@ def restore_archive(folder, record_id):
         db.session.rollback()
         return jsonify({'error': f'Failed to restore record: {str(e)}'}), 500
 
-# Add deprecation notice to old endpoints that should be removed in future versions
-@api_bp.route('/restore-archived/<record_type>/<record_id>', methods=['POST'])
-@login_required
-@admin_required
-def restore_archived_record(record_type, record_id):
-    """DEPRECATED: Use /api/archives/restore/<folder>/<record_id> instead"""
-    return restore_archive(record_type, record_id)
-
-@api_bp.route('/restore-archived/attendance/<int:record_id>', methods=['POST'])
-@login_required
-def restore_archived_attendance(record_id):
-    """DEPRECATED: Use /api/archives/restore/attendance/<record_id> instead"""
-    return restore_archive('attendance', str(record_id))
-
 @api_bp.route('/archives/delete/<string:folder>/<string:record_id>', methods=['DELETE'])
 @login_required
 @admin_required
@@ -1834,7 +2375,7 @@ def delete_archived_record(folder, record_id):
             enrollments = Enrollment.query.filter_by(class_id=record_id).count()
             if enrollments > 0:
                 return jsonify({
-                    'error': f'Class has {enrollments} enrollments', 
+                    'error': f'Class has {enrollments} enrollments',
                     'details': 'Unenroll all students from class before deleting'
                 }), 400
                 
@@ -1843,7 +2384,7 @@ def delete_archived_record(folder, record_id):
             db.session.commit()
             
             return jsonify({
-                'success': True, 
+                'success': True,
                 'message': f'Class {record_id} has been permanently deleted'
             })
             
@@ -1866,7 +2407,7 @@ def delete_archived_record(folder, record_id):
             db.session.commit()
             
             return jsonify({
-                'success': True, 
+                'success': True,
                 'message': f'Student with ID {record_id} permanently deleted'
             })
         
@@ -1889,8 +2430,31 @@ def delete_archived_record(folder, record_id):
             db.session.commit()
             
             return jsonify({
-                'success': True, 
+                'success': True,
                 'message': f'Instructor with ID {record_id} permanently deleted'
+            })
+        
+        elif folder == 'company':
+            # Find the company
+            company = Company.query.get(record_id)
+            if not company:
+                return jsonify({'error': f'Company with ID {record_id} not found'}), 404
+
+            # Check if company has associated users (students)
+            associated_users = User.query.filter_by(company_id=record_id).count()
+            if associated_users > 0:
+                return jsonify({
+                    'error': f'Company has {associated_users} associated user(s)',
+                    'details': 'Cannot delete company with assigned users. Please reassign or archive users first.'
+                }), 400
+
+            # Delete the company
+            db.session.delete(company)
+            db.session.commit()
+
+            return jsonify({
+                'success': True,
+                'message': f'Company {record_id} permanently deleted'
             })
         
         elif folder == 'admin':
@@ -1898,57 +2462,50 @@ def delete_archived_record(folder, record_id):
             admin = User.query.get(record_id)
             if not admin:
                 return jsonify({'error': f'Administrator with ID {record_id} not found'}), 404
-            
+
             # Can only delete archived admins for safety
             if not admin.is_archived:
                 return jsonify({'error': 'Cannot delete a non-archived administrator'}), 400
-                
+
             # Delete the admin
             db.session.delete(admin)
             db.session.commit()
-                
+
             return jsonify({
-                            'success': True, 
+                            'success': True,
             'message': f'Administrator with ID {record_id} permanently deleted'
             })
-        
+
         elif folder == 'attendance':
             # Handle attendance records
             try:
                 # Get the attendance record
                 attendance = Attendance.query.get_or_404(int(record_id))
-                
+
                 # Check if it's archived
                 if not attendance.is_archived:
                     return jsonify({
                         'success': False,
                         'message': 'Cannot delete non-archived records'
                     }), 400
-                
+
                 # Delete the record
                 db.session.delete(attendance)
                 db.session.commit()
-                
+
                 return jsonify({
                     'success': True,
                     'message': 'Attendance record deleted permanently'
                 })
             except ValueError:
                 return jsonify({'error': 'Invalid attendance record ID'}), 400
-    
-        else:
+
+        else: # This is the path being hit when folder is 'company'
             return jsonify({'error': f'Invalid archive type: {folder}'}), 400
-            
+
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to delete archived record: {str(e)}'}), 500
-
-# Add deprecation notice for old endpoint that should be removed in future
-@api_bp.route('/archives/delete/attendance/<int:record_id>', methods=['DELETE'])
-@login_required
-def delete_archived_attendance(record_id):
-    """DEPRECATED: Use /api/archives/delete/attendance/<record_id> instead"""
-    return delete_archived_record('attendance', str(record_id))
 
 @api_bp.route('/archives/export/<string:folder>', methods=['GET'])
 @login_required
@@ -2010,6 +2567,116 @@ def export_archives_csv(folder):
                     archive_reason
                 ])
             
+        elif folder == 'company':
+            # Get archived companies
+            query = Company.query.filter_by(is_archived=True)
+            
+            if search_term:
+                query = query.filter(
+                    or_(
+                        Company.name.ilike(f'%{search_term}%'),
+                        Company.contact_person.ilike(f'%{search_term}%'),
+                        Company.email.ilike(f'%{search_term}%')
+                    )
+                )
+                
+            archived_companies = query.all()
+            
+            # Create CSV string
+            writer.writerow(['Company', 'Contact Person', 'Email', 'Archived Date', 'Reason'])
+            
+            for company in archived_companies:
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(company, 'notes') and company.notes and 'ARCHIVE NOTE' in company.notes:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', company.notes)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                
+                # Format archive date
+                archive_date = 'Unknown'
+                if hasattr(company, 'archive_date') and company.archive_date:
+                    try:
+                        archive_date = company.archive_date.strftime('%Y-%m-%d')
+                    except:
+                        pass
+                
+                writer.writerow([
+                    company.name,
+                    company.contact or 'Not specified',  # Using the correct field name 'contact' instead of 'contact_person'
+                    company.email or 'Not specified',
+                    archive_date,
+                    archive_reason
+                ])
+                
+        elif folder == 'attendance':
+            # Get archived attendance records
+            query = Attendance.query.filter_by(is_archived=True)
+            
+            if search_term:
+                # Join with Student and Class to allow searching by student or class name
+                query = query.join(User, Attendance.student_id == User.id)\
+                             .join(Class, Attendance.class_id == Class.id)\
+                             .filter(
+                                 or_(
+                                     User.first_name.ilike(f'%{search_term}%'),
+                                     User.last_name.ilike(f'%{search_term}%'),
+                                     Class.name.ilike(f'%{search_term}%')
+                                 )
+                             )
+                
+            archived_attendance = query.all()
+            
+            # Create CSV string
+            writer.writerow(['Student', 'Class', 'Date', 'Status', 'Archived Date', 'Reason'])
+            
+            for attendance in archived_attendance:
+                # Get student name
+                student_name = 'Unknown Student'
+                if attendance.student_id:
+                    student = User.query.get(attendance.student_id)
+                    if student:
+                        student_name = f"{student.first_name} {student.last_name}"
+                
+                # Get class name
+                class_name = 'Unknown Class'
+                if attendance.class_id:
+                    class_obj = Class.query.get(attendance.class_id)
+                    if class_obj:
+                        class_name = class_obj.name
+                
+                # Extract archive reason if available
+                archive_reason = 'Archived'
+                if hasattr(attendance, 'comment') and attendance.comment and 'ARCHIVE NOTE' in attendance.comment:
+                    match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(?:\n|$)', attendance.comment)
+                    if match and match.group(1):
+                        archive_reason = match.group(1).strip()
+                
+                # Format archive date
+                archive_date = 'Unknown'
+                if hasattr(attendance, 'archive_date') and attendance.archive_date:
+                    try:
+                        archive_date = attendance.archive_date.strftime('%Y-%m-%d')
+                    except:
+                        pass
+                
+                # Format attendance date
+                attendance_date = 'Unknown'
+                if attendance.date:
+                    try:
+                        attendance_date = attendance.date.strftime('%Y-%m-%d')
+                    except:
+                        pass
+                
+                writer.writerow([
+                    student_name,
+                    class_name,
+                    attendance_date,
+                    attendance.status or 'Unknown',
+                    archive_date,
+                    archive_reason
+                ])
+                
         elif folder == 'student' or folder == 'instructor' or folder == 'admin':
             # Filter by role
             role_filter = folder.capitalize()  # Convert 'student' to 'Student', etc.
@@ -2145,12 +2812,10 @@ def get_archive_counts():
             print(f"Error counting classes: {str(e)}")
             result['counts']['class'] = 0
             
-        # Count companies - checking both inactive status and is_archived flag if available
+        # Count companies - checking is_archived field
         try:
-            # Use ORM query with status field instead of is_archived
-            result['counts']['company'] = Company.query.filter(
-                Company.status == 'Inactive'
-            ).count()
+            # Correctly filter by the is_archived flag
+            result['counts']['company'] = Company.query.filter(Company.is_archived == True).count()
             print(f"Company archive count: {result['counts']['company']}")
         except Exception as e:
             print(f"Error counting companies: {str(e)}")
@@ -2237,7 +2902,8 @@ def get_student_enrollment(student_id):
                 # Get instructor info if available
                 instructor_name = "Not Assigned"
                 instructor_id = None
-                if hasattr(class_obj, 'instructor_id') and class_obj.instructor_id:
+                
+                if class_obj and class_obj.instructor_id:
                     instructor = User.query.get(class_obj.instructor_id)
                     if instructor:
                         instructor_name = f"{instructor.first_name} {instructor.last_name}"
@@ -2679,129 +3345,314 @@ def export_enrollments_csv():
 @api_bp.route('/attendance', methods=['GET'])
 @login_required
 @admin_or_instructor_required
-def get_attendance():
+def get_attendance_report():
     """
     Get attendance records with filters
     Filters:
     - class_id: Filter by class
-    - student_id: Filter by student
-    - date_from: Filter from this date
-    - date_to: Filter to this date
-    - status: Filter by status (comma-separated)
+    - instructor_id: Filter by instructor
+    - student_name: Filter by student name
+    - date_start: Filter from this date
+    - date_end: Filter to this date
+    - status: Filter by status
+    - page: Page number for pagination
+    - per_page: Records per page
     """
     try:
         # Get query parameters
         class_id = request.args.get('class_id')
-        student_id = request.args.get('student_id')
-        date_from = request.args.get('date_from')
-        date_to = request.args.get('date_to')
+        instructor_id = request.args.get('instructor_id')
+        student_name = request.args.get('student_name')
+        date_start = request.args.get('date_start')
+        date_end = request.args.get('end_date')
         status = request.args.get('status')
+        record_id = request.args.get('id')  # For fetching a specific record
+        exclude_archived = request.args.get('exclude_archived', 'true').lower() == 'true'
+        is_admin = request.args.get('admin', 'false').lower() == 'true'
+        
+        # Pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 10))
         
         # Start the query
         query = db.session.query(
             Attendance,
-            User.first_name,
-            User.last_name,
-            Class.name.label('class_name')
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            User.id.label('student_id'),
+            User.profile_img.label('student_profile_img'),
+            Class.name.label('class_name'),
+            Class.id.label('class_id')
         ).join(
             User, Attendance.student_id == User.id
         ).join(
             Class, Attendance.class_id == Class.id
-        ).filter(
-            Attendance.is_archived == False
         )
         
-        # Apply filters
+        # Get instructor information through a separate join
+        instructor_alias = aliased(User)
+        query = query.outerjoin(
+            instructor_alias, Class.instructor_id == instructor_alias.id
+        ).add_columns(
+            instructor_alias.first_name.label('instructor_first_name'),
+            instructor_alias.last_name.label('instructor_last_name'),
+            instructor_alias.id.label('instructor_id')
+        )
+        
+        # Apply filters for archived status
+        if exclude_archived:
+            query = query.filter(Attendance.is_archived == False)
+        
+        # Direct record lookup
+        if record_id:
+            query = query.filter(Attendance.id == record_id)
+        
+        # Apply other filters
         if class_id:
             query = query.filter(Attendance.class_id == class_id)
         
-        if student_id:
-            query = query.filter(Attendance.student_id == student_id)
+        if instructor_id:
+            query = query.filter(Class.instructor_id == instructor_id)
         
-        if date_from:
-            try:
-                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date >= from_date)
-            except ValueError:
-                return jsonify({'error': 'Invalid date_from format. Use YYYY-MM-DD.'}), 400
-        
-        if date_to:
-            try:
-                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
-                query = query.filter(Attendance.date <= to_date)
-            except ValueError:
-                return jsonify({'error': 'Invalid date_to format. Use YYYY-MM-DD.'}), 400
+        if student_name:
+            query = query.filter(
+                or_(
+                    User.first_name.like(f'%{student_name}%'),
+                    User.last_name.like(f'%{student_name}%')
+                )
+            )
         
         if status:
-            status_list = status.split(',')
-            query = query.filter(Attendance.status.in_(status_list))
+            query = query.filter(Attendance.status.ilike(status))
+        
+        if date_start:
+            try:
+                start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= start_date)
+            except ValueError:
+                pass
+        
+        if date_end:
+            try:
+                end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= end_date)
+            except ValueError:
+                pass
         
         # Restrict instructors to only see their classes
-        if current_user.role == 'Instructor':
+        if current_user.role.lower() == 'instructor' and not is_admin:
             query = query.filter(Class.instructor_id == current_user.id)
         
+        # Get total count before pagination
+        total_count = query.count()
+        
+        # Apply sorting
+        query = query.order_by(Attendance.date.desc())
+        
+        # Apply pagination if this is not a direct record lookup
+        if not record_id:
+            query = query.offset((page - 1) * per_page).limit(per_page)
+        
         # Execute query
-        results = query.order_by(Attendance.date.desc()).all()
+        results = query.all()
         
         # Format results
-        attendance_records = []
+        records = []
         for record in results:
-            attendance, first_name, last_name, class_name = record
+            attendance = record[0]  # Attendance object
             
-            attendance_records.append({
+            # Get student information
+            student_name = f"{record.student_first_name} {record.student_last_name}"
+            
+            # Get instructor information
+            instructor_name = ""
+            if record.instructor_first_name and record.instructor_last_name:
+                instructor_name = f"{record.instructor_first_name} {record.instructor_last_name}"
+            
+            # Format attendance record
+            attendance_record = {
                 'id': attendance.id,
-                'studentId': attendance.student_id,
-                'studentName': f"{first_name} {last_name}",
-                'classId': attendance.class_id,
-                'className': class_name,
+                'student_id': record.student_id,
+                'student_name': student_name,
+                'student_profile_img': record.student_profile_img,
+                'class_id': record.class_id,
+                'class_name': record.class_name,
+                'instructor_id': record.instructor_id,
+                'instructor_name': instructor_name,
                 'date': attendance.date.strftime('%Y-%m-%d'),
-                'status': attendance.status,
-                'comments': attendance.comments
-            })
+                'status': attendance.status.lower(),
+                'comment': attendance.comments,
+                'is_archived': attendance.is_archived
+            }
+            
+            records.append(attendance_record)
         
-        # Calculate stats
-        stats = calculate_attendance_stats(attendance_records)
-        
-        # Calculate total count
-        total_count = len(attendance_records)
-        
-        # Calculate total pages
-        per_page = int(request.args.get('per_page', 10))  # Default to 10 per page
-        total_pages = math.ceil(total_count / per_page) if total_count > 0 else 1
-        
-        return jsonify({
-            'attendance': attendance_records,
-            'stats': stats,
+        # Calculate statistics for the filtered data
+        status_counts = {
+            'present': 0,
+            'absent': 0,
+            'late': 0,
             'total': total_count
-        })
+        }
+        
+        # Log the total count for debugging
+        print(f"Total attendance records matching filters: {total_count}")
+        
+        # -------------------------------------------------------------
+        # Create a SQL query directly to avoid ORM overhead for counting
+        # -------------------------------------------------------------
+        try:
+            from sqlalchemy import text
+            
+            # Build the WHERE clause for our SQL based on the filters
+            where_clauses = []
+            params = {}
+            
+            if exclude_archived:
+                where_clauses.append("a.is_archived = 0")
+            
+            if class_id:
+                where_clauses.append("a.class_id = :class_id")
+                params['class_id'] = class_id
+            
+            if instructor_id:
+                where_clauses.append("c.instructor_id = :instructor_id")
+                params['instructor_id'] = instructor_id
+            
+            if student_name:
+                where_clauses.append("(u.first_name LIKE :student_name OR u.last_name LIKE :student_name)")
+                params['student_name'] = f"%{student_name}%"
+            
+            if date_start:
+                try:
+                    start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
+                    where_clauses.append("a.date >= :date_start")
+                    params['date_start'] = start_date
+                except ValueError:
+                    pass
+            
+            if date_end:
+                try:
+                    end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
+                    where_clauses.append("a.date <= :date_end")
+                    params['date_end'] = end_date
+                except ValueError:
+                    pass
+            
+            if current_user.role.lower() == 'instructor' and not is_admin:
+                where_clauses.append("c.instructor_id = :current_user_id")
+                params['current_user_id'] = current_user.id
+            
+            # Build the complete WHERE clause
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+            
+            # Build the SQL for counting each status
+            sql = f"""
+            SELECT 
+                CASE 
+                    WHEN UPPER(a.status) = 'PRESENT' THEN 'present'
+                    WHEN UPPER(a.status) = 'ABSENT' THEN 'absent'
+                    WHEN UPPER(a.status) = 'LATE' THEN 'late'
+                    ELSE 'other'
+                END as normalized_status,
+                COUNT(*) as count
+            FROM 
+                attendance a
+                JOIN user u ON a.student_id = u.id
+                JOIN class c ON a.class_id = c.id
+            WHERE 
+                {where_sql}
+            GROUP BY 
+                normalized_status
+            """
+            
+            # Execute the query and get the results
+            result = db.session.execute(text(sql), params)
+            
+            # Process the results
+            for row in result:
+                normalized_status = row[0].lower() if row[0] else None
+                count = row[1] or 0
+                
+                # Use lowercase comparison for case-insensitive matching
+                if normalized_status and normalized_status.lower() == 'present':
+                    status_counts['present'] = count
+                elif normalized_status and normalized_status.lower() == 'absent':
+                    status_counts['absent'] = count
+                elif normalized_status and normalized_status.lower() == 'late':
+                    status_counts['late'] = count
+            
+            # Check if specific status filter is applied
+            if status:
+                status_key = status.lower()
+                if status_key in ['present', 'absent', 'late']:
+                    if status_counts[status_key] == 0:
+                        # If we have a count from total but our status count is 0, 
+                        # that means the records might not be in the exact case we're checking
+                        status_counts[status_key] = total_count
+            
+            # Verify our counts add up to the total
+            calculated_total = status_counts['present'] + status_counts['absent'] + status_counts['late']
+            
+            # If the calculated total doesn't match and we have records, adjust the total
+            if calculated_total != total_count and calculated_total > 0:
+                print(f"Stats don't add up: calculated={calculated_total}, total={total_count}")
+                if not status:  # Only adjust if not filtering by status
+                    status_counts['total'] = calculated_total
+            
+            # If we still have 0 for all statuses but records exist, try to count from the records
+            if calculated_total == 0 and total_count > 0:
+                print("Warning: All status counts are 0 despite having records. Counting from paginated results.")
+                
+                # Count directly from the results we have
+                for record in results:
+                    attendance = record[0]
+                    if attendance and attendance.status:
+                        normalized_status = attendance.status.lower()
+                        if normalized_status == 'present':
+                            status_counts['present'] += 1
+                        elif normalized_status == 'absent': 
+                            status_counts['absent'] += 1
+                        elif normalized_status == 'late':
+                            status_counts['late'] += 1
+                
+                # If we found some counts and we're using pagination, adjust the total counts proportionally
+                status_sum = status_counts['present'] + status_counts['absent'] + status_counts['late']
+                if status_sum > 0 and len(results) < total_count:
+                    ratio = total_count / len(results)
+                    status_counts['present'] = int(status_counts['present'] * ratio)
+                    status_counts['absent'] = int(status_counts['absent'] * ratio)
+                    status_counts['late'] = int(status_counts['late'] * ratio)
+            
+        except Exception as e:
+            print(f"Error calculating SQL-based stats: {str(e)}")
+            traceback.print_exc()
+        
+        # Prepare response
+        response = {
+            'records': records,
+            'total_records': total_count,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total_pages': math.ceil(total_count / per_page) if per_page > 0 else 0
+            },
+            'stats': status_counts
+        }
+        
+        # For direct record lookup, use a simplified response
+        if record_id:
+            response = {
+                'records': records,
+                'success': True
+            }
+        
+        return jsonify(response)
+        
     except Exception as e:
         print(f"Error retrieving attendance records: {str(e)}")
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
-def calculate_attendance_stats(attendance_records):
-    """
-    Calculate statistics from attendance records
-    """
-    # Count unique students
-    unique_students = set(record['studentId'] for record in attendance_records)
-    
-    # Count unique classes
-    unique_classes = set(record['classId'] for record in attendance_records)
-    
-    # Calculate attendance rate
-    present_count = sum(1 for record in attendance_records if record['status'] == 'Present')
-    total_count = len(attendance_records)
-    attendance_rate = (present_count / total_count * 100) if total_count > 0 else 0
-    
-    # Get total enrollments count
-    enrollments_count = len(attendance_records)
-    
-    return {
-        'totalStudents': len(unique_students),
-        'activeClasses': len(unique_classes),
-        'attendanceRate': attendance_rate,
-        'totalEnrollments': enrollments_count
-    }
 
 @api_bp.route('/attendance/<int:record_id>/archive', methods=['POST'])
 @login_required
@@ -2885,6 +3736,7 @@ def archive_attendance_record(record_id):
 def get_archived_attendance():
     """Get archived attendance records"""
     try:
+        print("\n=== Starting get_archived_attendance API call ===")
         # Get query parameters
         search = request.args.get('search', '')
         page = int(request.args.get('page', 1))
@@ -2892,10 +3744,16 @@ def get_archived_attendance():
         
         # Start with base query for archived attendance records
         query = db.session.query(
-            Attendance, User, Class
-        ).outerjoin(  # Change to outerjoin to handle null relationships
+            Attendance,
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            User.id.label('student_id'),
+            User.profile_img.label('student_profile_img'),
+            Class.name.label('class_name'),
+            Class.id.label('class_id')
+        ).join(
             User, Attendance.student_id == User.id
-        ).outerjoin(  # Change to outerjoin to handle null relationships
+        ).join(
             Class, Attendance.class_id == Class.id
         ).filter(
             Attendance.is_archived == True
@@ -2916,106 +3774,88 @@ def get_archived_attendance():
         
         # Apply pagination
         start_idx = (page - 1) * per_page
-        records = query.order_by(Attendance.archive_date.desc()).offset(start_idx).limit(per_page).all()
+        print(f"Attendance archive query: start_idx={start_idx}, per_page={per_page}")
         
-        # Format records for response
+        # Simplify the query to directly get archived attendance records
+        archived_attendance = Attendance.query.filter_by(is_archived=True).all()
+        print(f"Found {len(archived_attendance)} archived attendance records directly from Attendance model")
+        
+        # Format these records manually
         formatted_records = []
-        for record in records:
+        for attendance in archived_attendance:
             try:
-                attendance = record[0] if record[0] else None
-                student = record[1] if len(record) > 1 else None
-                class_obj = record[2] if len(record) > 2 else None
+                # Get student info
+                student = User.query.get(attendance.student_id)
+                student_name = f"{student.first_name} {student.last_name}" if student else "Unknown Student"
+                student_profile = student.profile_img if student and hasattr(student, 'profile_img') else 'profile.png'
                 
-                if not attendance:
-                    continue  # Skip this record if attendance is None
+                # Get class info
+                class_obj = Class.query.get(attendance.class_id)
+                class_name = class_obj.name if class_obj else "Unknown Class"
                 
-                instructor_name = "Unknown"
-                
-                if class_obj and class_obj.instructor_id:
-                    try:
-                        instructor = User.query.get(class_obj.instructor_id)
-                        if instructor:
-                            instructor_name = f"{instructor.first_name} {instructor.last_name}"
-                    except:
-                        pass  # If instructor fetch fails, use the default "Unknown"
-                
-                # Extract archive reason if available
+                # Extract archive reason from comments
                 archive_reason = "Archived"
-                if attendance.comments and isinstance(attendance.comments, str) and "ARCHIVE NOTE" in attendance.comments:
-                    try:
-                        import re
-                        match = re.search(r'ARCHIVE NOTE \(\d{4}-\d{2}-\d{2}\): (.+?)(\n|$)', attendance.comments)
-                        if match and match.group(1):
-                            archive_reason = match.group(1).strip()
-                    except:
-                        pass  # If regex fails, use the default "Archived"
+                if attendance.comments and "ARCHIVED" in attendance.comments:
+                    import re
+                    match = re.search(r'ARCHIVED \(.*?\): ([^\n]+)', attendance.comments)
+                    if match:
+                        archive_reason = match.group(1).strip()
                 
-                # Create a safe record that handles null values
-                student_name = "Unknown"
-                if student:
-                    first_name = getattr(student, 'first_name', '')
-                    last_name = getattr(student, 'last_name', '')
-                    student_name = f"{first_name} {last_name}".strip() or "Unknown"
+                # Format date
+                formatted_date = attendance.date.strftime('%Y-%m-%d') if attendance.date else 'Unknown'
+                formatted_archive_date = attendance.updated_at.strftime('%Y-%m-%d') if attendance.updated_at else 'Unknown'
                 
+                # Add to results
                 formatted_records.append({
-                    'id': getattr(attendance, 'id', None),
-                    'student_id': getattr(attendance, 'student_id', None),
+                    'id': attendance.id,
+                    'student_id': attendance.student_id,
                     'student_name': student_name,
-                    'student_profile_img': getattr(student, 'profile_img', 'profile.png') if student else 'profile.png',
-                    'class_id': getattr(attendance, 'class_id', None),
-                    'class_name': getattr(class_obj, 'name', "Unknown") if class_obj else "Unknown",
-                    'instructor_name': instructor_name,
-                    'date': attendance.date.strftime('%Y-%m-%d') if hasattr(attendance, 'date') and attendance.date else 'Unknown',
-                    'status': getattr(attendance, 'status', "Unknown"),
-                    'archive_date': attendance.archive_date.strftime('%Y-%m-%d') if hasattr(attendance, 'archive_date') and attendance.archive_date else 'Unknown',
+                    'student_profile_img': student_profile,
+                    'class_id': attendance.class_id,
+                    'class_name': class_name,
+                    'date': formatted_date,
+                    'status': attendance.status,
+                    'archive_date': formatted_archive_date,
                     'archive_reason': archive_reason,
-                    'comments': getattr(attendance, 'comments', ""),
+                    'comments': attendance.comments or ""
                 })
-            except Exception as record_error:
-                print(f"Error processing record: {record_error}")
-                continue  # Skip this record and continue with others
+                print(f"Added record ID {attendance.id} for student {student_name}")
+            except Exception as e:
+                print(f"Error formatting attendance record {attendance.id}: {e}")
         
-        # Count all archive types for stats - with error handling
+        # Apply pagination to the formatted records
+        total_records = len(formatted_records)
+        paginated_records = formatted_records[start_idx:start_idx + per_page]
+        
+        # Return the paginated records
+        print(f"Returning {len(paginated_records)} records out of {total_records} total")
+        
+        # Count all archive types for stats
         try:
             student_count = User.query.filter_by(is_archived=True, role='Student').count()
-        except:
-            student_count = 0
-            
-        try:
             instructor_count = User.query.filter_by(is_archived=True, role='Instructor').count()
-        except:
-            instructor_count = 0
-            
-        try:
             class_count = Class.query.filter_by(is_archived=True).count()
-        except:
-            class_count = 0
-            
-        try:
             company_count = Company.query.filter_by(is_archived=True).count()
-        except:
-            company_count = 0
-            
-        try:
+            admin_count = User.query.filter_by(is_archived=True, role='Admin').count()
             attendance_count = Attendance.query.filter_by(is_archived=True).count()
-        except:
-            attendance_count = 0
-        
-        # Prepare response
-        response = {
-            'records': formatted_records,
+        except Exception as e:
+            print(f"Error getting archive counts: {e}")
+            student_count = instructor_count = class_count = company_count = admin_count = attendance_count = 0
+                
+        # Return the response with paginated records and counts
+        return jsonify({
+            'records': paginated_records,
             'total': total_records,
             'counts': {
                 'student': student_count,
                 'instructor': instructor_count,
                 'class': class_count,
                 'company': company_count,
+                'admin': admin_count,
                 'attendance': attendance_count
             }
-        }
+        })
         
-        return jsonify(response)
-    
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -3086,7 +3926,7 @@ def archive_user(user_id):
         # Check if current user has limited access
         if hasattr(current_user, 'access_level') and current_user.access_level == 'limited':
             return jsonify({'error': 'Limited access accounts cannot archive users'}), 403
-
+        
         # Get archive reason from request data
         data = request.json or {}
         archive_reason = data.get('reason', 'User archived by administrator')
@@ -3108,6 +3948,7 @@ def archive_user(user_id):
         
         # The main reason that will be shown
         archive_note = f"ARCHIVE NOTE ({archive_timestamp}): {archive_reason}"
+        
         # Add admin name in a standardized format that the UI can parse
         archive_note += f"\nArchived by: {admin_name}"
         
@@ -3368,3 +4209,932 @@ def get_company_name(company_id):
         print(f"Error getting company name: {str(e)}")
     
     return "Unknown Company"
+
+@api_bp.route('/companies/export', methods=['GET'])
+@login_required
+def export_companies_csv():
+    """API endpoint to export companies to CSV based on filters."""
+    try:
+        status_filter = request.args.get('status') # Active, Inactive, Archived, All (or empty)
+        search = request.args.get('search', '').strip()
+
+        # Base query - Start with Company model
+        query = Company.query
+
+        # Apply filters similar to get_companies_direct, but using ORM
+        if status_filter == 'Active':
+            query = query.filter(Company.is_active == 'Active', Company.is_archived == False)
+        elif status_filter == 'Inactive':
+            query = query.filter(Company.is_active == 'Inactive', Company.is_archived == False)
+        elif status_filter == 'Archived':
+            query = query.filter(Company.is_archived == True)
+        else: # 'All' or empty filter - show only non-archived
+            query = query.filter(Company.is_archived == False)
+
+        # Apply search filter
+        if search:
+            search_term = f'%{search}%'
+            query = query.filter(or_(
+                Company.name.ilike(search_term),
+                Company.id.ilike(search_term),
+                Company.contact.ilike(search_term),
+                Company.email.ilike(search_term)
+            ))
+
+        companies = query.order_by(Company.name).all()
+
+        # --- Generate CSV --- 
+        output = StringIO()
+        writer = csv.writer(output)
+
+        # Write Header
+        writer.writerow(['Company ID', 'Company Name', 'Contact Person', 'Contact Email', 'Status'])
+
+        # Write Data Rows
+        for company in companies:
+            writer.writerow([
+                company.id,
+                company.name,
+                company.contact,
+                company.email,
+                'Archived' if company.is_archived else company.is_active # Show Archived if applicable
+            ])
+        
+        output.seek(0)
+
+        # Create Flask Response
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=companies_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+        )
+
+    except Exception as e:
+        print(f"Error exporting companies: {str(e)}")
+        traceback.print_exc()
+        # Return an error response, maybe redirect back or show an error page?
+        # For API consistency, returning JSON error might be better than redirecting.
+        return jsonify({'error': 'Failed to generate company export.'}), 500
+
+# Endpoint to count companies based on filters (for export confirmation)
+@api_bp.route('/companies/export/count', methods=['GET'])
+@login_required
+def count_companies_for_export():
+    """Counts companies matching the given filters, without generating the CSV."""
+    try:
+        status_filter = request.args.get('status')
+        search = request.args.get('search', '').strip()
+
+        query = Company.query
+
+        if status_filter == 'Active':
+            query = query.filter(Company.is_active == 'Active', Company.is_archived == False)
+        elif status_filter == 'Inactive':
+            query = query.filter(Company.is_active == 'Inactive', Company.is_archived == False)
+        elif status_filter == 'Archived':
+            query = query.filter(Company.is_archived == True)
+        else: # 'All' or empty filter
+            query = query.filter(Company.is_archived == False)
+
+        if search:
+            search_term = f'%{search}%'
+            query = query.filter(or_(
+                Company.name.ilike(search_term),
+                Company.id.ilike(search_term),
+                Company.contact.ilike(search_term),
+                Company.email.ilike(search_term)
+            ))
+
+        count = query.count()
+        return jsonify({'success': True, 'count': count})
+
+    except Exception as e:
+        print(f"Error counting companies for export: {str(e)}")
+        return jsonify({'success': False, 'error': 'Failed to count companies.'}), 500
+
+# Endpoint to count users based on filters (for export confirmation)
+@api_bp.route('/users/export/count', methods=['GET'])
+@login_required
+def count_users_for_export():
+    """Counts users matching the given filters, without generating the CSV."""
+    try:
+        role_filter = request.args.get('role', '')
+        status_filter = request.args.get('status', '')
+        search = request.args.get('search', '').strip()
+
+        query = User.query.filter_by(is_archived=False)
+
+        if role_filter:
+            query = query.filter(User.role.ilike(f'%{role_filter}%')) # Use ilike for flexibility
+        
+        if status_filter:
+            is_active = status_filter.lower() == 'active'
+            query = query.filter(User.is_active == is_active)
+        
+        if search:
+            search_term = f'%{search}%'
+            query = query.filter(or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.email.ilike(search_term),
+                User.id.ilike(search_term)
+            ))
+
+        count = query.count()
+        return jsonify({'success': True, 'count': count})
+
+    except Exception as e:
+        print(f"Error counting users for export: {str(e)}")
+        return jsonify({'success': False, 'error': 'Failed to count users.'}), 500
+
+# Endpoint to export users to CSV
+@api_bp.route('/users/export', methods=['GET'])
+@login_required
+def export_users_csv():
+    """API endpoint to export users to CSV based on filters."""
+    try:
+        role_filter = request.args.get('role', '')
+        status_filter = request.args.get('status', '')
+        search = request.args.get('search', '').strip()
+
+        query = User.query.filter_by(is_archived=False)
+
+        if role_filter:
+            query = query.filter(User.role.ilike(f'%{role_filter}%'))
+        
+        if status_filter:
+            is_active = status_filter.lower() == 'active'
+            query = query.filter(User.is_active == is_active)
+        
+        if search:
+            search_term = f'%{search}%'
+            query = query.filter(or_(
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+                User.email.ilike(search_term),
+                User.id.ilike(search_term)
+            ))
+
+        users = query.order_by(User.last_name, User.first_name).all()
+
+        output = StringIO()
+        writer = csv.writer(output)
+
+        writer.writerow(['User ID', 'First Name', 'Last Name', 'Email', 'Role', 'Status'])
+
+        for user in users:
+            writer.writerow([
+                user.id,
+                user.first_name,
+                user.last_name,
+                user.email,
+                user.role,
+                'Active' if user.is_active else 'Inactive'
+            ])
+        
+        output.seek(0)
+
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f"attachment;filename=users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+        )
+
+    except Exception as e:
+        print(f"Error exporting users: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to generate user export.'}), 500
+
+@api_bp.route('/students/<string:student_id>/attendance', methods=['GET'])
+@login_required
+def get_student_attendance(student_id):
+    """API endpoint to get attendance records for a specific student"""
+    try:
+        # Verify the student exists
+        student = User.query.get_or_404(student_id)
+        
+        # Check if student role is correct
+        if student.role.lower() != 'student':
+            return jsonify({'error': 'Requested ID is not a student'}), 400
+        
+        # Get optional date filters
+        date = request.args.get('date')  # Single date filter
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build query for attendance records with related data
+        query = db.session.query(
+            Attendance,
+            Class.name.label('class_name'),
+            Class.start_time.label('class_time'),
+            User.first_name.label('instructor_first_name'),
+            User.last_name.label('instructor_last_name')
+        ).join(
+            Class, Attendance.class_id == Class.id
+        ).outerjoin(  # Use outer join in case instructor is not assigned
+            User, Class.instructor_id == User.id
+        ).filter(
+            Attendance.student_id == student_id
+        )
+        
+        # Apply date filters if provided
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= start)
+            except ValueError:
+                return jsonify({'error': 'Invalid start date format. Use YYYY-MM-DD.'}), 400
+                
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= end)
+            except ValueError:
+                return jsonify({'error': 'Invalid end date format. Use YYYY-MM-DD.'}), 400
+        
+        # Execute the query and order by date (most recent first)
+        attendance_records = query.order_by(Attendance.date.desc()).all()
+        
+        # Format the response
+        result = []
+        for record in attendance_records:
+            attendance, class_name, class_time, instructor_first_name, instructor_last_name = record
+            
+            # Format the time string for display
+            time_str = class_time.strftime('%H:%M') if class_time else 'N/A'
+            
+            # Format instructor name
+            instructor = 'N/A'
+            if instructor_first_name and instructor_last_name:
+                instructor = f"{instructor_first_name} {instructor_last_name}"
+            
+            result.append({
+                'id': attendance.id,
+                'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else 'N/A',
+                'status': attendance.status,
+                'class_id': attendance.class_id,
+                'class_name': class_name or 'Unknown',
+                'time': time_str,
+                'instructor': instructor,
+                'comments': attendance.comments
+            })
+        
+        # Calculate some basic statistics
+        total_records = len(result)
+        present_count = sum(1 for r in result if r['status'].lower() == 'present')
+        absent_count = sum(1 for r in result if r['status'].lower() == 'absent')
+        late_count = sum(1 for r in result if r['status'].lower() == 'late')
+        
+        # Calculate attendance rate
+        attendance_rate = (present_count / total_records * 100) if total_records > 0 else 0
+        
+        # Return the formatted response with statistics
+        response = {
+            'records': result,
+            'stats': {
+                'total': total_records,
+                'present': present_count,
+                'absent': absent_count,
+                'late': late_count,
+                'attendance_rate': round(attendance_rate, 1)
+            }
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"Error fetching student attendance: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/export', methods=['GET'])
+@login_required
+@admin_or_instructor_required
+def export_attendance_csv():
+    """API endpoint to export attendance records to CSV"""
+    try:
+        # Get query parameters for filtering
+        class_id = request.args.get('class_id')
+        student_name = request.args.get('student_name')
+        instructor_id = request.args.get('instructor_id')
+        status = request.args.get('status')
+        date_start = request.args.get('date_start')
+        date_end = request.args.get('end_date')
+        exclude_archived = request.args.get('exclude_archived', 'true').lower() == 'true'
+        
+        # Start the query
+        query = db.session.query(
+            Attendance,
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            Class.name.label('class_name'),
+            User.id.label('student_id')
+        ).join(
+            User, Attendance.student_id == User.id
+        ).join(
+            Class, Attendance.class_id == Class.id
+        )
+        
+        # Get instructor information through a separate join
+        instructor_alias = aliased(User)
+        query = query.outerjoin(
+            instructor_alias, Class.instructor_id == instructor_alias.id
+        ).add_columns(
+            instructor_alias.first_name.label('instructor_first_name'),
+            instructor_alias.last_name.label('instructor_last_name')
+        )
+        
+        # Apply filters for archived status
+        if exclude_archived:
+            query = query.filter(Attendance.is_archived == False)
+        
+        # Apply other filters
+        if class_id:
+            query = query.filter(Attendance.class_id == class_id)
+        
+        if student_name:
+            query = query.filter(
+                or_(
+                    User.first_name.like(f'%{student_name}%'),
+                    User.last_name.like(f'%{student_name}%')
+                )
+            )
+        
+        if instructor_id:
+            query = query.filter(Class.instructor_id == instructor_id)
+        
+        if status:
+            query = query.filter(Attendance.status == status)
+        
+        if date_start:
+            try:
+                start_date = datetime.strptime(date_start, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= start_date)
+            except ValueError:
+                pass
+        
+        if date_end:
+            try:
+                end_date = datetime.strptime(date_end, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= end_date)
+            except ValueError:
+                pass
+        
+        # Restrict instructors to only see their classes
+        if current_user.role == 'instructor':
+            query = query.filter(Class.instructor_id == current_user.id)
+        
+        # Execute query
+        results = query.order_by(Attendance.date.desc()).all()
+        
+        # Create CSV file in memory
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Write headers
+        writer.writerow([
+            'Date', 'Student ID', 'Student Name', 'Class', 'Instructor', 
+            'Status', 'Comments', 'Last Updated'
+        ])
+        
+        # Write data
+        for record in results:
+            attendance = record[0]  # Attendance object
+            student_first_name = record.student_first_name
+            student_last_name = record.student_last_name
+            class_name = record.class_name
+            instructor_first_name = record.instructor_first_name or ''
+            instructor_last_name = record.instructor_last_name or ''
+            
+            # Format the date
+            date_formatted = attendance.date.strftime('%Y-%m-%d') if attendance.date else ''
+            
+            # Format full names
+            student_name = f"{student_first_name} {student_last_name}"
+            instructor_name = f"{instructor_first_name} {instructor_last_name}".strip()
+            if not instructor_name:
+                instructor_name = "Not Assigned"
+            
+            # Format last updated
+            last_updated = attendance.updated_at.strftime('%Y-%m-%d %H:%M') if attendance.updated_at else ''
+            
+            writer.writerow([
+                date_formatted,
+                record.student_id,
+                student_name,
+                class_name,
+                instructor_name,
+                attendance.status,
+                attendance.comments or '',
+                last_updated
+            ])
+        
+        # Create response with CSV file
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=attendance_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+    except Exception as e:
+        print(f"Error exporting attendance CSV: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/stats', methods=['GET'])
+@login_required
+@admin_or_instructor_required
+def get_attendance_stats():
+    """API endpoint to get attendance data for reports with statistics"""
+    try:
+        # Get filter parameters
+        class_id = request.args.get('class_id')
+        student_id = request.args.get('student_id')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        status_filter = request.args.get('status')
+        
+        # Build base query
+        query = db.session.query(
+            Attendance,
+            User.id.label('student_id'),
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            Class.name.label('class_name')
+        ).join(
+            User, Attendance.student_id == User.id
+        ).join(
+            Class, Attendance.class_id == Class.id
+        )
+        
+        # Apply filters
+        if class_id:
+            query = query.filter(Attendance.class_id == class_id)
+        
+        if student_id:
+            query = query.filter(Attendance.student_id == student_id)
+        
+        if date_from:
+            try:
+                from_date = datetime.strptime(date_from, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= from_date)
+            except ValueError:
+                pass
+        
+        if date_to:
+            try:
+                to_date = datetime.strptime(date_to, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= to_date)
+            except ValueError:
+                pass
+        
+        if status_filter:
+            statuses = status_filter.split(',')
+            query = query.filter(Attendance.status.in_(statuses))
+        
+        # Restrict instructors to only see their classes
+        if current_user.role == 'instructor':
+            query = query.filter(Class.instructor_id == current_user.id)
+        
+        # Execute query
+        results = query.order_by(Attendance.date.desc()).all()
+        
+        # Format attendance records
+        attendance_records = []
+        
+        # Track status counts for accurate statistics
+        status_counts = {
+            'present': 0,
+            'absent': 0,
+            'late': 0,
+            'total': len(results)
+        }
+        
+        for record in results:
+            attendance = record[0]  # Attendance object
+            
+            # Count by status for statistics
+            normalized_status = attendance.status.lower()
+            if normalized_status == 'present':
+                status_counts['present'] += 1
+            elif normalized_status == 'absent':
+                status_counts['absent'] += 1
+            elif normalized_status == 'late':
+                status_counts['late'] += 1
+            
+            attendance_records.append({
+                'id': attendance.id,
+                'date': attendance.date.isoformat() if attendance.date else None,
+                'studentId': record.student_id,
+                'studentName': f"{record.student_first_name} {record.student_last_name}",
+                'className': record.class_name,
+                'status': attendance.status,
+                'comments': attendance.comments
+            })
+        
+        # Get unique students and classes for additional statistics
+        unique_students = set(record['studentId'] for record in attendance_records)
+        total_students = len(unique_students)
+        
+        unique_classes = set(record['className'] for record in attendance_records)
+        active_classes = len(unique_classes)
+        
+        # Calculate attendance rate from our counted data
+        attendance_rate = 0
+        if status_counts['total'] > 0:
+            attendance_rate = (status_counts['present'] / status_counts['total']) * 100
+        
+        # Get total enrollments from database
+        total_enrollments = db.session.query(Enrollment).count()
+        
+        # Compile all statistics
+        stats = {
+            'totalStudents': total_students,
+            'activeClasses': active_classes,
+            'attendanceRate': attendance_rate,
+            'totalEnrollments': total_enrollments,
+            'present': status_counts['present'],
+            'absent': status_counts['absent'],
+            'late': status_counts['late'],
+            'total': status_counts['total']
+        }
+        
+        return jsonify({
+            'attendance': attendance_records,
+            'stats': stats
+        })
+    except Exception as e:
+        print(f"Error fetching attendance report: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/test', methods=['GET'])
+def test_endpoint():
+    """Test endpoint to verify API routing"""
+    return jsonify({
+        'status': 'success',
+        'message': 'API test endpoint is working',
+        'python_version': sys.version
+    })
+
+@api_bp.route('/attendance/report', methods=['GET'])
+@login_required
+def get_admin_attendance_list():
+    """API endpoint to get attendance records with filtering for admin view"""
+    try:
+        print("API endpoint /attendance/report accessed")
+        # Check if user is admin
+        if not hasattr(current_user, 'role') or current_user.role.lower() != 'admin':
+            print("User is not admin, returning 403")
+            return jsonify({'error': 'Unauthorized access'}), 403
+            
+        # Get filter parameters
+        class_id = request.args.get('class_id', '')
+        instructor_id = request.args.get('instructor_id', '')
+        student = request.args.get('student', '')
+        status_filter = request.args.get('status', '')
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        
+        # Build query for attendance records
+        query = db.session.query(
+            Attendance,
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            User.profile_img.label('student_profile_img'),
+            User.id.label('student_id'),
+            Class.name.label('class_name'),
+            Class.id.label('class_id'),
+            Class.instructor_id
+        ).join(
+            User, Attendance.student_id == User.id
+        ).join(
+            Class, Attendance.class_id == Class.id
+        )
+        
+        # Apply student role filter
+        query = query.filter(or_(User.role == 'Student', User.role == 'student'))
+        
+        # Filter out archived records
+        query = query.filter(or_(Attendance.is_archived == False, Attendance.is_archived == None))
+        
+        # Apply class filter if provided
+        if class_id:
+            query = query.filter(Class.id == class_id)
+        
+        # Apply instructor filter if provided
+        if instructor_id:
+            query = query.filter(Class.instructor_id == instructor_id)
+        
+        # Apply status filter if provided
+        if status_filter:
+            query = query.filter(Attendance.status == status_filter)
+        
+        # Apply student name filter if provided
+        if student:
+            query = query.filter(
+                or_(
+                    User.first_name.like(f'%{student}%'),
+                    User.last_name.like(f'%{student}%'),
+                    User.id.like(f'%{student}%')
+                )
+            )
+        
+        # Apply date filters if provided
+        if start_date:
+            try:
+                from_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date >= from_date)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                to_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                query = query.filter(Attendance.date <= to_date)
+            except ValueError:
+                pass
+        
+        # Get total count for pagination
+        total_count = query.count()
+        
+        # Apply pagination
+        query = query.order_by(Attendance.date.desc())
+        query = query.offset((page - 1) * per_page).limit(per_page)
+        
+        # Execute query
+        results = query.all()
+        
+        # Format attendance records
+        records = []
+        
+        # Get instructor names for display
+        instructor_ids = set()
+        for result in results:
+            if result.instructor_id:
+                instructor_ids.add(result.instructor_id)
+        
+        instructor_names = {}
+        if instructor_ids:
+            instructors = User.query.filter(User.id.in_(instructor_ids)).all()
+            for instructor in instructors:
+                instructor_names[instructor.id] = f"{instructor.first_name} {instructor.last_name}"
+        
+        # Process results
+        for result in results:
+            attendance = result[0]  # Attendance object
+            
+            # Get instructor name
+            instructor_name = instructor_names.get(result.instructor_id, 'N/A')
+            
+            # Format record
+            records.append({
+                'id': attendance.id,
+                'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else None,
+                'student_id': result.student_id,
+                'student_name': f"{result.student_first_name} {result.student_last_name}",
+                'student_profile_img': result.student_profile_img,
+                'class_id': result.class_id,
+                'class_name': result.class_name,
+                'instructor_id': result.instructor_id,
+                'instructor_name': instructor_name,
+                'status': attendance.status,
+                'comment': attendance.comments
+            })
+        
+        # Calculate statistics
+        stats_query = db.session.query(
+            Attendance.status, func.count(Attendance.id)
+        ).group_by(Attendance.status)
+        
+        # Apply the same filters as the main query
+        if class_id:
+            stats_query = stats_query.filter(Attendance.class_id == class_id)
+        
+        # Join with User and Class for other filters
+        stats_query = stats_query.join(User, Attendance.student_id == User.id)
+        stats_query = stats_query.join(Class, Attendance.class_id == Class.id)
+        
+        if instructor_id:
+            stats_query = stats_query.filter(Class.instructor_id == instructor_id)
+        
+        if student:
+            stats_query = stats_query.filter(
+                or_(
+                    User.first_name.like(f'%{student}%'),
+                    User.last_name.like(f'%{student}%'),
+                    User.id.like(f'%{student}%')
+                )
+            )
+        
+        if start_date:
+            try:
+                from_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                stats_query = stats_query.filter(Attendance.date >= from_date)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                to_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+                stats_query = stats_query.filter(Attendance.date <= to_date)
+            except ValueError:
+                pass
+        
+        # Get the status counts
+        status_counts = stats_query.all()
+        
+        # Initialize stats
+        stats = {
+            'present': 0,
+            'absent': 0,
+            'late': 0,
+            'total': total_count
+        }
+        
+        # Update stats with the actual counts
+        for status, count in status_counts:
+            normalized_status = status.lower() if status else 'unknown'
+            if normalized_status == 'present':
+                stats['present'] = count
+            elif normalized_status == 'absent':
+                stats['absent'] = count
+            elif normalized_status == 'late':
+                stats['late'] = count
+        
+        # Return formatted response
+        return jsonify({
+            'records': records,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_count,
+                'pages': math.ceil(total_count / per_page) if per_page > 0 else 0
+            },
+            'stats': stats
+        })
+    except Exception as e:
+        print(f"Error fetching attendance report: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/report/<string:record_id>', methods=['GET'])
+@login_required
+def get_admin_attendance_record(record_id):
+    """API endpoint to get a single attendance record by ID for admin view"""
+    try:
+        # Check if user is admin
+        if not hasattr(current_user, 'role') or current_user.role.lower() != 'admin':
+            return jsonify({'error': 'Unauthorized access'}), 403
+            
+        # Query for the attendance record with related data
+        result = db.session.query(
+            Attendance,
+            User.first_name.label('student_first_name'),
+            User.last_name.label('student_last_name'),
+            User.profile_img.label('student_profile_img'),
+            User.id.label('student_id'),
+            Class.name.label('class_name'),
+            Class.id.label('class_id'),
+            Class.instructor_id
+        ).join(
+            User, Attendance.student_id == User.id
+        ).join(
+            Class, Attendance.class_id == Class.id
+        ).filter(
+            Attendance.id == record_id
+        ).first()
+        
+        if not result:
+            return jsonify({'error': 'Attendance record not found'}), 404
+            
+        attendance = result[0]  # Attendance object
+        
+        # Get instructor name
+        instructor_name = 'N/A'
+        if result.instructor_id:
+            instructor = User.query.get(result.instructor_id)
+            if instructor:
+                instructor_name = f"{instructor.first_name} {instructor.last_name}"
+        
+        # Format the record
+        record = {
+            'id': attendance.id,
+            'date': attendance.date.strftime('%Y-%m-%d') if attendance.date else None,
+            'student_id': result.student_id,
+            'student_name': f"{result.student_first_name} {result.student_last_name}",
+            'student_profile_img': result.student_profile_img,
+            'class_id': result.class_id,
+            'class_name': result.class_name,
+            'instructor_id': result.instructor_id,
+            'instructor_name': instructor_name,
+            'status': attendance.status,
+            'comment': attendance.comments,
+            'created_at': attendance.created_at.strftime('%Y-%m-%d %H:%M:%S') if attendance.created_at else None,
+            'updated_at': attendance.updated_at.strftime('%Y-%m-%d %H:%M:%S') if attendance.updated_at else None
+        }
+        
+        return jsonify(record)
+    except Exception as e:
+        print(f"Error fetching attendance record: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/report/<string:record_id>', methods=['PUT'])
+@login_required
+def update_admin_attendance_record(record_id):
+    """API endpoint to update an attendance record for admin view"""
+    try:
+        # Check if user is admin
+        if not hasattr(current_user, 'role') or current_user.role.lower() != 'admin':
+            return jsonify({'error': 'Unauthorized access'}), 403
+            
+        # Get JSON data from request
+        data = request.json
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Get the attendance record
+        attendance = Attendance.query.get(record_id)
+        
+        if not attendance:
+            return jsonify({'error': 'Attendance record not found'}), 404
+            
+        # Update fields
+        if 'status' in data:
+            attendance.status = data['status']
+            
+        if 'comment' in data:
+            attendance.comments = data['comment']
+            
+        if 'date' in data:
+            try:
+                attendance.date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'error': 'Invalid date format. Expected format: YYYY-MM-DD'}), 400
+                
+        # Update timestamp
+        attendance.updated_at = datetime.now()
+        
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Attendance record updated successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating attendance record: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/attendance/report/<string:record_id>/archive', methods=['PUT'])
+@login_required
+def archive_admin_attendance_record(record_id):
+    """API endpoint to archive an attendance record for admin view"""
+    try:
+        # Check if user is admin
+        if not hasattr(current_user, 'role') or current_user.role.lower() != 'admin':
+            return jsonify({'error': 'Unauthorized access'}), 403
+            
+        # Get the attendance record
+        attendance = Attendance.query.get(record_id)
+        
+        if not attendance:
+            return jsonify({'error': 'Attendance record not found'}), 404
+            
+        # Get archive reason from request
+        data = request.json
+        archive_reason = data.get('reason', 'No reason provided')
+        
+        # Add archive note to comments
+        archive_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        admin_name = f"{current_user.first_name} {current_user.last_name}"
+        
+        archive_note = f"ARCHIVED ({archive_timestamp}): {archive_reason}\nArchived by: {admin_name}"
+        
+        if attendance.comments:
+            attendance.comments += f"\n\n{archive_note}"
+        else:
+            attendance.comments = archive_note
+            
+        # Mark as archived
+        attendance.is_archived = True
+        attendance.updated_at = datetime.now()
+        attendance.archive_date = datetime.now()
+        
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Attendance record archived successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error archiving attendance record: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

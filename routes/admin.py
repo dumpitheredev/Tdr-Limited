@@ -723,12 +723,62 @@ def admin_profile():
                 'maintenance_end_time': None
             }
     
+    # Check if this is a first-time login that requires password change
+    change_password = request.args.get('change_password') == 'True' or session.get('password_change_required')
+    
     # Render the template with the settings (either model or dictionary)
     return render_template('admin/profile.html', 
                           settings=settings, 
                           admin=current_user,
-                           active_page='admin_profile',
+                          active_page='admin_profile',
+                          change_password=change_password,
                           is_super_admin=str(current_user.id).endswith('1') or current_user.id in ['bh9c0j', 'bh93dx'])
+
+@admin_bp.route('/update-password', methods=['POST'])
+@login_required
+@admin_required
+def update_password():
+    """Handle admin password updates with validation."""
+    try:
+        # Get form data
+        current_password = request.form.get('currentPassword')
+        new_password = request.form.get('newPassword')
+        confirm_password = request.form.get('confirmPassword')
+        
+        # Get the current admin
+        admin = User.query.filter_by(id=current_user.id).first()
+        
+        # Check if this is a first login (password change is required)
+        is_first_login = admin.first_login
+        
+        # If it's not first login, verify current password
+        if not is_first_login and not admin.check_password(current_password):
+            flash('Current password is incorrect', 'error')
+            return redirect(url_for('admin.admin_profile'))
+        
+        # Verify new password and confirmation match
+        if new_password != confirm_password:
+            flash('New password and confirmation do not match', 'error')
+            return redirect(url_for('admin.admin_profile', change_password=is_first_login))
+        
+        # Update password
+        admin.set_password(new_password)
+        
+        # If this was first login, update the flag and remove the session flag
+        if is_first_login:
+            admin.first_login = False
+            if 'password_change_required' in session:
+                session.pop('password_change_required')
+        
+        db.session.commit()
+        flash('Password updated successfully', 'success')
+        current_app.logger.info(f"Password updated for admin {admin.id}")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating password: {str(e)}")
+        flash(f'Error updating password: {str(e)}', 'error')
+    
+    return redirect(url_for('admin.admin_profile'))
 
 @admin_bp.route('/user-management')
 @login_required
@@ -1281,6 +1331,9 @@ def attendance_view():
             # Get all instructors for the dropdown
             instructors = filter_by_role(User.query, 'instructor').all()
             
+            # Get all students for the dropdown
+            students = filter_by_role(User.query, 'student').all()
+            
             # Get attendance records with filtering
             query = db.session.query(
                 Attendance, User, Class
@@ -1328,6 +1381,7 @@ def attendance_view():
             return {
                 'classes': classes,
                 'instructors': instructors,
+                'students': students,
                 'attendances': attendances
             }
         except Exception as e:
@@ -1341,6 +1395,7 @@ def attendance_view():
     fallback = {
         'classes': [],
         'instructors': [],
+        'students': [],
         'attendances': []
     }
     
@@ -1357,6 +1412,7 @@ def attendance_view():
                            active_page='view_attendance',
                            classes=result['classes'],
                            instructors=result['instructors'],
+                           students=result['students'],
                            attendances=result['attendances'],
                            selected_class=class_id,
                            selected_instructor=instructor_id,
@@ -1490,6 +1546,87 @@ def export_instructors_to_csv():
         filename_prefix='instructors',
         headers=headers,
         row_formatter=format_instructor_row
+    )
+
+@admin_bp.route('/export-attendance-csv')
+@login_required
+def export_attendance_csv():
+    """Export attendance records to CSV with filtering options"""
+    # Get filter parameters
+    class_id = request.args.get('class_id', '')
+    instructor_id = request.args.get('instructor_id', '')
+    student_name = request.args.get('student_name', '')
+    status = request.args.get('status', '')
+    date_start = request.args.get('date_start', '')
+    date_end = request.args.get('date_end', '')
+    
+    # Build the query with joins
+    query = db.session.query(
+        Attendance, User, Class
+    ).join(
+        User, Attendance.student_id == User.id
+    ).join(
+        Class, Attendance.class_id == Class.id
+    )
+    
+    # Apply filters
+    if class_id:
+        query = query.filter(Attendance.class_id == class_id)
+    
+    if instructor_id:
+        query = query.filter(Class.instructor_id == instructor_id)
+    
+    if student_name:
+        query = query.filter(or_(
+            User.first_name.ilike(f'%{student_name}%'),
+            User.last_name.ilike(f'%{student_name}%'),
+            func.concat(User.first_name, ' ', User.last_name).ilike(f'%{student_name}%')
+        ))
+    
+    if status:
+        query = query.filter(Attendance.status == status)
+    
+    if date_start:
+        query = query.filter(Attendance.date >= date_start)
+    
+    if date_end:
+        query = query.filter(Attendance.date <= date_end)
+    
+    # Order by date descending
+    query = query.order_by(Attendance.date.desc())
+    
+    # Define CSV headers
+    headers = ['Date', 'Student ID', 'Student Name', 'Class', 'Status', 'Comment', 'Marked By']
+    
+    # Define row formatter function
+    def format_attendance_row(record):
+        attendance, student, class_obj = record
+        
+        # Try to get the instructor name who marked attendance
+        marked_by = 'System'
+        if attendance.marked_by:
+            try:
+                marker = User.query.get(attendance.marked_by)
+                if marker:
+                    marked_by = f"{marker.first_name} {marker.last_name}"
+            except Exception:
+                pass
+        
+        return [
+            attendance.date.strftime('%Y-%m-%d') if attendance.date else '',
+            student.id,
+            f"{student.first_name} {student.last_name}",
+            class_obj.name,
+            attendance.status,
+            attendance.comment or '',
+            marked_by
+        ]
+    
+    return export_query_to_csv(
+        query=query,
+        filename_prefix='attendance',
+        headers=headers,
+        row_formatter=format_attendance_row
     )
 
 @admin_bp.route('/company-management')
@@ -1674,11 +1811,3 @@ def view_archive():
                            archive_type=archive_type,
                            archived_counts=result['archived_counts'])
 
-@admin_bp.route('/reports')
-@login_required
-@admin_required
-def reports():
-    """
-    Render the reports page
-    """
-    return render_template('admin/reports.html', now=int(time.time()))
