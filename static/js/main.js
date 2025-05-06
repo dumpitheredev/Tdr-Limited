@@ -26,6 +26,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (infoBtn) {
         infoBtn.addEventListener('click', openInfoModal);
     }
+    
+    // Initialize clear cache button
+    initializeClearCacheButton();
+    
+    // Initialize network status indicator
+    updateNetworkStatus();
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
 });
 
 function initializeSidebar() {
@@ -151,19 +159,36 @@ function getPageKeyFromUrl() {
                        document.body.getAttribute('data-page');
     
     if (activePage) {
-        // Direct mapping of active_page values to pageInformation keys
-        if (activePage === 'view_attendance') {
-            return 'view-attendance';
-        }
-        if (activePage === 'mark_attendance') {
-            return 'mark-attendance';
-        }
         // Replace underscores with hyphens for consistency
         const formattedKey = activePage.replace(/_/g, '-');
+        
+        // Handle attendance pages based on URL path
+        if (activePage === 'view_attendance' || formattedKey === 'view-attendance') {
+            if (pathname.includes('/admin/')) {
+                return 'admin-view-attendance';
+            } else if (pathname.includes('/instructor/')) {
+                return 'instructor-view-attendance';
+            }
+            return 'view-attendance';
+        }
+        
+        if (activePage === 'mark_attendance' || formattedKey === 'mark-attendance') {
+            if (pathname.includes('/admin/')) {
+                return 'admin-mark-attendance';
+            } else if (pathname.includes('/instructor/')) {
+                return 'instructor-mark-attendance';
+            }
+            return 'mark-attendance';
+        }
         
         // Add admin prefix if in admin section and not already prefixed
         if (pathname.includes('/admin/') && !formattedKey.startsWith('admin-')) {
             return 'admin-' + formattedKey;
+        }
+        
+        // Add instructor prefix if in instructor section and not already prefixed
+        if (pathname.includes('/instructor/') && !formattedKey.startsWith('instructor-')) {
+            return 'instructor-' + formattedKey;
         }
         
         return formattedKey;
@@ -206,28 +231,110 @@ function getPageKeyFromUrl() {
     return pageKey;
 }
 
-// Set up modal event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    const modalElement = document.getElementById('pageInfoModal');
-    if (!modalElement) return;
+function openInfoModal() {
+    const infoModal = new bootstrap.Modal(document.getElementById('infoModal'));
+    infoModal.show();
+}
 
-    // Add ESC key listener
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && window.modalInstance) {
-            closeInfoModal();
-        }
-    });
+/**
+ * Initialize the clear cache button functionality
+ */
+function initializeClearCacheButton() {
+    const clearCacheBtn = document.getElementById('clear-cache-btn');
+    if (clearCacheBtn) {
+        clearCacheBtn.addEventListener('click', function() {
+            // Show loading state
+            clearCacheBtn.disabled = true;
+            clearCacheBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Clearing...';
+            
+            // Check if the clearServiceWorkerCache function is available
+            if (typeof window.clearServiceWorkerCache === 'function') {
+                try {
+                    // Clear the cache with specific URL patterns
+                    window.clearServiceWorkerCache(['api/', 'attendance']);
+                    
+                    // Show success message using our robust notification system
+                    if (window.AttendanceUtils && window.AttendanceUtils.showToast) {
+                        window.AttendanceUtils.showToast('Cache clearing in progress...', 'info');
+                    } else if (window.showToast) {
+                        window.showToast('Cache clearing in progress...', 'info');
+                    } else {
+                        console.log('Cache clearing in progress...');
+                    }
+                    
+                    // Reset button after a delay
+                    setTimeout(function() {
+                        clearCacheBtn.disabled = false;
+                        clearCacheBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Clear Cache';
+                        
+                        // Reload the page to ensure fresh data
+                        if (window.AttendanceUtils && window.AttendanceUtils.showToast) {
+                            window.AttendanceUtils.showToast('Cache cleared. Reloading page...', 'success');
+                        } else if (window.showToast) {
+                            window.showToast('Cache cleared. Reloading page...', 'success');
+                        }
+                        
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 1000);
+                    }, 2000);
+                } catch (error) {
+                    console.error('Error clearing cache:', error);
+                    clearCacheBtn.disabled = false;
+                    clearCacheBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Clear Cache';
+                    
+                    // Show error message
+                    if (window.AttendanceUtils && window.AttendanceUtils.showToast) {
+                        window.AttendanceUtils.showToast('Failed to clear cache: ' + error.message, 'error');
+                    } else if (window.showToast) {
+                        window.showToast('Failed to clear cache: ' + error.message, 'error');
+                    }
+                }
+            } else {
+                console.warn('clearServiceWorkerCache function not available');
+                clearCacheBtn.disabled = false;
+                clearCacheBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Clear Cache';
+                
+                // Show warning message
+                if (window.AttendanceUtils && window.AttendanceUtils.showToast) {
+                    window.AttendanceUtils.showToast('Cache clearing not available in this browser', 'warning');
+                } else if (window.showToast) {
+                    window.showToast('Cache clearing not available in this browser', 'warning');
+                }
+                
+                // Fallback: unregister and register service worker
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for (let registration of registrations) {
+                            registration.unregister();
+                            console.log('Service worker unregistered:', registration.scope);
+                        }
+                        // Reload after unregistering
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 1000);
+                    });
+                }
+            }
+        });
+    }
+}
 
-    // Add click outside listener
-    modalElement.addEventListener('click', (e) => {
-        if (e.target === modalElement) {
-            closeInfoModal();
+/**
+ * Update the network status indicator
+ */
+function updateNetworkStatus() {
+    const networkStatusElement = document.getElementById('network-status');
+    if (networkStatusElement) {
+        if (navigator.onLine) {
+            networkStatusElement.innerHTML = '<span class="badge bg-success"><i class="bi bi-wifi"></i> Online</span>';
+            networkStatusElement.title = 'You are currently online. Changes will be saved to the server.';
+        } else {
+            networkStatusElement.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-wifi-off"></i> Offline</span>';
+            networkStatusElement.title = 'You are currently offline. Changes will be saved locally and synced when you reconnect.';
         }
-    });
-    
-    // Initialize the context info is now handled in the main DOMContentLoaded event
-    // so we don't need to call it again here
-});
+    }
+}
 
 function initializeContextInfo() {
     // Get the page key using the enhanced getPageKeyFromUrl function
@@ -459,47 +566,51 @@ if (typeof window.pageInformation === 'undefined') {
             ]
         },
         'view-attendance': {
-            title: 'View Attendance',
-            description: 'Comprehensive system for viewing, analyzing, editing, and archiving attendance records across all classes and students. This module provides detailed filtering, statistics, and record management capabilities.',
+            title: 'Admin View Attendance',
+            description: 'Administrative system for viewing, analyzing, editing, and archiving attendance records across all classes and students. This module provides detailed filtering, statistics, and record management capabilities for administrators.',
             features: [
-                'View detailed attendance records with status indicators',
+                'View detailed attendance records for all classes and instructors',
                 'Advanced filtering by class, instructor, student, status, and date range',
-                'Real-time attendance statistics tracking (present, absent, late)',
-                'Edit attendance records with immediate UI updates',
-                'Archive functionality for record management',
-                'Detailed view of individual attendance records',
-                'Export attendance data to CSV for reporting',
-                'Search capabilities for finding specific student records',
-                'Responsive table with pagination and dynamic updates'
+                'System-wide attendance statistics tracking (present, absent, late)',
+                'Administrative edit capabilities for any attendance record',
+                'Archive functionality for system-wide record management',
+                'Detailed view of individual attendance records with full history',
+                'Export attendance data to CSV for institutional reporting',
+                'Advanced search capabilities for finding specific student records',
+                'Administrative override capabilities for attendance disputes'
             ],
             instructions: [
-                'Use the filter panel to select class, instructor, status, and date range',
-                'View attendance statistics in the cards at the top of the page',
-                'Click the view icon to see detailed information about a record',
-                'Use the edit icon to modify attendance status and comments',
-                'Click the archive icon to archive records no longer needed',
-                'Export filtered data using the "Export CSV" button',
-                'Use pagination controls to navigate through records',
-                'Search for specific students using the search box',
-                'Clear all filters using the clear button when needed'
+                'Use the comprehensive filter panel to select any class, instructor, status, and date range',
+                'View system-wide attendance statistics in the cards at the top of the page',
+                'Click the view icon to see detailed information about any attendance record',
+                'Use the edit icon to modify attendance status and comments as an administrator',
+                'Click the archive icon to archive records no longer needed in the active system',
+                'Export filtered data using the "Export CSV" button for institutional reporting',
+                'Use pagination controls to navigate through the complete attendance database',
+                'Search for specific students across all classes using the search box',
+                'Use administrative tools to resolve attendance disputes or discrepancies'
             ]
         },
-        'mark-attendance': {
-            title: 'Mark Attendance',
-            description: 'Record and manage daily attendance for classes and students.',
+        'admin-mark-attendance': {
+            title: 'Admin Mark Attendance',
+            description: 'Administrative system for recording and managing daily attendance for any class and student in the system.',
             features: [
-                'Mark daily attendance',
-                'Update attendance status',
-                'Record time stamps',
-                'Add attendance notes',
-                'Bulk attendance marking'
+                'Mark attendance for any class in the system',
+                'Administrative override for attendance records',
+                'Record time stamps with administrative verification',
+                'Add detailed attendance notes and justifications',
+                'Bulk attendance marking for multiple classes',
+                'Retroactive attendance modification with audit trail',
+                'Special attendance status options (excused, medical, etc.)'
             ],
             instructions: [
-                'Select the class to mark attendance',
-                'Choose the appropriate date',
-                'Mark students as present, absent, or late',
-                'Add any relevant notes',
-                'Save attendance records'
+                'Select any class in the system to mark or modify attendance',
+                'Choose any date, including past dates for retroactive updates',
+                'Mark students as present, absent, late, or with special statuses',
+                'Add detailed administrative notes for attendance modifications',
+                'Use bulk actions to efficiently manage multiple attendance records',
+                'Review the audit trail for any modifications made',
+                'Save all changes with administrative verification'
             ]
         },  
         'settings': {
@@ -522,92 +633,82 @@ if (typeof window.pageInformation === 'undefined') {
         },
         'instructor-dashboard': {
             title: 'Instructor Dashboard',
-            description: 'Overview of your teaching schedule and important announcements from administration.',
+            description: 'Your central hub for managing classes, viewing schedules, and accessing instructor tools.',
             features: [
-                'View your weekly teaching schedule organized by day',
-                'See room assignments and class times at a glance',
-                'Read important announcements from administration',
-                'Quick access to all instructor functions',
-                'Monitor upcoming classes and schedule changes'
+                'Weekly class schedule overview',
+                'Announcements and notifications',
+                'Quick access to attendance tools',
+                'Class management shortcuts',
+                'Profile and account settings'
             ],
             instructions: [
-                'Review announcements at the top of the dashboard for important updates',
-                'Navigate through your weekly schedule organized by day',
-                'Click on class cards for more detailed information',
-                'Use the sidebar to access other instructor functions',
-                'Check room assignments and class times for each scheduled session'
+                'View your weekly schedule organized by day',
+                'Check important announcements at the top of the page',
+                'Click on class blocks to view details or take attendance',
+                'Use the sidebar menu to access all instructor functions',
+                'Update your profile information through the profile link'
             ]
         },
         'instructor-mark-attendance': {
-            title: 'Mark Attendance',
-            description: 'Record daily attendance for your assigned classes and students.',
+            title: 'Instructor Mark Attendance',
+            description: 'Record daily attendance for your assigned classes and students with a simple, efficient interface designed for instructors.',
             features: [
-                'Mark attendance for your assigned classes',
-                'Update student attendance status (present, absent, late)',
-                'Record time stamps automatically',
-                'Add notes regarding special circumstances',
-                'View previous attendance records'
+                'Quick attendance marking for your assigned classes only',
+                'Simple present/absent/late status options',
+                'Automatic date and time recording',
+                'Optional notes for student-specific situations',
+                'Same-day attendance modification capability',
+                'Mobile-friendly interface for marking attendance in class',
+                'Confirmation system to prevent duplicate entries'
             ],
             instructions: [
-                'Select the class from your assigned classes',
-                'Choose the date for attendance recording',
-                'Mark each student as present, absent, or late',
-                'Add any relevant notes about exceptions or issues',
-                'Save the attendance record when complete'
+                'Select one of your assigned classes from the dropdown',
+                'Verify the current date is correct (defaults to today)',
+                'Use the checkboxes to quickly mark students as present',
+                'Click the status dropdown to change a student to absent or late if needed',
+                'Add optional notes for individual students when necessary',
+                'Click the Submit button to save all attendance records at once',
+                'Check for confirmation message to ensure successful submission'
             ]
         },
         'instructor-view-attendance': {
-            title: 'View Attendance',
-            description: 'Review and analyze attendance records for your classes and students.',
+            title: 'Instructor View Attendance',
+            description: 'Review and analyze attendance records specifically for your assigned classes and students with instructor-focused tools.',
             features: [
-                'View attendance history for your classes',
-                'Filter by date range or specific class',
-                'See attendance statistics and patterns',
-                'Export attendance data for reporting',
-                'Identify students with attendance issues'
+                'View attendance history for only your assigned classes',
+                'Instructor-specific filtering by date range and class',
+                'Class-level attendance statistics and patterns',
+                'Personal attendance reports for your classes only',
+                'Student attendance tracking for your classes',
+                'Quick identification of attendance patterns in your students',
+                'Simple export options for instructor reporting'
             ],
             instructions: [
-                'Select a date range to view attendance records',
-                'Use filters to narrow down to specific classes or students',
-                'Review statistical data about attendance trends',
-                'Export data for your records or reporting',
-                'Identify students who may need intervention'
+                'Select from your assigned classes in the dropdown menu',
+                'Choose a date range to view specific attendance periods',
+                'Review the color-coded attendance status indicators',
+                'Use the search box to find specific students in your classes',
+                'View attendance statistics at the top of the page',
+                'Export your class attendance data using the export button',
+                'Click on student names to view their detailed attendance history'
             ]
         },
         'instructor-profile': {
             title: 'Instructor Profile',
-            description: 'View and manage your personal profile information and settings.',
+            description: 'View and manage your instructor profile information and account settings.',
             features: [
-                'View your personal information',
+                'View and update personal information',
+                'Change profile picture',
                 'Update contact details',
-                'Manage teaching preferences',
-                'Change password and security settings',
-                'View teaching history and statistics'
+                'Change password securely',
+                'View account status'
             ],
             instructions: [
-                'Review your current profile information',
-                'Click the edit button to update your personal details',
-                'Use the security tab to manage password and authentication',
-                'Set teaching preferences to improve class assignments',
-                'Save all changes before leaving the page'
-            ]
-        },
-        'instructor-classes': {
-            title: 'Instructor Classes',
-            description: 'View and manage all your assigned classes and schedules.',
-            features: [
-                'View all your assigned classes',
-                'See detailed class schedules and locations',
-                'Access student rosters for each class',
-                'Review class materials and curriculum',
-                'Track class progress and completion status'
-            ],
-            instructions: [
-                'Use filters to view current or past classes',
-                'Click on a class to view detailed information',
-                'Select the roster tab to see enrolled students',
-                'Use the calendar view to see your weekly schedule',
-                'Access class management tools through the action buttons'
+                'Edit your personal information in the Profile Information section',
+                'Upload a new profile picture by clicking on the image',
+                'Update your password in the Account Settings section',
+                'Ensure all forms are completely filled before submitting',
+                'Use strong passwords that include numbers, letters, and special characters'
             ]
         },
         'student-dashboard': {
@@ -769,22 +870,36 @@ if (typeof window.pageInformation === 'undefined') {
     
     // Add admin-prefixed aliases for all routes that need them
     // This prevents duplicate definitions while maintaining correct route matching
-    const routesToDuplicate = [
+    // Routes that should be duplicated for admin only
+    const adminRoutesToDuplicate = [
         'user-management', 'student-management', 'instructor-management', 
         'company-management', 'class-management', 'enrollment-management', 
-        'view-attendance', 'mark-attendance', 'view-archive', 'settings'
+        'view-archive', 'settings'
     ];
     
-    routesToDuplicate.forEach(route => {
+    // Don't duplicate attendance routes since they have specific admin and instructor versions
+    adminRoutesToDuplicate.forEach(route => {
         if (window.pageInformation[route]) {
             window.pageInformation[`admin-${route}`] = window.pageInformation[route];
         }
     });
+    
+    // Create proper mappings for attendance pages
+    // These ensure admin pages use admin info and instructor pages use instructor info
+    if (window.pageInformation['view-attendance']) {
+        window.pageInformation['admin-view-attendance'] = window.pageInformation['view-attendance'];
+    }
+    
+    if (window.pageInformation['mark-attendance']) {
+        window.pageInformation['admin-mark-attendance'] = window.pageInformation['mark-attendance'];
+    }
 }
 
 // After defining pageInformation
 const dashboardAliases = {
-  'admin': 'admin-dashboard'
+  'admin': 'admin-dashboard',
+  'instructor': 'instructor-dashboard',
+  'dashboard': 'instructor-dashboard'
 };
 
 // Add aliases
