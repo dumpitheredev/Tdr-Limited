@@ -8,6 +8,12 @@
  * @param {string} modalId - Optional ID of the modal element to clean up
  */
 function cleanupModalBackdrop(modalId) {
+    // Use the shared utility function if available
+    if (window.ModalHelpers && window.ModalHelpers.cleanupModalBackdrop) {
+        return window.ModalHelpers.cleanupModalBackdrop(modalId);
+    }
+    
+    // Fallback implementation if the utility is not available
     try {
         if (modalId) {
             // Only clean up specific modal
@@ -66,6 +72,12 @@ async function showInstructorModalView(userData) {
         displayClasses(instructorData);
         updateModalFooter(instructorData.id || instructorData.user_id);
         
+        // Use the shared modal utility if available
+        if (window.ModalHelpers && window.ModalHelpers.showModal) {
+            window.ModalHelpers.showModal('viewInstructorModal');
+            return;
+        }
+        
         // Try using jQuery if available
         if (typeof $ !== 'undefined' && typeof $.fn.modal !== 'undefined') {
             // Using jQuery to avoid Bootstrap modal issues - allow backdrop click to close
@@ -102,53 +114,72 @@ async function showInstructorModalView(userData) {
         // Add body classes
         document.body.classList.add('modal-open');
         
-        // Create and append backdrop
+        // Create backdrop
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop fade show';
+        backdrop.setAttribute('data-modal-id', 'viewInstructorModal');
         document.body.appendChild(backdrop);
         
-        // Set up close handlers
-        const closeButtons = instructorModal.querySelectorAll('[data-bs-dismiss="modal"]');
-        closeButtons.forEach(button => {
-            button.addEventListener('click', closeModal);
+        // Add click handler to close on backdrop click
+        backdrop.addEventListener('click', function() {
+            showInstructorModalView.closeModal();
         });
         
-        // Add backdrop click handler to close modal when clicking outside
-        instructorModal.addEventListener('click', function(event) {
-            // Check if the click was directly on the modal element (backdrop) and not on its children
-            if (event.target === instructorModal) {
-                closeModal();
+        // Add ESC key handler
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') {
+                showInstructorModalView.closeModal();
+                document.removeEventListener('keydown', escHandler);
             }
         });
         
-        // Also add backdrop click handler
-        backdrop.addEventListener('click', closeModal);
-        
-        // Function to close the modal
-        function closeModal() {
-            instructorModal.classList.remove('show');
-            instructorModal.style.display = 'none';
-            instructorModal.setAttribute('aria-hidden', 'true');
-            instructorModal.removeAttribute('aria-modal');
-            
-            // Remove the backdrop
-            document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
-            
-            // Reset body
-            document.body.classList.remove('modal-open');
-            document.body.style.removeProperty('padding-right');
-            document.body.style.removeProperty('overflow');
-            
-            // Remove event listeners
-            closeButtons.forEach(button => {
-                button.removeEventListener('click', closeModal);
-            });
-            instructorModal.removeEventListener('click', arguments.callee);
-            if (backdrop.parentNode) {
-                backdrop.removeEventListener('click', closeModal);
-            }
+        // Add click handler for close button
+        const closeBtn = instructorModal.querySelector('[data-bs-dismiss="modal"]');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', showInstructorModalView.closeModal);
         }
         
+        showInstructorModalView.closeModal = function() {
+            try {
+                // Use the shared modal utility if available
+                if (window.ModalHelpers && window.ModalHelpers.hideModal) {
+                    window.ModalHelpers.hideModal('viewInstructorModal');
+                    return;
+                }
+                
+                const modal = document.getElementById('viewInstructorModal');
+                if (!modal) return;
+                
+                // Try to use Bootstrap's API first
+                try {
+                    const bsModal = bootstrap.Modal.getInstance(modal);
+                    if (bsModal) {
+                        bsModal.hide();
+                        return;
+                    }
+                } catch (err) {
+                    // Not a problem if Bootstrap instance not found
+                }
+                
+                // Manual cleanup
+                modal.classList.remove('show');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+                modal.removeAttribute('aria-modal');
+                
+                // Clean up backdrop
+                cleanupModalBackdrop('viewInstructorModal');
+            } catch (error) {
+                console.error('Error closing instructor modal:', error);
+            }
+        };
+        
+        // Remove event listeners when modal is closed
+        instructorModal.addEventListener('hidden.bs.modal', function() {
+            backdrop.removeEventListener('click', showInstructorModalView.closeModal);
+            document.removeEventListener('keydown', escHandler);
+            closeBtn.removeEventListener('click', showInstructorModalView.closeModal);
+        });
     } catch (error) {
         console.error('Error showing instructor modal:', error);
         showToast('Error: Failed to load instructor details', 'error');
