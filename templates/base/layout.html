@@ -86,7 +86,7 @@
                     
                     <!-- Right side - Profile and Info Icon -->
                     <div class="d-flex align-items-center gap-3">
-                        <a href="{{ url_for('admin.admin_profile') if session.get('role') == 'admin' else url_for('instructor.instructor_profile') if session.get('role') == 'instructor' else url_for('student.student_profile') }}" class="text-decoration-none">
+                        <a href="{% if session.get('role') == 'admin' %}{{ url_for('admin.admin_profile') }}{% elif session.get('role') == 'instructor' %}{{ url_for('instructor.instructor_profile') }}{% elif session.get('role') == 'student' and url_for('auth.login') %}{{ url_for('auth.login') }}{% else %}#{% endif %}" class="text-decoration-none">
                             <span class="fw-medium" style="color: #191970;">
                                 {{ session.get('name', 'User') }}
                             </span>
