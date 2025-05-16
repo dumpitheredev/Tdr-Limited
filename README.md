@@ -118,9 +118,8 @@ python run.py
 ```
 Access the application at http://localhost:5000
 
-### Default Login Credentials
-- **Admin**: admin@example.com / admin123
-- **Instructor**: instructor@example.com / instructor123
+### First Login
+After setting up the application, you'll need to create an admin user through the database or use the registration feature if enabled. The system will prompt new users to change their password on first login.
 
 ## Project Structure
 
